@@ -1,0 +1,1170 @@
+Title: Fantastic Adaptive Taxonomies and How to Use Them
+
+URL Source: https://arxiv.org/pdf/2607.16387v1
+
+Published Time: Tue, 21 Jul 2026 00:07:23 GMT
+
+Number of Pages: 39
+
+Markdown Content:
+# Fantastic Adaptive Taxonomies and How to Use Them 
+
+Mert Cemri 1∗ Andrei Cojocaru 1∗ Melissa Pan 1 Shu Liu 1 Shubham Agarwal 1
+
+Alexander Krentsel 1 Jay Tang 2 Kannan Ramchandran 1 Joseph E. Gonzalez 1
+
+Matei Zaharia 1 Alex Dimakis 1,3 Ion Stoica 11University of California, Berkeley 2Apple 3Bespoke Labs 
+
+## Abstract 
+
+An agent system’s execution traces record how it fails, and procedures that improve such a system without changing model weights (trajectory selection, prompt and workflow optimization, runtime monitoring) read these traces for feedback. Yet raw traces are a poor medium for accumulating such feedback: they are long, instance-specific, and provide no stable vocabulary for recurring failures. We argue that an agent system should instead maintain an explicit representation of how it fails, induced from its own behavior and reusable wherever failure feedback is needed. AdaMAST builds this representation by converting a target system’s traces into a compact, evidence-grounded failure taxonomy. The taxonomy consists of named failure codes organized along three fixed axes—system-level, role-specific, and domain-specific—while every code name, definition, and evidence pattern is induced from the traces. No code is hand-authored, and no individual trace requires human annotation. The resulting taxonomy is not merely a post-hoc diagnostic, but a shared feedback interface. We demonstrate AdaMAST improves agents in three ways. In agent-system search, taxonomy-coded diagnoses of failed candidates out-perform free-form reflection on all five benchmarks we test. At runtime, taxonomy feedback raises SWE-agent’s resolution on SWE-bench Verified Mini from 60% 
+
+with free-text reflection to 70% , and improves Claude Code from 64 .0% to 70 .7% 
+
+when deployed as a runtime skill. In trajectory selection, AdaMAST -Judge, a veri-fier built on the induced codes, improves best-of-5 accuracy on Terminal-Bench 2.0 by 8–15 points over Pass@1. Beyond these downstream gains, the induced vocabu-lary is compact , compressing the failure-relevant content of traces by an order of magnitude while largely preserving their distinctions; human-faithful , matching expert failure annotations more closely than a hand-crafted reference vocabulary; and adaptive , with taxonomies induced for different domains sharing only a small fraction of their codes. Adaptive failure taxonomies close the loop between the traces agents produce and the procedures that improve them. 
+
+## 1 Introduction 
+
+Most procedures that improve an LLM agent system without changing model weights consume its execution traces: verifiers ranking best-of-N attempts, optimizers rewriting the agent after failed runs, monitors inspecting an ongoing run before an action commits. The feedback these procedures extract from a trace takes one of two forms today, and each loses something essential. A scalar outcome (a pass rate, a verifier score) persists and compares cleanly across runs, but records only that a trajectory failed, never why. A free-text critique [ 18 , 26 ] does name the why, but is derived from scratch and discarded with the run: the recurring failures of that particular system (a checker that rubber-stamps its solver, a tool call retried unchanged) are re-diagnosed on every run, in prose no other consumer   
+
+> ∗Equal contribution. Correspondence: cemri@berkeley.edu .Code: https://github.com/multi-agent-systems-failure-taxonomy/AdaMAST .Preprint. arXiv:2607.16387v1 [cs.SE] 17 Jul 2026
+
+can reuse. Our central claim is that the raw trace need not double as the feedback interface: what can serve instead is an artifact durable like a score and diagnostic like a critique, a compact vocabulary of named failure modes, produced once from the system’s own traces. Each consumer still reads the run it acts on; what it no longer needs is the accumulated trace pool, which the vocabulary can replace at a fraction of the context cost (Section 5.4). What should this vocabulary contain? MAST [ 3], the reference catalogue for multi-agent failures, distills fourteen recurring failure modes from hundreds of annotated traces, and it remains a strong baseline throughout our experiments. But a catalogue fixed before the target system is observed faces a limit that is structural, not a consequence of quality: role-specific failures presuppose roles that exist only once an architecture is instantiated, and domain-specific failures presuppose task knowledge no general catalogue enumerates. No pre-committed list anticipates a competitive-programming agent committing to a greedy strategy where the problem requires dynamic programming, or a STEM agent producing a numerically coherent derivation that violates a physical law. The gap is measurable: taxonomies we induce for six domains share codes at a mean pairwise Jaccard of only 
+
+0.14 (Section 5.2); were a fixed checklist sufficient, induction would keep rediscovering it. The diagnostic vocabulary for a specific agent system must be induced from that system’s own traces: nothing else has seen its tools, its roles, or its domain. We present AdaMAST (Adaptive Multi-Agent System Failure Taxonomies), 0 which induces exactly this vocabulary. From a target system’s traces, it produces a compact set of named failure codes organized across three fixed axes: system-level, role-specific, and domain-specific (Figure 1). Only the axes are fixed, so that taxonomies stay comparable across systems and every code maps to an intervention point. The codes themselves (names, definitions, role labels, and evidence patterns) are induced from the traces: no code is hand-authored, no trace human-annotated. A taxonomy is accepted only when independent annotators apply it consistently to held-out traces, so the artifact is auditable before anything consumes it (Section 3.1). Moreover, as the system evolves, online refinement merges, adds, or relabels codes, so the vocabulary tracks the current system, rather than a snapshot of its past (Section 3.3). The induced taxonomy is a feedback interface, and we evaluate it as one: first the artifact itself, then the procedures that consume it. The artifact is human-faithful, a property LLM–LLM agreement cannot certify: under a matched annotation panel, the induced vocabulary recovers expert failure labels on TRAIL better than the benchmark’s own hand-crafted vocabulary (Section 5). The claim is amortization, not prompt formatting (section I.2): each target system’s taxonomy is induced and validated once, then consumed unchanged by every procedure that reads its traces 
+
+Contributions. 
+
+• Adaptive failure taxonomies from traces. A pipeline that induces compact, evidence-grounded failure taxonomies from a target system’s execution traces along three fixed axes (system-level, role-specific, domain-specific), with no hand-authored codes and no per-trace human annotation, gated by inter-annotator agreement before deployment and refined online as the system evolves (Section 3.1). • The taxonomy as a measurable feedback interface. Independent of downstream gains, the induced vocabulary is compact without collapsing distinctions ( ∼18 × compression, 
+
+89% unique code signatures; Section 5.4), aligns with expert annotations better than a hand-crafted vocabulary under a matched panel ( κ = 0 .682 vs. 0.516 on TRAIL; Section 5.1), and genuinely adapts to its target (mean cross-domain Jaccard 0.14 ; Section 5.2). • One interface, three consumers. Taxonomies induced by the same pipeline, consumed unchanged within each target system, improve agent-system search on five benchmarks (Section 4.2), raise SWE-agent’s resolution on SWE-bench Verified Mini from 60% (Re-flexion) and 68% (MAST) to 70% via an in-context integration (Section 4.3), and improve best-of-5 selection on Terminal-Bench 2.0 by 8–15 points over Pass@1, retaining a +3 .4
+
+to +4 .5 point margin over the fixed MAST vocabulary on the two non-saturated harnesses (Section 4.4).   
+
+> 0The name follows our earlier work MAST [ 3]. The multi-agent in the name is lineage rather than scope: the axes apply to any agentic system, and several of the systems we improve in this paper are single-agent, where the role axis names execution phases or remains empty.
+
+22 Related Work 
+
+Failure taxonomies for agent systems. A growing line of work shows that categorical failure analysis makes LLM agents easier to inspect, compare, and debug than scalar success rates alone. MAST [ 3 ] introduced an empirically grounded taxonomy of 14 multi-agent failure modes organized into system-design, inter-agent, and verification failures; TRAIL [ 7 ] provides expert-annotated GAIA traces under a hand-crafted error taxonomy for agent debugging; and reliability failures have been characterized in production deployments [ 23 ]. Agent GPA [ 13 ] moves toward adaptivity by generating domain-specific evaluation criteria with LLM judges under a fixed goal–plan–action rubric, but the criteria serve post-hoc evaluation rather than a persistent vocabulary consumed by improvement procedures. Failure attribution [ 35 ] asks the complementary question of which agent and which step 
+
+caused a failure, and finds that even strong LLMs struggle to answer it from raw logs, underscoring the need for structured failure evidence. AdaMAST builds on this diagnostic view but changes both the source and the role of the taxonomy. The source: instead of fixing the vocabulary before the agent is observed, AdaMAST induces it from the target system’s own traces, and the difference is measurable rather than cosmetic. Under a matched annotation panel and prompts, induced codes align with expert failure-area labels better than a hand-crafted reference vocabulary (Section 5.1), and vocabularies induced for six domains share only 14% of their codes (Section 5.2). The role: the induced codes serve as a feedback interface consumed by improvement procedures, rather than as post-hoc analysis. Fixed catalogues remain strong baselines (MAST reaches parity with AdaMAST 
+
+in some runtime settings; Section 4.3), which sharpens rather than undercuts the distinction: what an adaptive vocabulary adds is the role- and domain-specific long tail that no pre-committed catalogue can anticipate. 
+
+Improving agents from execution traces. Many methods improve LLM agents by reading traces and producing feedback, without updating model weights. Reflexion [ 26 ] and Self-Refine [ 18 ]generate free-text critiques of failed attempts; LLM-as-a-judge and trace-verification methods select among candidate trajectories or score intermediate reasoning and tool-use steps [ 15 , 16 , 36 ]; and structured-feedback methods compute textual gradients or execution-graph feedback [ 6 , 32 ], train critics or generative verifiers [ 20 , 34 ], or discover behavioral tests and error slices [ 9, 24 ]. In all of these, the diagnosis is computed per trace or per optimization step, consumed by one procedure, and then discarded; the next run re-derives it. AdaMAST differs in the object it produces, not merely in how feedback is formatted: it amortizes trace analysis into a persistent, named, human-validated vocabulary that is induced once and then reused across runs and across procedures. The same codes serve as judging criteria for selection, diagnoses for search, and checkpoint guidance at runtime. 
+
+Search-based optimization of agent systems. Recent work optimizes LLM systems by searching over prompts, workflows, agent roles, or executable programs. Prompt- and workflow-level methods include Promptbreeder [ 10 ], EvoPrompt [ 11 ], DSPy [ 14 ], GEPA [ 1], and AFlow [ 33 ]; program- and system-level methods include FunSearch [ 25 ], AlphaEvolve [ 22 ], AdaEvolve [ 4 ], and EvoX [ 17 ]; and multi-agent design methods such as ADAS [ 12 ], EvoAgent [ 31 ], and GPTSwarm [ 37 ] search over agent topologies or collaboration patterns. These searchers consume scalar scores or free-form reflections as their feedback signal. AdaMAST is orthogonal to them: it prescribes no search algorithm, mutation operator, or workflow representation; it supplies the diagnostic signal such a search consumes. Rather than proposing a competing optimizer, we plug AdaMAST into an existing one (AdaEvolve); our search results are therefore evidence about the vocabulary, not about a new search method. 
+
+## 3 Method 
+
+We first define the terminology. A failure mode is a recurring way an agent execution deviates from its intended outcome (e.g., Premature_Reasoning_Truncation : “agent stops a multi-step chain before reaching a final answer”), characterized by a name, description, and evidence pattern. A failure taxonomy is a structured catalogue of such modes; each entry is a failure code . The taxonomy is the artifact this paper produces. It is inert on its own: it is exercised by consumers ,trace-reading procedures that would otherwise diagnose raw trajectories from scratch in free text. We call a consumer taxonomy-conditioned when the failure-relevant portion of its output is constrained to the taxonomy’s code set: it reports which codes fired, on which evidence, and with what supporting 3excerpts. Conditioning is a property of this interface, not of any particular component. The condi-tioned reader may be a separate LLM call that inspects trace evidence and returns a verdict (a judge ), the acting agent itself checking its own trace mid-run, or a bank of per-code scoring prompts inside a verifier. Judges predate this work and require no taxonomy: an unconditioned judge simply returns whatever form its prompt requests: a scalar score, a free-text critique, or an unconstrained structured diagnosis. AdaMAST introduces none of these consumers; it supplies the vocabulary they share. A · System-level   
+
+> A.1 Stagnation anomaly
+> “Output: FINAL ANSWER: 0”
+> A.3 Instruction non-compliance
+> “…Problem statement missing.”
+
+B · Role-specific   
+
+> B.1 Checker non-compliance
+> “…prompts instead of solving.”
+> B.6 Coordinator aggregation
+> “aggregated results conflict…”
+
+C · Domain-specific   
+
+> C.2 Edge-case omission
+> …enumerated but not validated
+> C.5 Combinatorics misreasoning
+> Naive counting decompositions
+
+Figure 1: Three adaptive failure axes. The axes of intervention are fixed; the concrete code names, definitions, role labels, and evidence patterns are induced from the target system’s traces. Shown: representative codes from the OlympiadBench evolution run, with verbatim evidence excerpts from the run’s judge outputs in quoted italics (Appendix G.2); unquoted lines under C-codes are induced code descriptions (Table 6). Given execution traces from a target system, AdaMAST induces a compact, target-specific taxonomy organized along the three fixed axes introduced in Section 1: Axis A (system-level), Axis B (role-specific), and Axis C (domain-specific). By induce we mean inductive generalization from a sample of traces to a reusable vocabulary: every code is generated from, and grounded in, observed trace evidence rather than authored in advance. We avoid infer deliberately, since it would wrongly suggest a hidden ground-truth taxonomy waiting to be recovered, when there is none. The axes partition failures by intervention point: a failure belongs to Axis A if the remedy is to repair the harness or orchestration around the agents, to Axis B if it is to rewire a discovered role, and to Axis C if it is to inject task knowledge. Throughout the paper we refer to individual codes by axis letter and index (e.g., A.3, B.6, C.2). Figure 1 illustrates the axes; a full generated taxonomy for Frontier-CS, including firing frequencies, appears in Appendix A. The axes differ in how candidate codes are sourced, and hence in when codes can appear at all. System-level and domain-specific candidates are seeded by broad priors that the pipeline’s own  
+
+> ANALYSIS
+
+phase proposes (coarse architectural-risk patterns and common domain error modes, suggested before any individual trace is examined for supporting evidence; no prior is authored offline by a human) and a seeded candidate is retained only when trace evidence supports it. Role-specific candidates are fully trace-induced: the relevant roles are themselves discovered from the target architecture and admit no general catalogue. Role codes therefore exist only when the architecture contains differentiated roles: the multi-agent Frontier-CS pipeline induces 13 role codes, while a flat solver–verifier pipeline on TheoremQA induces none. 
+
+3.1 Generating the taxonomy 
+
+The taxonomy generator converts a pool of execution traces into a validated code set through four phases: ANALYSIS , CURATION , CONSOLIDATION , and INTER -ANNOTATOR AGREEMENT (Figure 2). The split is deliberate. ANALYSIS first extracts the domain context, discovered agent roles, and recurring behavioral signals from the traces, so that code generation is grounded in observed behavior rather than generic failure templates. CURATION then proposes candidate codes separately per axis.  
+
+> CONSOLIDATION
+
+removes cross-axis duplicates under strict boundary rules, repairs naming violations, rejects placeholder or unsupported codes, and enforces per-role and per-subdomain coverage. In our implementation these three phases compile to the eight LLM calls itemized in Appendix B.1 (the Axis B step issues one prompt per active role), which also lists the prompts and the per-step checklist. Generating a taxonomy is a one-time, eight-call cost per target system, amortized across every downstream procedure and trace that later consumes it (cost accounting in Appendix B.5). 
+
+> INTER
+
+-ANNOTATOR AGREEMENT is the deployment gate (full protocol in Appendix B.2). Four LLM annotators independently label the same held-out trajectories under five sequential phases: 41
+
+> Trace Analysis
+> 2
+> Failure Curation
+> 3
+> Failure Consolidation
+> 4
+> Inter-Annotator Agreement
+> Final Taxonomy
+> System-level
+> Role-specific
+> Domain-specific
+
+Figure 2: AdaMAST pipeline. ANALYSIS , CURATION , and CONSOLIDATION produce a draft taxonomy (eight LLM calls; Appendix B.1). INTER -ANNOTATOR AGREEMENT gates deployment: four independent LLM annotators label stratified held-out traces under a five-phase deliberation protocol, over up to five rounds of five traces each; the taxonomy is accepted once mean pairwise area-level agreement reaches κ ≥ 0.75 with a coverage floor of 0.70 , and a failed round triggers merge/add/relabel edits and re-runs (Appendix B.2). independent error discovery, error reconciliation under a 2-of-4 quorum, failure typing into the A/B/C axes, code assignment with format validation, and code-level deliberation bounded at two rounds, while a shared knowledge base of decision rules, anchor examples, and tracked confusion pairs accumulates across rounds. Each round labels five stratified held-out traces; up to five rounds run, terminating early once agreement, computed as mean pairwise Cohen’s κ over the four annotators, reaches 0.75 at the failure-area level with a coverage floor of 0.70 . When the target is not met, the gate proposes targeted taxonomy edits (merging overlapping codes, adding codes for uncovered failures, relabeling codes whose boundaries have drifted) and re-runs on the revised taxonomy. This gate certifies that the taxonomy is consistently applicable ; it does not certify that its codes are correct. Correctness is assessed externally, against expert human annotations, in Section 5.1. 
+
+Online refinement: The gate’s edit operators also serve taxonomy maintenance after deployment. Because a taxonomy describes the system whose traces produced it, any consumer whose target system changes can invoke an online refinement round: the current taxonomy is replayed against a pool of recent traces and merge, add, and relabel edits are proposed, exactly as in the gate’s failure loop. Refinement is thus a property of the taxonomy lifecycle rather than of any one integration; Section 3.3 instantiates its trigger for search, where the target system changes fastest. Each refinement event adds a bounded number of calls on top of this one-time cost (Appendix B.5). 
+
+3.2 Applying the taxonomy 
+
+Once gated, the taxonomy is exercised by taxonomy-conditioned consumers. The conditioned reader inspects whatever trace evidence the surrounding procedure exposes (a completed trajectory, a batch of failed runs, or a mid-run checkpoint summary) and returns fired codes with supporting evidence. Both the evidence granularity and the role of the output are properties of the consumer, not of the taxonomy: the same code set supplies aggregate diagnoses for a mutation prompt in search (Section 3.3), next-step guidance at runtime checkpoints (Section 3.4), and per-code selection criteria over completed trajectories (Section 3.5). Consumers are also not read-only users of the artifact: whenever the target system or its trace distribution shifts, any of them can invoke the online refinement round of Section 3.1 to keep the vocabulary current. The next three subsections specify each consumer. 
+
+3.3 AdaMAST for agent-system search 
+
+The first integration setting is agent-system search : improving the next generation of agents by rewriting prompts, multi-agent topologies, or surrounding tooling. We build on AdaEvolve [ 4]. Given a seed agentic system and a task evaluator, AdaEvolve iteratively mutates the system’s source code to improve evaluator scores, maintaining a population of candidate variants and selecting which to mu-tate next based on prior performance. AdaMAST plugs into this loop at the mutation step. Instead of mutating from score-only feedback, the mutator receives a taxonomy-based diagnosis of the parent’s execution traces: recurring failure codes, quoted evidence, and cross-problem patterns that explain 5why the parent failed (e.g., on OlympiadBench, B.6 Coordinator_Aggregation_Mismatch fires with quoted evidence that aggregated results conflict due to divergent FINAL ANSWER lines across branches; representative full diagnoses in Appendix G). Here the online refinement round of Sec-tion 3.1 triggers on stagnation of the evaluator score and operates over the post-warmup trace pool, so the vocabulary co-evolves with the system it describes: search changes the system, the system’s new traces revise the taxonomy, and the revised taxonomy shapes the next round of search. Warmup length, stagnation window, and minimum refinement interval are in Appendix B (Table 10); results are in Section 4.2. 
+
+3.4 AdaMAST for runtime monitoring 
+
+The second integration setting is runtime monitoring : surfacing failure modes during an ongoing trajectory rather than after it ends. The induced taxonomy enters the acting agent’s context, and the agent itself is the taxonomy-conditioned reader, reviewing its own recent trace declared checkpoints. 
+
+AdaMAST -based reflection is anchored to the system’s known failure modes, at no additional LLM calls beyond the agent’s own. Delivery follows the harness’s capabilities: where the harness exposes mid-run hooks, the taxonomy attaches as a drop-in runtime skill ( Claude Code fires checkpoints after tool calls, sub-agent completion, or task completion); where it does not, checkpoints are declared in the agent’s instructions and enforced at submission ( SWE-agent ). Checkpoints come in three kinds: observable checkpoints tied to environment events, introspective checkpoints tied to agent state transitions, and a mandatory pre-submission check; the number and placement differ based on the harness. A check that surfaces fired codes can trigger a bounded repair loop of at most three attempts, after which the agent must report any remaining issues rather than claim success. Per-harness checkpoint schedules and repair-gate details appear in Appendix H; results are in Section 4.3. 
+
+3.5 AdaMAST for trajectory selection 
+
+The third integration setting is trajectory selection : given N independent agent trajectories on the same task and no ground-truth checker, choose the trajectory that actually succeeded [27]. We refer to the artifact that consumes an adaptive taxonomy in this regime as AdaMAST -Judge: a verifier that converts induced failure codes into criteria for judging completed trajectories. The contribution is the criteria supplied by the induced taxonomy, not the surrounding LLM-as-a-Verifier pipeline [15]. 
+
+AdaMAST -Judge turns each induced code into a verification criterion matched to how that failure shows up in a trace: semantic failure modes become LLM scoring prompts (“does this trajectory exhibit Defensive_Pivoting ?”), while failures with structural signatures become inexpensive heuristic checks (trace length for premature termination, retry counts for repetitive loops). A per-harness forward selector under leave-one-task-out cross-validation then retains only the most dis-criminative criteria. The pool of candidate criteria follows from the induced taxonomy rather than being fixed in advance; a different target system yields a different pool (cost and implementation details in Appendix B.5). Because selection routes the vocabulary through this learned machinery, its gains reflect both the codes and the selector that consumes them; search and runtime monitoring, where codes are consumed directly, carry the cleanest vocabulary claims. Experimental results are in Section 4.4. 
+
+## 4 Experiments 
+
+We evaluate whether induced failure taxonomies improve the trace-consuming procedures that use them. Each integration setting tests its own thesis about where the taxonomy earns its keep. Agent-system search (Section 4.2): taxonomy-coded diagnoses in the mutation prompt produce better post-search architectures than free-form reflection. Runtime monitoring (Section 4.3): a failure vocabulary consumed at runtime checkpoints raises resolution both on a harness that natively self-verifies and on one where reflection must be prompted. Trajectory selection (Section 4.4): fired codes discriminate passing from failing trajectories even when routed through a learned selection substrate. Together these support one claim: an induced failure vocabulary is reusable structure for improvement procedures, not a single mechanism. The artifact-level properties of the vocabularies themselves (compactness, human faithfulness, adaptivity) are established separately in Section 5. 6Table 1: Post-search accuracy per benchmark. AdaMAST adds taxonomy-coded failure feedback to the mutation prompt; LLM Guidance is the default AdaEvolve mutation loop. Pre-Evol is the seed architecture’s score before evolution. TheoremQA and DROP report means over the multi-seed replications of Appendix C.1 ( n=4 and n=5 seeds); MMLU-Pro is a two-seed mean; Frontier-CS and OlympiadBench are single runs. Per-benchmark experimental details are in Appendix B.                         
+
+> Benchmark Problems Pre-Evolution LLM Guidance AdaMAST
+> Frontier-CS (132 unseen) 132 20 .8% 26.0% 32.7%
+> OlympiadBench (655 held-out) 655 84.6% 87.9% 91.9%
+> MMLU-Pro (STEM QA) 40 21.3% 35.0% 42.5%
+> TheoremQA (math) 30 39.0% 60.0% 65.0%
+> DROP (discrete reasoning) 30 80.3% 88.2% 91.7%
+
+4.1 Setup Benchmarks and integration settings. We evaluate three integration settings. For agent-system search , we use Frontier-CS [ 19 ], OlympiadBench, MMLU-Pro [ 29 ], TheoremQA [ 5], and DROP [ 8 ]. For runtime monitoring , we use SWE-bench Verified Mini under two harnesses, Claude Code and SWE-agent [ 30 ]. For trajectory selection , we use Terminal-Bench 2.0 [ 21 ], where each task has five pre-recorded trajectories. 
+
+Models. Evolution experiments use AdaEvolve [ 4] as the shared search backbone, with GPT-5.4-mini used for taxonomy generation, mutation, solver agents, and the free-form reflection baseline. Runtime integration uses Claude Haiku 4.5 in the Claude Code harness and GPT-5 in the SWE-agent harness. Terminal-Bench selection uses GPT-5.4 as the verifier for all methods. 
+
+Matched comparisons. Our comparisons hold the surrounding procedure fixed and vary only the source of failure feedback. Search uses the same AdaEvolve backbone, seed architecture, and iteration number; within each runtime harness, variants use the same solver, instance set, and evaluation protocol; selection uses the same trajectory pools and verifier pipeline. This isolates whether replacing free-form or fixed failure feedback with induced taxonomy feedback changes the downstream procedure. Full implementation details, prompts, seeds, and ablations are in Appendix B. 
+
+4.2 Agent-system search across reasoning benchmarks 
+
+The thesis of this experiment: coded diagnoses give the mutation operator better targets than free text. Both arms share the AdaEvolve backbone, seed architecture, and compute budget; the only difference is the failure feedback injected into the mutation prompt (Section 3.3). The baseline receives AdaEvolve’s default free-form LLM reflection; AdaMAST receives a taxonomy-coded diagnosis of the parent’s failed traces: fired codes, quoted evidence, and cross-problem patterns. Frontier-CS OlympiadBench MMLU-Pro TheoremQA DROP 
+
+> 0
+> 25
+> 50
+> 75
+> 100
+> Post-search accuracy (%)
+> 26.0
+> 87.9
+> 35.0
+> 60.0
+> 88.2
+> 32.7
+> 91.9
+> 42.5
+> 65.0
+> 91.7
+> LLM Reflection
+> AdaMAST
+
+Figure 3: Search gains across benchmarks. Post-search accuracy of AdaMAST and the LLM Reflection baseline in Table 1, across competitive programming, mathematical reasoning, STEM QA, and discrete reasoning. AdaMAST improves on all five benchmarks, by +3 .4 to +7 .5 pp. 70 20 40 60 80 100       
+
+> Evolution iteration
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> Best dev score (20 problems)
+> iter 69
+> verifier gate
+> iter 89
+> planner upstream
+> (a) Development trajectory
+> Vanilla
+> AdaMAST
+> Seed Vanilla MAST AdaMAST
+> 0
+> 25
+> 50
+> 75
+> 100
+> Held-out accuracy (%)
+> 84.6 87.9 89.5 91.9
+> (b) Held-out accuracy
+
+Figure 4: OlympiadBench search mechanism. (a) Best dev score per iteration for the vanilla baseline and AdaMAST ; both share the AdaEvolve substrate and seed architecture, and only the mutation feedback differs. The open circle marks the vanilla run’s exhaustion at iteration 26 (dev score 0.30 ). (b) Held-out accuracy on 655 problems across the seed, vanilla, MAST-guided, and 
+
+AdaMAST -guided architectures. We read this figure as a within-run mechanism trace, not an independent causal ablation. 
+
+Search improves across domains. Taxonomy-guided mutation outperforms LLM Reflection on all five benchmarks (Figure 3): +6 .7 pp on Frontier-CS, +4 .0 pp on OlympiadBench, +7 .5 pp on MMLU-Pro, +5 .0 pp on TheoremQA, and +3 .5 pp on DROP. The largest benchmark, Olympiad-Bench, provides the cleanest held-out estimate: the AdaMAST -evolved architecture reaches 91 .9% 
+
+on 655 held-out problems, compared with 87 .9% for free-form reflection and 89 .5% for a third arm, run only on this benchmark, whose search is guided by the fixed MAST checklist. The small-benchmark seed details and auxiliary search ablations are reported in Appendix C. 
+
+Case study: evolution on OlympiadBench. OlympiadBench has the largest held-out set and the longest evolution trace, so we use it to look inside the search. Figure 4(a) compares the AdaMAST 
+
+run with the vanilla run (same backbone and seed, no taxonomy feedback). Vanilla saturates at iteration 26 with dev score 0.30 ; AdaMAST reaches 0.40 early, then jumps to 0.50 at iteration 69 and 0.55 at iteration 89, and the gains carry to held-out accuracy (Figure 4(b)). Both jumps are code-driven (Table 2): the codes fired on the parent map onto the architecture edits in the child, most directly at the second breakthrough, where B.6 (coordinator aggregation mismatch) prompts the promotion of verification from a binary gate to a score boost. And the codes are signal, not decoration: they fire disproportionately on breakthrough parents, and all existed in the taxonomy before the jumps, so the gains come from the mutator acting on established codes. Judge outputs, base rates, and architecture diffs are in Appendix G. 
+
+Takeaway. Taxonomy-coded diagnoses in the mutation prompt beat free-form reflection on all five benchmarks, spanning competitive programming, mathematical reasoning, STEM QA, and discrete reasoning, with gains of +3 .4 to +7 .5 pp under the same search backbone and budget. 
+
+4.3 Runtime monitoring on SWE-bench Verified Mini 
+
+We evaluate AdaMAST -based reflection on SWE-bench Verified Mini under two harnesses, Claude Code [ 2] (Claude Haiku 4.5 solver) and SWE-agent [ 30 ] (GPT-5 solver). The checkpoint interaction is the same in both: the agent pauses, inspects its recent steps for the failure modes named by whatever anchors the checkpoint, and repairs any it finds before proceeding (Section 3.4); in the AdaMAST 
+
+arms, the anchor is the induced taxonomy. The harnesses differ in two native properties. First, checkpoint delivery: Claude Code exposes hooks that fire automatically mid-run (after a tool call, when a sub-agent finishes, at task completion), so the taxonomy attaches as a drop-in runtime skill; SWE-agent has no such enforcement logic, so 8Table 2: Code-driven architectural changes on OlympiadBench. At each breakthrough, the codes fired on the parent iteration identify recurring failure patterns, which the mutation operator turns into concrete architecture edits.                 
+
+> Breakthrough Fired codes (parent) Architecture mutation Dev score iter 67 →69 A.3 instruction compliance; B.3 refiner stagnation; C.2 edge-case omission final-answer verifier; tournament solver pool; edge-case checks in solver prompt
+> 0.40 →0.50
+> iter 79 →89 A.6 verifier mismatch; B.6 co-ordinator aggregation; C.3 over-general prerequisites planner moved upstream; verifier pro-moted to score boost; problem-class assumption prompts
+> 0.50 →0.55
+
+Table 3: Runtime integration on SWE-bench Verified Mini. Resolution rate per feedback arm under the two harnesses. Claude Code (Haiku 4.5 solver): average of three seeds of 50 instances each (150 sessions per arm). SWE-agent (GPT-5 solver): one seed of 50 instances. Reflexion runs only under SWE-agent, where reflection must be prompted. The two harnesses are separate case studies; comparisons are within a column. Protocols and per-code firing analysis are in Appendix H. Variant Claude Code SWE-agent Base 64.0% 50% Reflexion [26] – 60% MAST [3] 67.3% 68% 
+
+AdaMAST 70.7% 70% 
+
+checkpoints are declared in the agent’s instructions and enforced by a submit-gate (Appendix H). Second, native self-verification: Claude Code verifies its own edits unprompted as part of its loop, while SWE-agent triggers reflection only when prompted to. The two harnesses are therefore separate case studies, not a controlled pair—different solvers, different scaffolds, no number compared across them; all controlled comparisons are within a harness. Each study carries its own thesis: on Claude Code, whether anchoring an agent that already self-verifies to its induced failure vocabulary further resolves it; on SWE-agent, where reflection must be added wholesale, what content the added reflection should carry. The SWE-agent arms form a ladder for that question: Base (no reflection), Reflexion (prompted free-text reflection at the checkpoints), MAST [ 3 ] (the same checkpoints anchored to the fixed 14-code checklist), and AdaMAST (the same checkpoints anchored to the induced vocabulary); the three reflection arms share the identical in-prompt scaffold and differ only in content. On Claude Code, comparisons are against vanilla Base and the published 14-code MAST checklist delivered through the identical runtime-skill integration. Checkpoint schedules are in Appendix H. 
+
+Claude Code: an anchored vocabulary raises resolution on a harness that can already verify its work. AdaMAST resolves more instances than Base on every seed (Table 3), with paired per-seed gaps of +10 / + 8 / + 2 %, and edges MAST, delivered through the identical skill integration, by 
+
++3 .3% in the aggregate. Post-hoc code-firing analysis is consistent with the gain being specific to the induced vocabulary rather than a generic checklist effect: in this harness, the induced 32-code taxonomy’s role axis names single-agent phases (Edit/Plan/Verify) rather than multi-agent roles, and the induced vocabulary primarily reduces verification-phase failures, including B.8 Verify ignored import or syntax errors and B.6 Plan skips verification loop , while MAST’s reductions concentrate on broader patch-footprint errors ( B.3 Edit overbroad patch footprint ). At the instance level the gain is concentrated where it counts: AdaMAST converts instances that resolve only occasionally under Base into reliable resolves (Appendix H). 
+
+SWE-agent: under an identical checkpoint scaffold, the induced vocabulary is the strongest anchor. On SWE-agent (Table 3), AdaMAST -based reflection resolves 35 /50 instances ( 70% ): 
+
++20 % over Base, +10 % over free-text Reflexion, and +2 % over the fixed MAST checklist. Because the three reflection arms share the identical scaffold and differ only in what anchors the check, the ordering isolates content: adding prompted reflection at all recovers +10 % over Base, anchoring it to a 9Table 4: Best-of-5 selection accuracy on Terminal-Bench 2.0. The MAST row substitutes the published 14-code MAST taxonomy [ 3] into the same verifier pipeline used by AdaMAST -Judge; only the failure vocabulary changes.                   
+
+> Method terminus-2 claude-code ForgeCode Pass@1 (no selection) 61.8% 57.5% 81.8% LLM-as-a-Verifier [15] 71.2% 61.2% 86.5% MAST [3] 68.5% 69.0% 88.8%
+> AdaMAST -Judge 73.0% 72.4% 89.9%
+> Best-of-5 oracle 77.5% 80.5% 89.9%
+
+categorical vocabulary adds a further +8 % (MAST over Reflexion), and the induced, harness-specific vocabulary adds another +2 %. 
+
+Takeaway. Consumed at runtime checkpoints, as a drop-in skill on Claude Code, or in-prompt on SWE-agent, the induced vocabulary raises resolution on both harnesses: 64 .0% → 70 .7% 
+
+on Claude Code and 50% → 70% on SWE-agent, above free-text reflection ( 60% ) and the fixed MAST checklist ( 68% ). 
+
+4.4 Trajectory selection on Terminal-Bench 2.0 
+
+Finally, we evaluate the trajectory-selection setting of Section 3.5 on Terminal-Bench 2.0, choosing among each task’s five pre-recorded trajectories with no ground-truth checker at selection time. The thesis here is structural: fired failure codes carry enough signal to rank completed trajectories. We use three harnesses: terminus-2 [ 21 ], claude-code [ 2], and ForgeCode [ 28 ]. The trajectory pool is fixed across methods, so any difference comes from the selector rather than new agent samples. 
+
+AdaMAST -Judge improves over Pass@1 by +11 .2, +14 .9, and +8 .1 pp across the three harnesses, and improves over MAST by +4 .5, +3 .4, and +1 .1 pp. On ForgeCode, both MAST and AdaMAST 
+
+approach the oracle ceiling, so the comparison is less informative. A held-out 5-fold validation regenerates the taxonomy on train folds and evaluates on held-out task categories; held-out accuracy meets or exceeds the same-pool result on the two non-saturated configurations, reducing concern that the taxonomy overfits the evaluation pool. 
+
+Failure codes discriminate passing from failing trajectories. Taxonomy-guided selection presup-poses that fired codes track true failure. To test this directly, we apply the ForgeCode AdaMAST 
+
+taxonomy to all 85 trials of the 17 ForgeCode swing tasks (tasks whose five trials mix pass and fail, the only ones where selection can change the outcome) and count fired codes (Figure 5). Passing trajectories fire fewer codes than failing trajectories: median 3 versus 4. A selector that picks the trial with the fewest fired codes reaches 67% expected swing-task accuracy, compared with 58% for uniform Pass@1-style selection. The failure-mode signal is informative before adding the learned verifier substrate. 
+
+Selection is substrate-sensitive. Selection routes taxonomy criteria through the feature selector and heuristic verifier substrate of Section 3.5, so the gain reflects both the induced vocabulary and the selection pipeline that consumes it. We therefore treat Terminal-Bench as evidence that failure codes are useful for selection, and reserve the cleanest claims about adaptive vocabulary content for the regimes where the taxonomy is consumed directly. The detailed selection ablations, including wrong-domain taxonomies, cheaper verifiers, top-K codes, token-matched context, and cross-verifier replication, are in Appendix D. 
+
+Takeaway. Fired codes rank completed trajectories: AdaMAST -Judge improves best-of-5
+
+accuracy by +8 .1 to +14 .9 pp over Pass@1, retaining +3 .4/+4 .5 pp over the fixed MAST vocabulary on the two non-saturated harnesses. 
+
+10 0 1 2 3 4 5 6 7 8 9 10 11 12 
+
+> Fired codes
+> 0
+> 3
+> 6
+> 9
+> 12
+> Trials
+> median 3
+> median 4
+> (a) Fired codes per trial
+> Pass (n=49)
+> Fail (n=36)
+> Pass@1
+> (uniform)
+> Min-failures
+> (AdaMAST)
+> 0%
+> 20%
+> 40%
+> 60%
+> Swing-task accuracy  58%
+> 67%
+> (b) Selector accuracy
+
+Figure 5: Fired codes and trajectory outcome. The ForgeCode AdaMAST taxonomy is applied to every trial of the 17 ForgeCode swing tasks. (a) Distribution of fired codes for passing versus failing trajectories; triangles mark the medians (3 for passing, 4 for failing). (b) Expected swing-task accuracy of a fewest-fired-codes selector versus uniform selection ( 58% → 67% , +9 pp). 
+
+## 5 Taxonomy Validation and Analysis 
+
+The experiments above test whether induced failure vocabularies improve downstream procedures. We now analyze the taxonomies themselves. We ask whether the induced codes align with human failure judgments, whether different domains induce different vocabularies, whether taxonomy-guided search changes the observed failure surface over time, and how much of a trace’s failure-relevant content the codes retain relative to their size. 
+
+5.1 Human-anchored validation on TRAIL 
+
+An induced taxonomy is useful only if its codes name failures that are recognizable beyond the LLM that generated them. We test this on TRAIL [ 7], which contains 117 GAIA-derived traces annotated by four software-engineering experts under a hand-crafted 20-category taxonomy. 
+
+Agreement with expert labels. A four-LLM panel applies the AdaMAST -induced TRAIL tax-onomy using span-grounded prompts, one round of peer deliberation, and majority vote. The panel reaches Cohen’s κ=0 .725 against the four-expert human gold at the failure-area level (2-of-4 consen-sus threshold; Table 21). This indicates that the induced codes recover broad human-recognizable failure areas rather than merely forming an internally consistent LLM labeling scheme. Substitut-ing a same-model panel (four GPT-5.4 annotators) for the cross-family panel lowers agreement from κ=0 .682 to 0.625 at the 1-of-4 reporting threshold under an otherwise identical protocol (Ap-pendix F), indicating that at this threshold the alignment is carried by the induced codes rather than by a labeling regime shared within one model family. 
+
+Vocabulary isolation. To isolate the value of the induced vocabulary itself, we hold the panel and prompts fixed and vary only the taxonomy consumed by the annotators (Table 5). TRAIL’s hand-crafted 20-category vocabulary yields area-κ=0 .516 , while AdaMAST ’s induced vocabulary yields area-κ=0 .682 . Thus, under the same annotation procedure, the induced vocabulary better matches expert-labeled failure areas. Fine-grained leaf-level agreement, prompt details, annotator agreement, and the mapping between induced codes and TRAIL categories are reported in Appendix F. 
+
+5.2 Cross-domain taxonomy variation 
+
+If AdaMAST were merely rediscovering a fixed generic checklist, the code sets induced for different domains would substantially overlap. They do not: across six evolution domains, full code sets overlap at a mean pairwise Jaccard of only 0.14 , so most codes are specific to the agent roles, tools, and task distribution that produced the traces. Projected onto a universal failure backbone, overlap rises to 0.50 : the domains share broad cross-cutting failure families while disagreeing on nearly every 11 Table 5: TRAIL faithfulness. Area-level Cohen’s κ against the four-expert TRAIL gold. The first two rows hold the annotation panel and prompts fixed and vary only the vocabulary; the third row runs the full AdaMAST protocol on the induced vocabulary.         
+
+> Vocabulary Annotation protocol Area-κ
+> TRAIL hand-crafted (20 categories) matched panel + prompts 0.516
+> AdaMAST -induced matched panel + prompts 0.682
+> AdaMAST -induced span grounding + deliberation 0.725
+
+concrete code. This is the intended design: the top-level axes stay fixed, and the vocabulary inside them adapts to the target system (pairwise overlap matrices in Figure 9, Appendix A.6). 
+
+5.3 Failure modes over search 
+
+Does taxonomy-guided search change what fails, or only how often? On the OlympiadBench run (the longest recorded evolution trace), it changes what fails: by iteration 92, 12 of the 28 mid-run codes no longer fire and the severity-weighted failure burden drops by 23%, even though firings per iteration stay roughly constant. Failure modes are retired, and the remaining firings concentrate on harder residual cases. The mix also shifts with the architecture: as evolution adds roles, the role-specific (B) share of firings grows from 39.8% to 46.9%, while the domain-specific (C) share falls from 32.0% to 25.5% as the solver acquires domain guard rails, and the system-level (A) share stays flat. Finally, the two taxonomy-refinement events (iterations 29 and 78) each precede one of the run’s score jumps (iterations 69 and 89). This is not a causal ablation, but it is consistent with the vocabulary participating in the breakthroughs rather than labeling them after the fact. Per-code lifecycles, base rates, and post-hoc failure profiles are in Appendix G. 
+
+5.4 Codes as a compressed failure representation 
+
+The premise behind treating a taxonomy as a feedback interface is that named codes carry the failure-relevant content of a trace at a fraction of its size. On 223 traces from the SWE-bench runtime study (Section 4.3), coding compresses the failure-relevant content by ∼18 × without collapsing the distinctions between traces: all 30 codes fire across the corpus, the median trace fires 5 codes, and 
+
+89% of traces retain a unique code signature, so two traces almost never map to the same diagnosis (measurement details in Appendix E). The compressed artifact also functionally substitutes for the traces it summarizes. We freeze an induction pool of N ≤ 40 labeled runs and ask a consumer LLM (Qwen3.5-122B-A10B, Qwen3.5-27B) to predict held-out run success given either the verbatim pool or the taxonomy induced from it (protocol, all six context conditions, and full grids in Appendix E). On Terminal-Bench, the taxonomy matches the verbatim pool at every N for both consumers, while adding ∼95 × fewer context tokens (1.2K vs. 114 K). On TheoremQA, the taxonomy alone is the strongest condition at every N for the 27B consumer, beating the verbatim pool at N ≥ 10 (0.925 vs. 0.850 at N =20 , p ≤ .012 ) with 
+
+∼2K tokens against the pool’s 19 –40 K; for the 122B consumer, the taxonomy plus three labeled runs takes that role ( 0.917 at N =20 ) while accuracy under the verbatim pool degrades as the pool grows ( 0.767 at N =40 , below its 0.850 no-context baseline). Consumption is most effective when the taxonomy is simply present in context: a paired ablation that forces the consumer to audit the current run code-by-code before deciding lowers accuracy ( −0.13 to −0.24 , p ≤ .006 ) by biasing it toward predicting failure even when the run succeeds (Appendix E). A downstream procedure can therefore consume the taxonomy in place of the trace pool at one to two orders of magnitude less context. 
+
+## 6 Conclusion 
+
+AdaMAST treats an agent system’s failure vocabulary as infrastructure: induced once from the system’s own traces, validated once, and then consumed by every procedure that would otherwise re-derive its diagnosis in disposable free text. The three consumers we evaluated are deliberately dissimilar (an evolutionary search loop, a runtime self-check, a best-of-N verifier), yet each improved once its feedback was anchored to its system’s induced codes, and the artifact earned trust before any 12 downstream gain: compact enough to stand in for traces, faithful to expert judgment, and specific to the system that produced it. The general lesson is that between raw traces and scalar outcomes sits a missing representation: named, evidence-grounded, system-specific failure modes. Agents already generate the evidence of their own failures on every run; the cheapest improvement to an agent system may be to first learn, in its own terms, how it fails. 
+
+## References 
+
+[1] L. A. Agrawal, S. Tan, D. Soylu, N. Ziems, R. Khare, K. Opsahl-Ong, A. Singhvi, H. Shandilya, M. J. Ryan, M. Jiang, et al. Gepa: Reflective prompt evolution can outperform reinforcement learning. arXiv preprint arXiv:2507.19457 , 2025. [2] Anthropic. Claude code. https://docs.anthropic.com/en/docs/claude-code/ overview , 2025. Accessed: 2026-05-07. [3] M. Cemri, M. Z. Pan, S. Yang, L. A. Agrawal, B. Chopra, R. Tiwari, K. Keutzer, A. Parameswaran, D. Klein, K. Ramchandran, M. Zaharia, J. E. Gonzalez, and I. Stoica. Why do multi-agent llm systems fail? In Advances in Neural Information Processing Systems ,2025. [4] M. Cemri, S. Agrawal, A. Gupta, S. Liu, A. Cheng, Q. Mang, A. Naren, L. E. Erdogan, K. Sen, M. Zaharia, et al. Adaevolve: Adaptive llm driven zeroth-order optimization. arXiv preprint arXiv:2602.20133 , 2026. [5] W. Chen, M. Yin, M. Ku, P. Lu, Y. Wan, X. Ma, J. Xu, X. Wang, and T. Xia. Theoremqa: A theorem-driven question answering dataset. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 7889–7901, 2023. [6] C.-A. Cheng, A. Nie, and A. Swaminathan. Trace is the next AutoDiff: Generative optimization with rich feedback, execution traces, and LLMs. In Advances in Neural Information Processing Systems (NeurIPS) , 2024. [7] D. Deshpande, V. Gangal, H. Mehta, J. Krishnan, A. Kannappan, and R. Qian. TRAIL: Trace reasoning and agentic issue localization. arXiv preprint arXiv:2505.08638 , 2025. [8] D. Dua, Y. Wang, P. Dasigi, G. Stanovsky, S. Singh, and M. Gardner. DROP: A reading comprehension benchmark requiring discrete reasoning over paragraphs. In Proceedings of NAACL-HLT , pages 2368–2378, 2019. [9] S. Eyuboglu, M. Varma, K. Saab, J.-B. Delbrouck, C. Lee-Messer, J. Dunnmon, J. Zou, and C. Ré. Domino: Discovering systematic errors with cross-modal embeddings. In International Conference on Learning Representations (ICLR) , 2022. [10] C. Fernando, D. Banarse, H. Michalewski, S. Osindero, and T. Rocktäschel. Promptbreeder: Self-referential self-improvement via prompt evolution. arXiv preprint arXiv:2309.16797 , 2023. [11] Q. Guo, R. Wang, J. Guo, et al. Connecting large language models with evolutionary algorithms yields powerful prompt optimizers. In International Conference on Learning Representations (ICLR) , 2024. [12] S. Hu, C. Lu, and J. Clune. Automated design of agentic systems. In International Conference on Learning Representations (ICLR) , 2025. [13] A. S. Jia, D. Huang, N. Vytla, S. W. W. Yoo, N. Choudhury, S. Sen, J. C. Mitchell, and A. Datta. What is your agent’s GPA? a framework for evaluating agent goal-plan-action alignment. arXiv preprint arXiv:2510.08847 , 2025. [14] O. Khattab et al. DSPy: Compiling declarative language model calls into state-of-the-art pipelines. In International Conference on Learning Representations (ICLR) , 2024. [15] J. Kwok, S. Li, P. Atreya, Y. Liu, Y. Jiang, C. Finn, M. Pavone, I. Stoica, and A. Mirhoseini. Llm-as-a-verifier: A general-purpose verification framework, 2026. 13 [16] H. Lightman, V. Kosaraju, Y. Burda, et al. Let’s verify step by step. In International Conference on Learning Representations (ICLR) , 2024. [17] S. Liu, S. Agarwal, M. Maheswaran, M. Cemri, Z. Li, Q. Mang, A. Naren, E. Boneh, A. Cheng, M. Z. Pan, et al. Evox: Meta-evolution for automated discovery. arXiv preprint arXiv:2602.23413 , 2026. [18] A. Madaan et al. Self-refine: Iterative refinement with self-feedback. In Advances in Neural Information Processing Systems (NeurIPS) , 2023. [19] Q. Mang, W. Chai, Z. Li, H. Mao, S. Zhou, A. Du, H. Li, S. Liu, E. Chen, Y. Wang, et al. Frontier-CS: Evolving challenges for evolving intelligence, 2025. URL https://arxiv.org/ abs/2512.15699 .[20] N. McAleese, R. M. Pokorny, J. F. C. Uribe, E. Nitishinskaya, M. Trebacz, and J. Leike. Llm critics help catch LLM bugs. arXiv preprint arXiv:2407.00215 , 2024. [21] M. A. Merrill, A. G. Shaw, N. Carlini, B. Li, H. Raj, I. Bercovich, L. Shi, J. Y. Shin, T. Walshe, E. K. Buchanan, et al. Terminal-bench: Benchmarking agents on hard, realistic tasks in command line interfaces. arXiv preprint arXiv:2601.11868 , 2026. [22] A. Novikov, M. Balog, S. Chaudhuri, et al. AlphaEvolve: A coding agent for scientific and algorithmic discovery. arXiv preprint arXiv:2506.13131 , 2025. [23] M. Z. Pan, N. Arabzadeh, R. Cogo, et al. Measuring agents in production. arXiv preprint arXiv:2512.04123 , 2026. [24] M. T. Ribeiro, T. Wu, C. Guestrin, and S. Singh. Beyond accuracy: Behavioral testing of nlp models with CheckList. In Association for Computational Linguistics (ACL) , 2020. [25] B. Romera-Paredes, M. Barekatain, A. Novikov, et al. Mathematical discoveries from program search with large language models. Nature , 625:468–475, 2024. [26] N. Shinn, F. Cassano, A. Gopinath, et al. Reflexion: Language agents with verbal reinforcement learning. In Advances in Neural Information Processing Systems (NeurIPS) , 2023. [27] C. Snell, J. Lee, K. Xu, and A. Kumar. Scaling llm test-time compute optimally can be more effective than scaling model parameters. arXiv preprint arXiv:2408.03314 , 2024. [28] TailcallHQ. ForgeCode: An open-source multi-agent coding harness. https://github.com/ tailcallhq/forgecode ; https://forgecode.dev , 2026. Top-ranked open-source agent on Terminal-Bench 2.0 (Pass@1 81.8% with the Forge harness). [29] Y. Wang, X. Ma, G. Zhang, Y. Ni, A. Chandra, S. Guo, W. Ren, A. Arulraj, X. He, Z. Jiang, T. Li, M. Ku, K. Wang, A. Zhuang, R. Fan, X. Yue, and W. Chen. MMLU-Pro: A more robust and challenging multi-task language understanding benchmark. In Advances in Neural Information Processing Systems (NeurIPS), Datasets and Benchmarks Track , 2024. [30] J. Yang, C. E. Jimenez, A. Wettig, K. Lieret, S. Yao, K. Narasimhan, and O. Press. Swe-agent: Agent-computer interfaces enable automated software engineering. arXiv preprint arXiv:2405.15793 , 2024. [31] S. Yuan et al. EvoAgent: Towards automatic multi-agent generation via evolutionary algorithms. 
+
+arXiv preprint arXiv:2406.14228 , 2024. [32] M. Yuksekgonul, F. Bianchi, J. Boen, et al. TextGrad: Automatic “differentiation” via text. 
+
+arXiv preprint arXiv:2406.07496 , 2024. [33] J. Zhang, J. Xiang, Z. Yu, et al. AFlow: Automating agentic workflow generation. In Interna-tional Conference on Learning Representations (ICLR) , 2025. [34] L. Zhang, A. Hosseini, H. Bansal, M. Kazemi, A. Kumar, and R. Agarwal. Generative verifiers: Reward modeling as next-token prediction. arXiv preprint arXiv:2408.15240 , 2024. 14 [35] S. Zhang, M. Yin, J. Zhang, J. Liu, Z. Han, J. Zhang, B. Li, C. Wang, H. Wang, Y. Chen, and Q. Wu. Which agent causes task failures and when? on automated failure attribution of LLM multi-agent systems. arXiv preprint arXiv:2505.00212 , 2025. [36] L. Zheng, W.-L. Chiang, Y. Sheng, et al. Judging LLM-as-a-judge with MT-Bench and chatbot arena. In Advances in Neural Information Processing Systems (NeurIPS) , 2023. [37] M. Zhuge et al. GPTSwarm: Language agents as optimizable graphs. In Proceedings of the International Conference on Machine Learning (ICML) , 2024. 15 A Generated Taxonomy Examples 
+
+This appendix presents representative induced taxonomies. For each benchmark, we report a short context paragraph and the top-five failure codes by firing frequency. The full machine-generated catalogues, with code descriptions and per-iteration provenance, are released alongside the run artifacts. 
+
+A.1 TheoremQA Taxonomy (13 codes) 
+
+The TheoremQA evolution pipeline evaluates 30 graduate-level math problems with a flat solver-verifier architecture. Because the architecture has no differentiated roles, the induced taxonomy contains no role-specific B-codes. The dominant failure, Premature_Reasoning_Truncation ,names the pattern where the solver halts a multi-step derivation mid-calculation and emits an intermediate quantity as the final answer. The remaining high-frequency failures concern context exhaustion, unit handling, numerical precision, and instruction compliance. A · 4 C · 9 code mix      
+
+> 010 20 30 40 50
+> Firing frequency (%)
+> C.3 Premature reasoning truncation
+> A.1 Token exhaustion
+> C.1 Unit mismatch
+> C.5 Precision loss
+> A.3 Instruction compliance
+> 50%
+> 14%
+> 12%
+> 8%
+> 7%
+> .
+> .
+
+Figure 6: Top induced failure codes for TheoremQA (13 codes: 4 system, 9 domain). Bars show firing frequency; colors indicate the AdaMAST axis (A system, C domain). Failures concentrate on truncated derivations and unit/precision drift. 
+
+A.2 Frontier-CS Taxonomy (25 codes) 
+
+The Frontier-CS run produces a 25-code taxonomy (5A/13B/7C) for a competitive-programming multi-agent system spanning solver, reviewer, and classifier roles. Algorithm-mismatch, budget exhaustion, and stagnation are the most common failure modes; role-specific failures concentrate on solver bias toward familiar algorithms. A · 5 B · 13 C · 7 code mix     
+
+> 0510 15 20
+> Firing frequency (%)
+> C.1 Algorithm mismatch
+> A.4 Budget exhaustion
+> A.2 Payload corruption
+> B.1 Solver bias
+> A.5 Stagnation loop
+> 18.3%
+> 15.7%
+> 12.1%
+> 11.4%
+> 9.3%
+> .
+> .
+
+Figure 7: Top induced failure codes for Frontier-CS (25 codes: 5 system, 13 role, 7 domain). Bars show firing frequency; colors indicate the AdaMAST axis (A system, B role, C domain). Failures concentrate on algorithm-family mismatch, solver bias, and budget exhaustion. 16 A.3 OlympiadBench Taxonomy (36 codes) 
+
+The OlympiadBench taxonomy is refined across the 97-iteration run; the initial pre-refinement version contains 36 codes (16A/6B/14C); later snapshots are smaller, as refinement events retire more codes than they add. The most-fired codes target output-format compliance, solver reasoning quality, and combinatorial counting errors. Refinement events at iterations 29, 78, and 92 introduce new codes for failure modes the evolving architecture newly surfaces. (Table 8 reports the smaller final post-refinement snapshot of this taxonomy, 16 codes; the 36-code count here refers to the initial pre-refinement version.) Table 6: Top five OlympiadBench failure codes by firing frequency in the mid-run taxonomy. 
+
+Code Name Freq. Impact A.3 Instruction_Compliance_Violation 100% Final-answer format violations C.2 Edge_Case_Omission 94.4% Edge cases enumerated but not validated C.4 Algebraic_Manipulation_Gap 91.7% Incomplete or flawed algebraic steps A.1 Stagnation_Anomaly 91.7% Non-convergent iteration patterns C.5 Combinatorics_Counting_Misreasoning 88.9% Naive counting decompositions 
+
+A.4 Terminal-Bench Taxonomy 
+
+The Terminal-Bench taxonomy yields scoring criteria that target failure modes specific to the bench-mark’s task categories (security, machine learning, system administration, data science). Each induced code becomes an actionable verification criterion for AdaMAST -Judge. Table 7: Representative AdaMAST -derived verification criteria on Terminal-Bench 2.0. 
+
+Category Criterion What it catches System Premature_Termination Trajectory ends before task completion Security Defensive_Pivoting Subtle shift from offensive to defensive posture ML Training_Stall_Detection No error message, just timeout Sys-Admin Service_State_Verification systemctl fails in Docker, agent unaware Data Science Output_Format_Alignment Column-name case sensitivity 
+
+A.5 SWE-bench Taxonomy (30 codes) 
+
+The SWE-bench taxonomy is induced from SWE-agent trajectories on Verified Mini and contains 30 codes (8A/11B/11C). The dominant failures concern ad-hoc validation, misread root causes, and unclean patch contents. A · 8 B · 11 C · 11 code mix      
+
+> 020 40 60 80 100
+> Firing frequency (%)
+> C.1 Ad hoc validation only
+> A.5 Misread root cause
+> B.4 Over broad behavior change
+> C.5 No proper reproduction
+> C.3 No syntax or build check
+> 90%
+> 82%
+> 42%
+> 36%
+> 20%
+> .
+> .
+
+Figure 8: Top induced failure codes for SWE-bench under the SWE-agent harness (30 codes: 8 system, 11 role, 11 domain). Bars show firing frequency; colors indicate the AdaMAST axis (A system, B role, C domain). Dominant failures concern shallow validation and misread root causes. 17 A.6 Cross-domain taxonomy comparison 
+
+Table 8 compares the induced taxonomies across six evolution domains. Three patterns emerge. C-codes are entirely domain-specific (algorithm mismatch in competitive programming, physical-law violation in STEM QA, negotiation-leverage failure in economic simulation). B-codes appear only in multi-agent systems with specialized roles. A-codes form a partial universal backbone of cross-cutting failures. Two related overlap statistics appear in the paper and measure different things: Table 9 restricts to A-codes only and reports mean J = 0 .47 over the six Jaccard-comparison domains, while the universal-backbone projection of Section 5.2 projects full taxonomies onto a fixed set of cross-cutting failure tokens and yields 0.50 over the same six domains. Frontier-CS                                                     
+
+> Terminal-Bench
+> MMLU-Pro
+> TheoremQA
+> DROP
+> Marketplace
+> Frontier-CS
+> Terminal-Bench
+> MMLU-Pro
+> TheoremQA
+> DROP
+> Marketplace
+> 0.08 0.06 0.09 0.06 0.06
+> 0.08 0.11 0.17 0.14 0.17
+> 0.06 0.11 0.17 0.16 0.22
+> 0.09 0.17 0.17 0.17 0.30
+> 0.06 0.14 0.16 0.17 0.17
+> 0.06 0.17 0.22 0.30 0.17
+> mean off-diagonal J= 0.14
+> (a) Full induced code sets
+> Frontier-CS
+> Terminal-Bench
+> MMLU-Pro
+> TheoremQA
+> DROP
+> Marketplace
+> Frontier-CS
+> Terminal-Bench
+> MMLU-Pro
+> TheoremQA
+> DROP
+> Marketplace
+> 0.40 0.29 0.38 0.25 0.22
+> 0.40 0.50 0.70 0.60 0.70
+> 0.29 0.50 0.50 0.57 0.71
+> 0.38 0.70 0.50 0.44 0.75
+> 0.25 0.60 0.57 0.44 0.44
+> 0.22 0.70 0.71 0.75 0.44
+> mean off-diagonal J= 0.50
+> (b) Universal-backbone projection
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Jaccard  J
+
+Figure 9: Cross-domain code overlap. Pairwise Jaccard between the induced taxonomies for six evolution domains. (a) Full code sets (mean off-diagonal 0.14 ). (b) Each domain projected onto a universal failure backbone: a fixed set of cross-cutting failure tokens such as context exhaustion, looping, and format violation (mean 0.50 ). Table 8: Generated taxonomy size per domain (final snapshot per run; the OlympiadBench row is the post-refinement taxonomy, cf. the 36-code pre-refinement version above). The A column counts system-level codes, B counts role-specific codes, and C counts domain-reasoning codes. 
+
+Domain A B C Representative C-code Frontier-CS 5 13 7 Complexity_Class_Constraint_Mismatch OlympiadBench 6 5 5 Combinatorics_Counting_Misreasoning Terminal-Bench 10 16 18 Defensive_Pivoting MMLU-Pro 6 0 10 Physical_Law_Violation TheoremQA 4 0 9 Premature_Reasoning_Truncation DROP 4 0 10 Arithmetic_Operation_Error Marketplace 6 2 6 Negotiation_Leverage_Failure 
+
+A.7 Long-tail structure of induced codes 
+
+Induced taxonomies are concentrated: a handful of codes account for most firings, with a long tail of low-frequency codes. Figure 10 plots cumulative share of firings against the rank-sorted codes (Lorenz curve and log-rank) across the OlympiadBench, Frontier-CS, and three TheoremQA seeds. The top ∼20% of codes already cover ∼60–80% of firings depending on the run, and the curves have similar shapes across domains and seeds. 18 0% 20% 40% 60% 80% 100%  
+
+> Fraction of codes (rank-sorted)
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> Cumulative share of firings
+> 80%
+> 50%
+> (a) Lorenz curve
+> 10 010 1
+> Code rank (1 = most-fired)
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> (b) Log-rank scale
+> OlympiadBench
+> Frontier-CS
+> TheoremQA s42
+> TheoremQA s137
+> TheoremQA s2024
+
+Figure 10: Long-tail structure of induced taxonomies. (a) Lorenz curves: cumulative share of code firings against the rank-sorted fraction of codes; the top ∼20% of codes account for the bulk of firings on every run. (b) Same data on a log-rank axis. The shape is consistent across OlympiadBench, Frontier-CS, and three TheoremQA seeds, indicating that the concentration is a property of the induced vocabulary rather than of a single run. Table 9: Per-pair Jaccard similarity over A-code structural backbones across six evolution domains. Mean J = 0 .47 . The QA-style domains cluster tightly, while Frontier-CS sits furthest because its A-codes are dominated by tool-and-dependency failures. 
+
+Frontier-CS Terminal-B. MMLU-Pro TheoremQA DROP Marketplace Frontier-CS 1.00 – – – – –Terminal-Bench 0.25 1.00 – – – –MMLU-Pro 0.17 0.63 1.00 – – –TheoremQA 0.20 0.50 0.50 1.00 – –DROP 0.00 0.63 0.67 0.50 1.00 –Marketplace 0.17 0.63 1.00 0.50 0.67 1.00 
+
+## B Taxonomy Generation and Implementation Details 
+
+B.1 Taxonomy generation pipeline 
+
+The generator runs four stages: analysis, curation, consolidation, and inter-annotator agreement. 
+
+Analysis extracts the domain, agent roles, tools, and recurring behavioral signals from the trace pool. 
+
+Curation proposes candidate codes separately along the system-level, role-specific, and domain-specific axes. Consolidation merges duplicates, removes unsupported codes, and sharpens code boundaries. The agreement stage applies the candidate taxonomy to held-out traces with independent LLM annotators and accepts the taxonomy only if mean pairwise Cohen’s κ reaches 0.75 at the failure-area level with a coverage floor of 0.70 .Concretely the pipeline runs eight LLM calls. Step 1 (Domain analysis) characterizes the domain, subdomains, key terminology, and common error patterns from a stratified sample of traces. Step 2 (Role and topology discovery) extracts the agent set via regex pre-processing and a single LLM call that classifies agents into solver/checker/refiner/coordinator roles and identifies the architecture topology. Step 3 (A-codes) generates system-level failures from architecture and behavioral signals. 
+
+Step 4 (B-codes) generates role-specific failures, one prompt per active role, with each code tagged with an applies_to_role field. Step 5 (C-codes) extends the terminology-error seed patterns into domain-reasoning failures. Step 6 (Deduplication) removes cross-category duplicates under strict boundary rules. Step 7 (Structural validation) enforces naming conventions per category and repairs violations. Step 8 (Quality and coverage gate) rejects placeholder text and verifies that A-codes span seven canonical failure-pattern groups, every active role has at least one B-code, and every subdomain has at least one C-code. 19 B.2 Inter-annotator agreement gate 
+
+After Step 8, the draft taxonomy is validated against held-out traces through a multi-phase deliberative annotation protocol. Four LLM annotators independently label the same trajectories under five sequential phases: (1) independent error discovery, (2) error reconciliation with a 2-of-4 quorum, (3) high-level failure typing into Type A/B/C, (4) code assignment with format validation, and (5) code-level deliberation bounded at two rounds. A shared knowledge base of decision rules, anchor examples, and confusion-pair tracking accumulates across rounds. The protocol targets a mean pairwise Cohen’s κ ≥ 0.75 across the four annotators at the area level, with a coverage floor of 0.70 .Each round samples five stratified traces; up to five rounds run, terminating early when both targets are met. When the κ target is not met, the loop proposes targeted edits (merge, add, relabel) and re-runs against the revised taxonomy. 
+
+B.3 Models and prompts 
+
+Taxonomy generation, mutation, and free-form reflection use GPT-5.4-mini. Terminal-Bench selec-tion uses GPT-5.4 as the verifier for all methods, with all three agents based on Claude Opus 4.6. Runtime integration uses GPT-5 as the SWE-agent solver and Claude Haiku 4.5 as the Claude Code solver. TRAIL validation uses a four-model panel of Claude Opus 4.7, GPT-5.4, Gemini-2.5-Pro, and GPT-5.4-mini. Full prompt text for each pipeline step is released alongside the run artifacts. Table 10: Hyperparameter settings used in the search-side experiments.                     
+
+> Parameter Value Rationale Warmup rounds ( Nwarm )5Balances trace pool quality vs. compute Stagnation window ( w)10 iter. One full population evaluation cycle Stagnation threshold ( ϵ)0.10 Above per-iteration noise floor Min refine interval ( rmin )10 iter. Prevents back-to-back refinement Population size 20 Standard for island-model GA Number of islands 3Diversity without fragmentation Migration interval 8 iter. Allow island divergence before sharing Feedback codes injected ( K)5–7 Top codes by frequency Random seeds 42, 123, 456 Standard reproducible seeds
+
+Hyperparameters. Seed architecture. Every evolution run begins from the same minimal three-agent seed (analyzer, solver, verifier) with a sequential topology and a solve-verify-refine loop. Starting from the same seed across LLM-reflection and AdaMAST runs ensures the comparison isolates the contribution of taxonomy-coded feedback, not an architectural prior. 
+
+B.4 Benchmark splits and evaluation budgets Search benchmarks. Frontier-CS uses 132 unseen competitive-programming problems. Olympiad-Bench uses a 20-problem dev set during search and a 655-problem held-out test set for final evaluation. MMLU-Pro uses a 40-problem stratified STEM subset. TheoremQA uses 30 graduate-level math problems. DROP uses 30 discrete-reasoning problems. Each run uses an AdaEvolve budget of 40–100 iterations. 
+
+Runtime benchmark. SWE-bench Verified Mini contains 50 instances. Each SWE-agent run uses a per-instance limit of 75 LLM calls, a $4 per-task cost ceiling, and a $200 per-run cost ceiling at temperature 0 with greedy decoding. 
+
+Selection benchmark. Terminal-Bench 2.0 contains 89 tasks. We use 17–35 swing tasks per configuration (tasks with mixed pass/fail across 5 trials) under leave-one-task-out cross-validation. 
+
+TRAIL. TRAIL contains 117 GAIA-derived agent traces hand-annotated by four software-engineering experts under a 20-category taxonomy. No TRAIL labels are used to induce the 
+
+AdaMAST taxonomy. 20 B.5 Cost accounting AdaMAST adds LLM-call overhead with three recurring cost shapes (per-task for selection, per-iteration for search, per-checkpoint for runtime monitoring), plus a one-time per-domain taxonomy-generation cost of eight LLM calls that amortizes across all three uses. 
+
+Search-time overhead. Let N be the number of evolution iterations, T the tasks per iteration, K
+
+the LLM calls per task during evaluation. Evaluation cost is Ceval = N · T · K calls. Two overhead components: (i) a two-pass judge that fires only on novel parents, Cjudge = ρ·N ·(T +1) with ρ ≈ 0.4
+
+in our runs; (ii) refinement events, Crefine = O(r). The dominant ratio of overhead to evaluation cost in the large-N limit is ρ/K , which is small for any non-trivial multi-agent architecture. No overhead at deployment: the loop ships a Python program with no AdaMAST machinery in the runtime loop. 
+
+Runtime overhead. The AdaMAST runtime integration carries the taxonomy in the agent’s context and adds zero extra LLM calls. 
+
+Selection overhead. The 20 heuristic features are regex-based with negligible LLM cost. LLM-scoring overhead per task is at most 6N + N
+
+> 2
+
+ calls in the worst case where N is candidate trajectories; typically far less because the per-agent forward selector retains 5–10 of the 27 candidate features, often heuristic-heavy. 
+
+Per-arm runtime cost. The four-arm SWE-agent runtime study costs $24–28 per arm at 25 parallel workers; the three-arm Claude Code study costs $25–27 per arm (Table 27). The AdaMAST arm incurs an additional one-time taxonomy-generation cost of eight LLM calls. 
+
+## C Search Ablations and Replications 
+
+This appendix reports the search-side controls omitted from the main text. The main result in Section 4.2 holds the AdaEvolve substrate, seed architecture, and compute budget fixed while changing only the feedback source injected into the mutation prompt. These additional experiments test multi-seed stability, taxonomy transfer across domains, sample efficiency of induction, and replication under a different model backbone. 
+
+C.1 Multi-seed stability on small benchmarks 
+
+The main-table TheoremQA and DROP results use small evaluation sets, so we repeated the com-parison across additional seeds. Each paired comparison uses the same benchmark, AdaEvolve substrate, seed architecture, and iteration budget, changing only whether the mutation prompt receives taxonomy-coded feedback. Table 11: Multi-seed stability on small search benchmarks. Each entry reports post-search performance after AdaEvolve. These small benchmarks are used as directional replications of the main search result.                           
+
+> Benchmark LLM Reflection AdaMAST Per-seed gaps TheoremQA ( n=4 seeds) 60 .0±6.165 .0±4.3+3 .3,+3 .3,+10 .0,+3 .3
+> DROP ( n=5 seeds) 88 .2±3.091 .7±2.10.0,+7 .3,+2 .5,+5 .2,+2 .5
+
+TheoremQA improves in all four seeds; DROP improves in four of five seeds and ties in one. The small-benchmark replication is consistent with the main search result. 
+
+C.2 Wrong-domain taxonomy transfer in search 
+
+We test whether replacing the matched taxonomy with a wrong-domain taxonomy changes search performance. Search is the regime where the mutation prompt consumes the taxonomy text directly, so vocabulary mismatch can affect proposed architecture edits. 21 Table 12: Wrong-domain taxonomy transfer in search. MMLU-Pro post-search accuracy under matched and wrong-domain taxonomy feedback.           
+
+> Feedback taxonomy Mean accuracy Mean gap vs matched Matched MMLU-Pro taxonomy 37 .8%–Frontier-CS taxonomy 33 .3% −4.5pp TheoremQA taxonomy 35 .6% −2.2pp
+
+The matched taxonomy is best on average. The direction supports the regime distinction in the discussion: vocabulary content matters more when the downstream procedure consumes the taxonomy directly. 
+
+C.3 Sample efficiency of taxonomy induction 
+
+We test how many warmup traces are needed before an induced taxonomy becomes useful as search feedback. We induce TheoremQA taxonomies from N ∈ { 5, 10 , 20 , 40 } traces sampled with a deterministic seed, freeze each taxonomy, and run 40 iterations of AdaEvolve with refinement disabled. Table 13: Sample efficiency of taxonomy induction. TheoremQA post-search accuracy as a function of the number of traces used to induce the taxonomy. Even small trace pools produce useful feedback.                  
+
+> Induction traces Taxonomy size Post-search accuracy
+> N=5 13 codes 60 .0%
+> N=10 17 codes 60 .0%
+> N=20 16 codes 50 .0%
+> N=40 21 codes 56 .7%
+> Vanilla baseline –∼46 .7%
+
+The curve is not monotonic at this sample size, so we do not claim a scaling law in the number of induction traces. The useful conclusion is simpler: a small trace pool is already sufficient to produce feedback that improves over the vanilla search baseline. 
+
+C.4 Cross-model search replication 
+
+We replicate the search comparison under a different model backbone (Gemini-3-flash-preview) with three seeds per cell and 40 AdaEvolve iterations. This is a robustness check; several small benchmarks saturate near the ceiling. Table 14: Cross-model search replication. Paired AdaMAST -vs-vanilla gaps under a Gemini-3-flash-preview solver/judge/mutator backbone. The direction of the AdaMAST effect is non-negative across all reported benchmarks.                    
+
+> Benchmark Vanilla AdaMAST Mean gap TheoremQA 78 .9% 81 .1%+2 .2pp MMLU-Pro 90 .0% 100 .0%+10 .0pp DROP 98 .8% 99 .4%+0 .6pp OlympiadBench 71 .7% 86 .7%+15 .0pp
+
+The magnitudes differ from the main table because the solver model and evaluation regime differ. We include this replication to show that the direction of the AdaMAST effect is not tied to a single model family. 
+
+## D Selection Ablations 
+
+This appendix reports the Terminal-Bench selection ablations. The main text reports the headline selection result and the fired-code discrimination analysis. These ablations characterize the selection 22 substrate. Terminal-Bench selection is mediated by a feature selector and heuristic features, which makes selection a deployment-pattern study rather than an isolated test of vocabulary wording. 
+
+D.1 Wrong-domain taxonomy transfer 
+
+We replace the matched Terminal-Bench taxonomy with taxonomies induced from other domains and re-run the same AdaMAST -Judge pipeline. All auto-generated rows use the same 6-prompt prosecutor+health substrate, 20 heuristic features, forward feature selector, and leave-one-task-out cross-validation; only the taxonomy text changes. Table 15: Wrong-domain taxonomy transfer on Terminal-Bench 2.0. Full-benchmark accuracy when the matched taxonomy is replaced by a taxonomy generated for another benchmark. This ablation shows that the Terminal-Bench selector can recover useful signal even when taxonomy text is mismatched, because the feature selector can downweight unhelpful taxonomy prompts and rely on general trace features.                    
+
+> Source taxonomy terminus-2 claude-code ForgeCode ∗
+> Matched Terminal-Bench taxonomy 73 .0%72 .4%87 .6%
+> Frontier-CS taxonomy 73 .0% 70 .1% 87 .6%
+> OlympiadBench taxonomy 74 .2% 72 .4% 88 .8%
+> MMLU-Pro taxonomy 71 .9% 72 .4% 87 .6%
+> MAST-14 68 .5% 69 .0% 88 .8%
+> ∗ForgeCode uses the 26-feature apples-to-apples variant that omits the legacy MAST pairwise tiebreaker.
+
+D.2 Cheaper verifier 
+
+We test whether AdaMAST -Judge depends on the strong GPT-5.4 verifier by replacing it with GPT-5.4-mini while holding the matched taxonomy, 6-prompt substrate, 20 heuristic features, forward selector, and LOTO cross-validation fixed. Table 16: Cheaper-verifier ablation. Replacing GPT-5.4 with GPT-5.4-mini leaves selection accuracy close to the original result on the two non-saturated configurations.       
+
+> Verifier terminus-2 claude-code GPT-5.4 73 .0% 72 .4%
+> GPT-5.4-mini 74 .2%71 .3%
+
+This suggests that the selection pipeline does not require the largest verifier model once the failure-oriented features are available. 
+
+D.3 Top-K taxonomy truncation 
+
+We truncate the matched 44-code Terminal-Bench taxonomy to its first K=5 codes, preserving the A/B/C proportions, and re-run AdaMAST -Judge on terminus-2. Table 17: Top-K code truncation. On terminus-2, a truncated 5-code taxonomy matches the full-taxonomy selector.           
+
+> Taxonomy size Accuracy Selected features Full taxonomy 73 .0% mixed heuristic/LLM features
+> K=5 codes 73 .0% n_success ,llm_local ,n_error ,n_killed
+
+This shows that the Terminal-Bench selector is not primarily sensitive to the full code-list length. It can recover signal from a small subset of codes plus generic trace features. 23 D.4 Token-matched context 
+
+We test whether structured taxonomy text is necessary for the selection-side prompt context by comparing three context types: AdaMAST taxonomy text, a one-shot prose summary of failure signals, and raw trace excerpts. We evaluate each under token budgets of 100, 500, and 2000 tokens on terminus-2. Table 18: Token-matched context ablation for selection. In this selector, taxonomy text, prose summaries, and raw excerpts fall within a narrow range, indicating that the surrounding selection substrate contributes substantially to the result.              
+
+> Context type 100 tokens 500 tokens 2000 tokens
+> AdaMAST taxonomy 72 .3% 72 .3% 72 .3%
+> Prose summary 72 .3% 72 .3% 72 .3%
+> Raw trace excerpts 75 .3% 72 .3% 75 .0%
+
+We treat this as a deployment-pattern analysis rather than an isolated test of vocabulary wording. 
+
+D.5 Cross-verifier replication 
+
+We repeat the wrong-domain substitution using Claude Sonnet 4.6 as the verifier with single-letter A–T scoring rather than GPT-5.4 logprobs. The mean swing-accuracy change across the wrong-source cells is approximately +0 .1 pp. Pairwise Pearson correlations between per-trial LLM scores across the five taxonomies are high ( r = 0 .89 –0.93 on the claude-code swing pool), and the forward selector picks at most two LLM features per cell. The cross-verifier result is consistent with the wrong-domain transfer above: in this selection substrate, the learned selector and heuristic features carry most of the marginal effect of taxonomy wording. 
+
+## E Compression Measurement and Functional Substitution 
+
+E.1 Compression ratios and entropy 
+
+We quantify compression on 223 traces from the SWE-bench runtime study by comparing each trace against its judge-assigned code set. Amortizing the taxonomy text (the codebook, shipped once) across the corpus, the coded representation compresses the failure surface by ∼18 × under gzip ( ∼38 × in raw characters, ∼25 × under a token-cost proxy); treating each trace standalone, the median per-trace reduction is 9×.The reduction is also visible in the empirical entropy of the realized text. Judge rationales have substantially higher surface diversity than the coded representation: unigram entropy drops from 8.36 
+
+bits/token for judge free text to 4.29 bits/token for bare codes and 5.58 bits/token for the conservative standalone encoding. Length-matched bootstrap samples from judge rationales remain near 7.4–8.1
+
+bits/token, indicating that the entropy reduction is not merely an artifact of the coded traces being shorter. Per-trace compression is flat across feedback arms and across passing and failing traces, indicating a property of the representation rather than of any one experimental condition. 
+
+E.2 Functional substitution: protocol and full results 
+
+We test functional substitution directly (Tables 19 and 20): freeze an induction pool P of N ∈{5, 10 , 20 , 40 } labeled runs, give a consumer LLM one of six contexts — no failure context, P
+
+verbatim, three random traces from P , a length-matched free-text summary of P , the taxonomy induced from P , or the taxonomy plus three labeled runs from P (two passing, one failing) — and ask it to predict whether a held-out run of the same system succeeds (task- or problem-disjoint from 
+
+P ; probability read from the decision-token logprobs; taxonomies induced with a Llama-3.3-70B backbone; consumers Qwen3.5-122B-A10B and Qwen3.5-27B; two pool seeds; Terminal-Bench pools drawn from ForgeCode runs and TheoremQA pools from the search traces of Section 4.2). On Terminal-Bench no taxonomy-vs-pool contrast reaches significance at any N for either consumer (0.82 vs. 0.84 at N =40 for the 27B), while the taxonomy adds ∼95 × fewer context tokens over the no-context baseline ( 1.2K vs. 114 K). On TheoremQA the taxonomy alone is the strongest condition at 24 Table 19: Functional substitution on TheoremQA, all pool sizes (balanced accuracy, pooled over two pool seeds; decision-token protocol). Tokens = mean prompt tokens at N =40 . Bold = best per column. The induced taxonomy is the strongest condition at every N for the 27B consumer (vs. verbatim pool: p ≤ .012 at N ≥ 10 ); for the 122B, the taxonomy +labeled-runs hybrid and random labeled traces lead, and the verbatim pool degrades as it grows.                                                                     
+
+> Qwen3.5-27B Qwen3.5-122B-A10B Context tokens N=5 N=10 N=20 N=40 N=5 N=10 N=20 N=40
+> no failure context 1.2K 0.900 0.850 3 random traces 3.9K 0.833 0.817 0.842 0.842 0.825 0.883 0.900 0.908
+> length-matched summary 1.7K 0.892 0.892 0.892 0.883 0.800 0.825 0.842 0.817 raw trace pool (verbatim) 40.4K 0.850 0.825 0.850 0.825 0.867 0.858 0.850 0.767 induced taxonomy 1.9K 0.900 0.917 0.925 0.917 0.825 0.833 0.858 0.842 taxonomy +3 labeled runs 4.0K 0.892 0.858 0.892 0.858 0.875 0.850 0.917 0.900
+
+Table 20: Functional substitution on Terminal-Bench, all pool sizes (balanced accuracy, pooled over two pool seeds; decision-token protocol). Tokens = mean prompt tokens at N =40 . No condition contrast reaches significance at any N for either consumer: the taxonomy matches the verbatim pool at ∼15 × fewer total tokens.                                                                     
+
+> Qwen3.5-27B Qwen3.5-122B-A10B Context tokens N=5 N=10 N=20 N=40 N=5 N=10 N=20 N=40
+> no failure context 7.1K 0.840 0.800 3 random traces 15.7K 0.830 0.830 0.820 0.840 0.830 0.830 0.840 0.830 length-matched summary 7.8K 0.790 0.840 0.840 0.790 0.780 0.800 0.810 0.790 raw trace pool (verbatim) 121.0K 0.840 0.840 0.820 0.840 0.850 0.820 0.830 0.810 induced taxonomy 8.3K 0.800 0.800 0.800 0.820 0.780 0.800 0.780 0.790 taxonomy +3 labeled runs 17.1K 0.840 0.850 0.810 0.810 0.830 0.840 0.830 0.830
+
+every N for the 27B consumer, beating the verbatim pool at N ≥ 10 (0.917 –0.925 vs. 0.825 –0.858 ,
+
+p ≤ .012 ) with ∼2K tokens against the pool’s 6–40 K; for the 122B consumer the taxonomy-plus-labeled-runs hybrid takes that role ( 0.917 at N =20 , 0.900 at N =40 ; beats the pool at p=.039 and 
+
+p < 10 −4), and three random labeled traces are similarly competitive ( 0.908 at N =40 ) — outcome labels carry calibration. Verbatim experience does not scale: the 122B consumer’s accuracy under the raw pool degrades as the pool grows ( 0.867 → 0.767 from N =5 to N =40 ), ending below its own no-context baseline ( 0.850 ). 
+
+How the taxonomy is consumed matters, in the opposite direction one might expect. In a paired protocol ablation, we forced the consumer to apply the taxonomy code-by-code to the current run — citing fired codes with trace snippets — before emitting its verdict. This lowers TheoremQA balanced accuracy for the taxonomy conditions by 0.13 –0.24 (p ≤ .006 at every N , both consumers) while leaving the verbatim-pool condition unharmed or improved ( +0 .125 at N =40 for the 122B, 
+
+p=.0007 ): the enforced audit turns the consumer into a process critic that verdicts failure on real intermediate pathologies even when the run succeeds, collapsing pass recall while ranking is preserved (AUC 0.87 –0.92 ). Passive in-context provision, not enforced checklist application, is the effective consumption mode for current-generation consumers. With earlier-generation consumers (Qwen3-235B, Qwen2.5-72B) the qualitative picture was the same on Terminal-Bench and for the weaker consumer on TheoremQA, but the strongest consumer then extracted additional calibration from the verbatim pool at N =40 — an edge that disappears with the current consumers. 
+
+## F TRAIL Faithfulness Protocol 
+
+This appendix gives the full protocol behind the TRAIL faithfulness result in Section 5.1. 25 Table 21: TRAIL panel-vs-gold area-κ under different methodology variants. Each row is the same 117-trace evaluation with a different protocol; thresholds are the number of panel members (out of 4) that must agree on a category. CIs are 95% percentile intervals from 2000 trace-level bootstrap resamples.                                                     
+
+> Methodology thr=1 95% CI thr=2 95% CI thr=3 95% CI Cross-family 4-panel (no grounding) 0.682 [0 .608 ,0.754] 0.500 [0 .476 ,0.611] 0.307 [0 .236 ,0.380]
+> +1-round deliberation 0.692 [0 .620 ,0.764] 0.590 [0 .517 ,0.665] 0.439 [0 .354 ,0.524]
+> Same-model 4 ×GPT-5.4 0.625 [0 .544 ,0.697] 0.630 [0 .548 ,0.710] 0.563 [0 .485 ,0.640]
+> Span-grounded 4-panel 0.725 [0 .651 ,0.796] 0.563 [0 .492 ,0.635] 0.404 [0 .335 ,0.473]
+> Span-grounded + deliberation 0.761 [0.690 ,0.824 ]0.725 [0.654 ,0.795 ]0.645 [0 .573 ,0.717]
+
+F.1 Dataset and protocol 
+
+TRAIL [ 7] contains 117 GAIA-derived agent traces hand-annotated by four software-engineering experts under a 20-category canonical taxonomy. We use TRAIL only as an external validation set; no TRAIL labels are used to induce the AdaMAST taxonomy. The panel reaches its final label set through span-grounded prompts, one round of peer deliberation, and majority vote. 
+
+F.2 Panel composition 
+
+The panel consists of four LLM annotators: Claude Opus 4.7, GPT-5.4, Gemini-2.5-Pro, and GPT-5.4-mini. Each annotator receives the trace, the induced taxonomy, and span-grounding instructions requiring evidence for every fired code. After independent annotation, the panel performs one round of peer deliberation and outputs a majority-vote label set. 
+
+F.3 Agreement metrics 
+
+We report agreement at the failure-area level because the induced taxonomy and TRAIL’s hand-crafted taxonomy do not share identical leaf labels. Area-level mapping groups semantically equivalent leaf codes into broad failure areas (Reasoning / Planning / System) before computing Cohen’s κ
+
+against the expert gold. Bootstrap 95% confidence intervals use nboot =2000 trace-level resamples. The two headline numbers use different consensus thresholds: the matched-panel 0.682 is the thr =1cell of the cross-family no-grounding row, and the full-protocol 0.725 is the thr =2 cell of the span-grounded +deliberation row. The same-model row of Table 21 isolates the effect of panel diversity: replacing the cross-family panel with four GPT-5.4 annotators lowers area-κ from 0.682 to 0.625 at thr =1 (the comparison narrows and reverses at higher thresholds, where the CIs overlap). 
+
+F.4 Vocabulary comparison 
+
+Holding the panel and prompts fixed and varying only the vocabulary, TRAIL’s hand-crafted 20-category taxonomy yields area-κ = 0 .516 , while AdaMAST ’s 29 induced codes yield area-κ =0.682 . The full AdaMAST protocol reaches area-κ = 0 .725 [95% CI 0.654 , 0.795 ], substantial agreement on the Landis & Koch scale, with the lower CI bound exceeding the conventional 0.61 
+
+threshold. Table 22: TRAIL vocabulary comparison. The panel and prompts are held fixed; only the vocabulary the annotators consume changes.         
+
+> Vocabulary used by panel Area-level κvs expert gold TRAIL hand-crafted 20-category vocabulary 0.516
+> AdaMAST induced vocabulary 0.682
+> AdaMAST induced vocabulary, full panel protocol 0.725
+
+F.5 Leaf-level diagnostics 
+
+Fine-grained leaf-level agreement is lower because the induced taxonomy is not designed to reproduce TRAIL’s 20 labels exactly. We therefore report leaf-level results only as a diagnostic. The main 26 validation target is area-level agreement, where semantic failure areas can be compared across different vocabularies. At the 20-leaf level, panel-vs-gold κ remains in the fair range ( κ ≈ 0.34 ), consistent with the difficulty of fine-grained failure annotation reported in the published TRAIL paper. Table 23: Individual annotator metrics vs TRAIL gold after grounded prompts and one round of deliberation. 
+
+Annotator leaf-κ area-κ area Jaccard Landis & Koch (area) Claude Opus 4.7 0.334 0.744 0.821 substantial GPT-5.4-mini 0.308 0.676 0.783 substantial GPT-5.4 0.317 0.625 0.729 substantial Gemini 2.5 Pro 0.301 0.542 0.650 moderate 
+
+Table 24: Pairwise inter-annotator κ (leaf-level / area-level) on TRAIL after grounded prompts and deliberation. All six pairs reach κ ≥ 0.587 at leaf level. 
+
+Opus 4.7 GPT-5.4 GPT-5.4-mini Gemini 2.5 Pro Opus 4.7 — 0.742 / 0.791 0.794 / 0.814 0.604 / 0.688 GPT-5.4 — 0.710 / 0.808 0.651 / 0.687 GPT-5.4-mini — 0.587 / 0.671 Gemini 2.5 Pro —
+
+F.6 Mapping induced codes to TRAIL categories 
+
+The judge step that maps each AdaMAST -generated code to its closest TRAIL canonical ID finds a many-to-one mapping: several broad TRAIL categories receive multiple finer-grained induced codes. The mapping is high-precision: 28 of 29 AdaMAST codes (96.6%) admit a clean TRAIL counterpart. Table 25: Auto-to-hand-crafted code mapping. Each AdaMAST code expresses a more specific failure mode than the broader TRAIL category. 
+
+TRAIL category (gold) AdaMAST auto-codes that map to it R5 Incorrect Problem Identification B.1 Tracker_Incorrect_Tag_Configuration; B.2 Tracker_Incomplete_Instrumentation_Coverage; C.1 En-tity_Identity_Collapse; C.2 Temporal_Anchor_Mismatch; C.6 Tabular_Filter_Or_Aggregation_Misapplication; C.9 Spa-tial_Or_Ordering_Frame_Misinterpretation R4 Tool Output Misinterpretation B.9 Orchestrator_Evidence_Integration_Failure; C.5 Retrieved_Fact_To_Answer_Transformation_Error; C.7 Exact_Span_Extraction_Error; C.8 Multime-dia_Perceptual_Misread; C.10 Cross_Source_Schema_Mismatch; C.13 Cross_Source_Synthesis_Reconciliation P4 Task Orchestration Errors A.3 Strategy_Initialization_Or_Routing_Failure; B.4 Unknown_Role_Misalignment; B.8 Orches-trator_Incorrect_Tool_Selection; B.10 Orchestra-tor_Insufficient_Self_Verification; C.3 Incomplete_Multihop_Chain R8 Instruction Non-compliance A.1 Final_output_format_noncompliance; B.3 Tracker_Unsafe_Or_Noncompliant_Tracking_Method; C.12 Required_Source_Type_Not_Actually_Used P1 Context Handling Failures A.2 Self_inconsistency_across_pipeline_states; A.6 Inter-stage_Handoff_Loss_Or_Drift 
+
+## G OlympiadBench Mechanism Details 
+
+The main text uses OlympiadBench as the mechanism study for search because it has the largest held-out set and the longest recorded evolution trace. This appendix contains the supporting artifacts: 27 the raw score trajectory, judge outputs around the breakthroughs, non-breakthrough base rates, the failure-burden over evolution, the four-arm failure profile, and architecture diffs. 
+
+G.1 Raw score trajectory 
+
+Figure 11 is the raw best-dev-score-per-iteration curve for the OlympiadBench AdaMAST and vanilla runs, with the two annotated score-jumps at iter 69 (verifier gate) and iter 89 (planner upstream). The vanilla run saturates at iter 26 with max dev score 0.30 ; AdaMAST crosses to 0.40 at iter 10, 0.50 at iter 69, and 0.55 at iter 89. 0 20 40 60 80 100 
+
+> Evolution iteration
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> Best dev score (20 problems)
+> iter 69
+> verifier gate
+> iter 89
+> planner upstream
+> Vanilla
+> AdaMAST
+
+Figure 11: OlympiadBench best-dev-score trajectory. Per-iteration running max of dev score (20 problems) for the vanilla run (search ends at iteration 26, max 0.30; the dashed line is continued flat for comparison) and the AdaMAST run (97 iterations, teal). Markers annotate the iter-69 verifier-gate breakthrough and the iter-89 planner-upstream breakthrough. 
+
+G.2 Breakthrough judge outputs 
+
+For each score jump (iteration 67 →69 and iteration 79 →89), we recover the parent iteration, the child iteration, the fired codes in the parent’s taxonomy_judge artifact, and the architecture edit introduced in the child. The verbatim judge outputs below show that the code-driven mutations were grounded in concrete trace evidence. 
+
+Iteration-43 judge output (on the lineage of the iter-69 breakthrough, dev 0.40 → 0.50 ). 
+
+A-codes: [A.1] Behavioral Anomaly: Non-convergent iteration / stagnation Evidence: "Output: FINAL ANSWER: Please provide the problem statement."; "Output: FINAL ANSWER: 0"; "Output: FINAL ANSWER: Cannot determine without the problem statement." [A.3] Instruction Compliance Violation Evidence: "Output: FINAL ANSWER: Please provide the problem statement."; "OUTPUT: FINAL ANSWER: Problem statement missing." [A.6] Ground-Truth / Verifier Mismatch Evidence: Coordinator Aggregation Mismatch notes; inconsistent final answers across branches. B-codes (by role): checker: [B.1] Non-compliant Output by Checker -- checkers default to problem-statement prompts instead of solving. refiner: [B.3] Refiner Fails to Improve or Regresses After Critique [B.4] Refiner Overcorrects or Hijacks Methodology coordinator: [B.6] Coordinator Aggregation Mismatch: aggregated results conflict due to divergent FINAL ANSWER lines; no single coherent vector. 
+
+28 C-codes: [C.2] Edge Case Omission / Degeneration [C.3] Overgeneralization in Domain Prereqs [C.4] Algebraic Manipulation Gap [C.5] Combinatorics Counting Misreasoning 
+
+Iteration-60 judge output (on the lineage of the iter-89 breakthrough, dev 0.50 → 0.55 ). 
+
+> A-codes: [A.3] Instruction Compliance Violation: Output formats and content frequently violate task prompts. [A.6] Ground-Truth / Verifier Mismatch: Divergent final answers across checkers for the same problem. [A.4] Evaluation Feedback Misinterpretation: Critique echoed but not corrected. B-codes: refiner: [B.3] Refiner Fails to Improve or Regresses After Critique. [B.4] Refiner Overcorrects or Hijacks Methodology. C-codes: [C.2] Edge Case Omission / Degeneration. [C.3] Overgeneralization in Domain Prereqs. [C.4] Algebraic Manipulation Gap. [C.5] Combinatorics Counting Misreasoning.
+
+G.3 Non-breakthrough base rates 
+
+We compare code firings on breakthrough parents against non-breakthrough parents. Codes that fire frequently everywhere are not sufficient explanations of score gains; codes that are enriched on breakthrough parents are more plausible mutation signals. Across the 97-iteration run, the codes that fire as primary on breakthrough parents (A.3, B.3, C.2 for the iter-69 breakthrough; A.6, B.6, C.3 for the iter-89 breakthrough) are present in the seed taxonomy or bootstrap, indicating that the breakthroughs are driven by the mutator acting on existing taxonomy entries rather than by newly-introduced refinement codes. Figure 12 extends this analysis to per-code lift on score-jump iterations across three benchmarks. For each benchmark we score every code by its firing rate on the score-jump iterations ( j) and on the remaining iterations ( o), then plot the top few by lift ( j − o). The bench-level top codes are the role-and domain-specific ones identified in the verbatim judge outputs above, not generic A.1/A.5 codes; this is the cross-benchmark version of the OlympiadBench mechanism argument. 
+
+G.4 Failure burden over evolution 
+
+The AdaMAST run retires 12 of 28 codes by iteration 92. Severity-weighted failure burden decreases by 23%, from 16.9 to 13.0, even though the raw firing count stays roughly constant. The B (role-specific) share grows from 39 .8% in iterations 1–30 to 46 .9% in iterations 61–97, while the C (domain) share contracts from 32 .0% to 25 .5% . Each of the two score breakthroughs (iterations 69 and 89) follows a taxonomy-refinement event (iterations 29 and 78, respectively); a final refinement at iteration 92 closes the run. Figure 16 compares the per-iteration code-firing surface of the vanilla and AdaMAST runs directly. Panel (a) shows that both runs carry a similar number of distinct fired codes per iteration once 
+
+AdaMAST has its bootstrap codes; the difference is not “more labels”. Panels (b) and (c) show how the share between A/B/C axes evolves: the vanilla run can only be measured against the post-hoc taxonomy, so its axis-share fluctuates from iteration to iteration without any directional shift; the 
+
+AdaMAST run shows the B-share grow steadily as the architecture acquires more roles. 29 0.00 0.25 0.50 0.75         
+
+> Lift
+> C-OTHER
+> B.4
+> A.4
+> B.3
+> C.1
+> j=0.40, o=0.26
+> j=0.60, o=0.42
+> j=1.00, o=0.77
+> j=1.00, o=0.68
+> j=1.00, o=0.68
+> OlympiadBench
+> 0.00 0.25 0.50 0.75
+> Lift
+> C.1
+> A.4
+> A.5
+> C.5
+> A.1
+> j=1.00, o=0.97
+> j=1.00, o=0.94
+> j=0.67, o=0.60
+> j=1.00, o=0.57
+> j=1.00, o=0.44
+> Frontier-CS
+> 0.00 0.25 0.50 0.75
+> Lift (avg of 3 seeds)
+> A.5
+> A.4
+> C.8
+> C.1
+> A.3
+> j=0.75, o=0.77
+> j=1.00, o=1.00
+> j=0.25, o=0.15
+> j=0.50, o=0.36
+> j=0.75, o=0.40
+> TheoremQA
+> A: system B: role C: domain
+
+Figure 12: Per-code lift on score jumps across three benchmarks. For each benchmark we identify the iterations where dev score jumps and compute each code’s lift = P (fire | jump ) − P (fire |
+
+non-jump ). Bar annotations give the two firing rates directly: j = P (fire | jump ), the fraction of jump iterations where the code fired, and o = P (fire | non-jump ), the same fraction over all other iterations. Jump bases per panel: OlympiadBench 5 jump vs. 31 non-jump iterations (28 codes); Frontier-CS 3 vs. 70 (14 codes); TheoremQA 3 vs. 59 totaled over three seeds (14–15 codes per seed). The top codes per benchmark line up with the role- and domain-specific codes named in the verbatim judge outputs. iters 1–30   
+
+> (early)
+> iters 31–60
+> (mid)
+> iters 61–97
+> (late)
+> 0%
+> 25%
+> 50%
+> 75%
+> 100%
+> Share of code firings
+> 28.2%
+> 39.8%
+> 32.0%
+> 25.9%
+> 42.6%
+> 31.5%
+> 27.5%
+> 46.9%
+> 25.5%
+> A: system B: role C: domain
+
+Figure 13: Failure-axis distribution shifts during evolution. Share of judge-fired codes by axis in three windows of the OlympiadBench AdaMAST run (early: iterations 1–30; mid: 31–60; late: 61–97). The B-axis share grows over the run as the architecture acquires more roles; the C-axis share contracts as the solver acquires domain-specific guard rails. 
+
+G.5 Post-hoc four-arm failure profile 
+
+We apply the final OlympiadBench taxonomy as a fixed measurement instrument to the seed, vanilla, MAST-guided, and AdaMAST -guided final architectures. This produces a comparable failure profile for the four arms on the 655-problem held-out set. 
+
+G.6 Architecture diffs 
+
+The AdaMAST -guided best architecture (iter 92, test 91.91%) runs four diversified solver variants under a 25-call LLM budget, applies a lightweight verifier that boosts the score of structurally-valid candidates ( c["score"] += 0.1 on VALID ), selects up to four diverse candidates for refinement via a length-and-variant-keyed frontier, and runs up to two refinement rounds before final aggregation. The verifier replaces the binary gate of earlier iterations with a numerical score boost, the iter-92 response to the B.6 Coordinator Aggregation Mismatch code raised by the iteration-60 judge. The vanilla best architecture (test 87.94%) is an adversarial-debate pipeline: a primary solver, two critics, an improver consolidating critiques into a revision, two more critics, a second improver, and a 30 0 20 40 60 80    
+
+> Evolution iteration
+> A.7
+> A.8
+> A.5
+> A.4
+> A.1
+> A.2
+> A.3
+> A.6
+> B.5
+> B.1
+> B.2
+> B.6
+> B.3
+> B.4
+> C.6
+> C.3
+> C.1
+> C.2
+> C.4
+> C.5
+> iter 69 iter 89
+> A: system B: role C: domain
+
+Figure 14: Code lifecycle on the OlympiadBench AdaMAST run. Each bar shows the iteration range over which a code fired at least once; the dot marks the last-firing iteration. Of the codes here, seven retire fully before iteration 80; the rest persist through the iteration-92 final taxonomy snapshot. 0 20 40 60 80  
+
+> Evolution iteration
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> 14
+> Codes retired (cumulative)
+> iter 69 iter 89
+
+(a) Cumulative retirement     
+
+> 020 40 60 80
+> Evolution iteration
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> Failure burden  16.9
+> 13.0
+
+(b) Severity-weighted burden 
+
+> raw
+> rolling mean (w=9)
+
+Figure 15: Failure-mode retirement and burden decay over evolution. (a) Cumulative count of retired failure codes (codes that never fire again after a given iteration); 12 of the 28 codes have stopped firing by iteration 92, with the two score breakthroughs (dashed lines, iterations 69 and 89) marked. (b) Severity-weighted failure burden: the aggregate burden falls by 23% (16.9 to 13.0) from iteration 1 to iteration 92 as failure modes retire and the residual concentrates on harder failures. synthesis step. The MAST-guided best architecture (test 89.47%) is a strict five-stage pipeline: solver, refiner, voter, finalizer, terminal output generator. The mutator was capable of producing any of these structures from the same seed. AdaMAST 
+
+discovered a verifier-gated four-variant architecture because the categorical failure codes (B.6 Coordi-nator Aggregation Mismatch , B.4 Refiner Overcorrects , C.5 Combinatorics Counting Misreasoning )pointed the mutator at parallel diversification; the vanilla mutation prompts contained only free-text reflection on the previous candidate’s score. 31 0 20 40 60 80 100             
+
+> Evolution iteration
+> 2
+> 4
+> 6
+> Distinct codes fired
+> (a) Distinct codes per iteration
+> Vanilla run AdaMAST run
+> 0510 15 20 25
+> Evolution iteration
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> Share of axes
+> (b) Vanilla run
+> 020 40 60 80
+> Evolution iteration
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> (c) AdaMAST run
+> A: system B: role C: domain
+
+Figure 16: Vanilla vs AdaMAST per-iteration failure surface. (a) Distinct codes fired per iteration. 
+
+(b) Stacked share of A/B/C axes for the vanilla run measured post-hoc against the final AdaMAST 
+
+taxonomy (26 iters). (c) Same stacked share for the AdaMAST run (97 iters). Adaptive feedback does not produce more labels per iteration; it reshapes which axes the failures concentrate on. Table 26: Primary failure-code firing counts per (arm, code) on OlympiadBench, n=655 problems per arm. Per-arm totals: seed 107, vanilla 79, MAST 61, AdaMAST 55. 
+
+Code Name Seed Vanilla MAST AdaMAST 
+
+A.1 Output format violation 16 17 7 0A.2 Premature pipeline termination 3 1 4 2A.8 Instruction non-compliance 1 3 5 0A.10 Aggregation/merge error 2 2 4 1B.3 Checker final answer incorrect 0 0 0 8B.4 Solver low-quality reasoning 67 42 32 34 C.6 Incomplete reasoning / missing lemmas 3 1 3 0C.7 Misinterpretation of definition 1 8 4 6C.12 Combinatorial overcount / symmetry 7 0 0 0
+
+## H Runtime Monitoring Details 
+
+This appendix gives details for the runtime monitoring experiments in Section 4.3: the SWE-agent checkpoint protocol, the Claude Code runtime skill setup, and the blind-judge contamination-scrubbing protocol. We detail SWE-agent first because its arm ladder includes a free-text reflection rung (Reflexion), separating the value of checkpointing itself from the value of categorical anchoring. 
+
+H.1 SWE-agent checkpoint protocol 
+
+Each SWE-agent run uses the same GPT-5 solver and the same task instances; the arms differ only in what anchors the checkpoints. Base receives no reflection of any kind. Reflexion adds prompted free-text reflection at the checkpoints; MAST in-prompt anchors the same checkpoints to the published 14-code MAST taxonomy; AdaMAST in-prompt anchors them to the induced SWE-bench taxonomy. All three reflection arms share the identical in-prompt checkpoint scaffold. 32 A.1 A.2 A.3 A.8 A.10 B.3 C.1 C.3 C.5 C.6 C.7 C.11 C.12    
+
+> 0
+> 5
+> 10
+> 15
+> Problems (primary code)
+> A · system B · role C · domain
+> (a) Long-tail codes
+> Seed
+> Vanilla
+> MAST
+> AdaMAST
+> Seed
+> Vanilla
+> MAST
+> AdaMAST
+> 0
+> 20
+> 40
+> 60
+> 67
+> 42
+> 32 34
+> (b) Code B.4
+
+Figure 17: Cross-arm failure profile on OlympiadBench. The post-hoc judge assigns the primary failure-mode label to each (arm, instance) cell on the 655-problem held-out set using the iteration-92 taxonomy. Checkpoints fire at three points: after initial repository exploration, after the first round of edits, and before final submission. SWE-agent has no native hook mechanism, so compliance is enforced by a submit-gate inside tools/review_on_submit_m , which validates that three checkpoint markers are present before allowing submission. At each checkpoint the agent produces a structured summary of recent actions, the current diff, recent tool output, and unresolved hypotheses. 
+
+H.2 Main SWE-agent result 
+
+The headline four-arm numbers appear in Table 3 of the main text: Base 25/50, Reflexion 30/50, MAST in-prompt 34/50, and AdaMAST in-prompt 35/50. The ordering tracks the structure of the feedback: anchoring the checkpoint self-check to a categorical vocabulary accounts for most of the gain over unanchored free-text critique, with the induced, harness-specific vocabulary adding a further margin over the fixed MAST checklist. Figure 19 aggregates the same instance-level labels into the three high-level failure areas (Analysis: wrong-target / wrong-layer fixes; Implementation; Verification). The Base and Reflexion arms fail mostly on Verification (6 of 9 instances each; the agent submits without verifying its recent actions); under MAST and the AdaMAST arms, the Verification share drops (to 1 and 3 of 9, respectively) and the residual failures concentrate in Implementation (6 of 9 each). 
+
+H.3 Secondary Claude Code harness 
+
+We also tested the same taxonomy feedback in a Claude Code harness, delivered here through the harness’s native skill mechanism (Haiku 4.5 solver, three arms, 50 Verified Mini instances); the three-seed headline results appear in Table 3 of the main text. Claude Code includes stronger native self-correction through direct test execution, which changes what the feedback layer contributes. Categorical taxonomies still improve over the base agent; in the seed-1 run analyzed in the remainder of this appendix, the per-arm counts are 30/50 (Base), 34/50 (MAST runtime skill), and 35/50 (AdaMAST runtime skill). 
+
+Harness and solver. All three arms of the Claude Code study use Claude Code (the Anthropic-released agent CLI) with the Haiku 4.5 solver ( claude-haiku-4-5 ) under a 1800-second wall-clock timeout and the harness’s default token limits. The solver runs natively against a per-instance Docker container from the SWE-bench evaluation image set ( swebench/sweb.eval.x86_64.django_* 
+
+and swebench/sweb.eval.x86_64.sphinx-doc_* ); the workspace is volume-mounted at 
+
+/testbed and the agent interacts with the container through a host-side wrapper that issues docker exec into the conda activate testbed environment. This lets the agent run pytest between edits and observe pass/fail within its own loop, while isolating each session’s environment. 33 0 4 8 12 16 
+
+> Instances (primary failure code, 50/arm)
+> A.4
+> A.2
+> A.5
+> B.4
+> B.1
+> C.9
+> C.1
+> C.2
+> (other · 11 codes)
+> 3
+> 3
+> 13
+> 12
+> 4
+> 6
+> 3
+> 16
+> 6
+> 5
+> 11
+> 3
+> 14
+> 4
+> 7
+> 4
+> 14
+> 14
+> A · system B · role C · domain
+> Base
+> Reflexion
+> MAST in-prompt
+> AdaMAST in-prompt
+
+Figure 18: Primary failure code per (arm, instance) cell under the SWE-agent harness. Two codes dominate Base’s failures: C.9 unclean patch contents (13 firings) and C.1 ad-hoc validation only (12 firings). AdaMAST in-prompt retires C.9 entirely (13 to 0) while C.1 persists at a similar level (14 vs. Base’s 12): the induced vocabulary eliminates the patch-hygiene failure but shallow validation remains the dominant residual mode. 
+
+Three arms. The arms vary only the failure-feedback layer around the same Haiku 4.5 solver on the same 50 instances. Base runs vanilla Claude Code. MAST runtime skill delivers the published 14-code MAST taxonomy [ 3] as a project-local skill loaded into the agent’s context. AdaMAST runtime skill delivers the 32-code Claude Code SWE-bench taxonomy (Tables 28 to 30) through the identical integration. Each arm’s skill files live in a per-arm project-local directory; cross-arm probes verified zero residual references to other arms’ files in any session trajectory. 
+
+Checkpoint delivery. The MAST and AdaMAST arms register checkpoints through the harness’s native hooks, which fire after tool calls, on sub-agent completion, and at task completion. Acheckpoint that surfaces fired codes triggers the bounded repair loop of Section 3.4: at most three attempts, after which the agent reports remaining issues rather than claiming success. Table 27: Per-arm cost and median per-session wall-clock duration on the 50-instance SWE-bench Verified Mini under the Claude Code harness. Solver is Haiku 4.5. 
+
+Arm Total cost Mean per instance Median duration Arm 1: Base $26.38 $0.53 434 s Arm 2: MAST runtime skill $24.58 $0.49 434 s Arm 3: AdaMAST runtime skill $27.24 $0.54 470 s 
+
+32-code Claude Code SWE-bench taxonomy. The vocabulary the blind post-hoc judge applies is induced from SWE-bench Verified trajectories produced under the Claude Code harness (Base arm only, so the vocabulary is not contaminated by knowledge of which codes the feedback arms would surface). It contains 32 codes total (4 A, 12 B, 16 C). The B-axis is reframed from multi-agent roles 34 Base Reflexion MAST AdaMAST    
+
+> (runtime skill)
+> 0
+> 3
+> 6
+> 9
+> Instances (of 9)
+> 1
+> 2
+> 2
+> 3
+> 6
+> 6
+> 66
+> 1
+> 3
+> A. Analysis (wrong-target / wrong-layer) B. Implementation C. Verification
+
+Figure 19: SWE-bench failure-area composition per arm. Each bar is the 9 instances unresolved by every arm under that condition, decomposed into three failure areas. The composition shifts upstream as the feedback surface gets richer: Verification dominates under Base/Reflexion → Implementation dominates under MAST and AdaMAST arms. into single-agent phases (Edit / Plan / Verify) because Claude Code operates as a single agent with phased behavior rather than distinct solver/coordinator/checker roles. Table 28: System-level (A) codes that fire as concerns in the SWE-bench taxonomy (Claude Code harness). Frequencies are over the 150 judged sessions of the three arms. Three further A-codes are defined in the taxonomy (A.1 Output format noncompliance , A.3 Runaway repetition or looping , A.4 
+
+Unwarranted refusal or abandonment ) but did not fire on any judged session.      
+
+> Code Name Description Freq. A.2 Execution environment mismatch Runtime environment differs from as-sumptions (missing tools/dependencies, version skew) 4.7%
+
+Blind-judge contamination scrubbing. The three arms differ in what taxonomy information enters the agent’s context. Base sees nothing; the MAST runtime skill arm sees the 14-code MAST vocabulary; the AdaMAST runtime skill arm sees the Claude Code SWE-bench taxonomy—each loaded into its context via the project-local skill. Judging the raw trajectories under the same taxonomy would feed the post-hoc judge its own vocabulary. We strip taxonomy-revealing content event-by-event before judging. 
+
+Per-arm event-level scrubbing. For the AdaMAST runtime skill arm, residual mentions of the Claude Code taxonomy’s code identifiers ( A.1 , . . . , C.16 ) or code names are scrubbed from text content. For the MAST runtime skill arm, the same scrubbing is applied to MAST’s 14 code identifiers and names. Base sees no taxonomy content and requires no scrubbing. Test-wrapper invocations are kept: those are the agent’s interaction with the test environment, which is identical across arms and which the judge needs to see. Assistant reasoning blocks are excluded from judge input across all arms; the judge grades artifacts only. 
+
+Validation. After scrubbing, (i) zero residual taxonomy tokens appear in any of the 150 judged trajectories; (ii) mean cleaned-trajectory size is comparable across arms (within 93–100 K characters), confirming no arm is artificially shortened. 
+
+Cross-arm instance structure. The 50 SWE-bench Verified Mini instances are partitioned into three regimes across the 450 Claude Code sessions (3 arms × 50 instances per seed × 3 seeds). At least 22 instances are resolved by all three arms across all three seeds (the common solvable set, where any reasonable agent succeeds). At least 5 instances are resolved by no arm under any seed ( django-11885 , django-11964 , sphinx-11510 , sphinx-9229 , sphinx-9461 ); this is the 35 A.2 B.2 B.3 B.6 B.7 B.8 B.9 B.10 B.11 B.12 C.4 C.5 C.11          
+
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> Firings (50 sessions/arm)
+> 77
+> 21
+> 8
+> 17
+> 11
+> 23 A · system B · phase C · domain
+> (a) Per-code firings by arm
+> Base
+> MAST runtime skill
+> AdaMAST runtime skill
+> 3510 20 40 60
+> Total firings (150 sessions)
+> 0%
+> 25%
+> 50%
+> 75%
+> 100%
+> Unresolved rate when fired
+> background 34%
+> (b) Mass vs. predictive power
+> C.4 · C.11 A.2
+> B.2
+> B.3
+> B.6
+> B.7
+> B.8
+> B.11
+
+Figure 20: Per-arm failure code firings under the Claude Code harness. Single-seed run on 50 Verified Mini instances, three arms (Base, MAST runtime skill, and AdaMAST runtime skill). (a) 
+
+Per-code firings by arm; within each bar, the solid segment counts firings on unresolved sessions and the light segment firings on resolved sessions. (b) Mass vs. predictive power: per-code total firings across the 150 sessions against the unresolved rate when the code fires, with the 34% background unresolved rate marked; B.3 is rare but strongly predictive of failure, while B.7 is common but near background. ceiling for this harness on this benchmark. The remaining instances sit in the discrimination zone where arms differ. AdaMAST expands the reliably-resolved set within this zone: the AdaMAST 
+
+runtime skill has 28 instances resolved in all three seeds, against Base’s 27. Critically, no instance is resolved by AdaMAST in all three seeds while resolved by Base in none: the AdaMAST gain is concentrated in instances that were already occasionally solvable under Base but became reliably so under AdaMAST ’s structured feedback. This is the per-instance shape of the Table 3 result: 
+
+AdaMAST does not unlock fundamentally new instances on this harness; it converts flaky resolves into reliable ones. 
+
+Judge configuration. GPT-5, single call per session at temperature 0. Input is the cleaned event stream plus the candidate patch. Output is a JSON object with verdict ∈ {submit , revise } and a list of 
+
+concerns , each with a code, axis, and rationale. The 150 judge calls cost under $5 in API spend. 
+
+Per-(arm, code) primary firing counts. Resolved/unresolved stratification. Across the 150 ses-sions, 30 + 34 + 35 = 99 are resolved and 51 are unresolved, giving a 51 /150 = 34% background unresolved rate. Two codes carry the headline observations. B.7 Verify partial run misreported as success : 61 total firings, unresolved-rate-when-fired 25 /61 = 41% vs. 34% background (a mass head but a weak predictor). B.3 Edit overbroad patch footprint : 12 total firings, unresolved-rate-when-fired 
+
+11 /12 = 92% (a gain head and a strong predictor). 
+
+## I Extended Design Ablations 
+
+I.1 Injection-location ablation 
+
+We ask where taxonomy feedback should enter the mutation prompt. Holding the taxonomy fixed, appending the diagnosis to the evaluation results performs best. 36 Table 29: Top phase-specific (B) codes in the SWE-bench taxonomy (Claude Code harness). Fre-quencies are over the 150 judged sessions of the three arms. Phase prefixes Edit , Plan , Verify replace the multi-agent role prefixes used in the SWE-agent taxonomy. 
+
+Code Name Description Freq. B.7 Verify partial run misreported as success Only a subset of tests is executed and passing reported as global success 40.7% B.2 Edit patch lacks test updates Functional change without adding or up-dating relevant tests 17.3% B.3 Edit overbroad patch footprint Patch changes unrelated files or per-forms refactors not required for the fix 8.0% B.8 Verify ignored import or syntax errors Import/syntax errors in logs are down-played or omitted in the report 4.0% B.6 Plan skips verification loop Workflow omits running targeted tests after edits 2.7% B.11 Edit proceeds despite tool or file errors Agent continues with conclusions or suc-cess claims after observable tool errors 2.7% B.9 Verify misparsed test summary Misinterprets test-runner output, leading to incorrect pass/fail conclusion 1.3% B.12 Plan retrieval pattern misconfiguration Search/grep patterns chosen such that relevant files are missed or noise is over-included 1.3% B.10 Edit claims changes without execution Agent asserts code was modified or tests passed without performing the corre-sponding tool-driven actions 0.7% B.1 Edit wrong target module Patch modifies unrelated files or the wrong component 0.7% 
+
+Table 30: Top domain-reasoning (C) codes in the SWE-bench taxonomy (Claude Code harness). Frequencies are over the 150 judged sessions of the three arms. The codes reflect the django/sphinx mix of the Verified Mini instances. The remaining C-codes in the taxonomy address finer-grained domain patterns and are released alongside the run artifacts. 
+
+Code Name Description Freq. C.11 User override ignored Framework code overwrites user-specified kwargs or configuration 2.0% C.4 Wrong component or layer targeted Fix implemented in wrong subsystem or abstraction layer 2.0% C.5 Risky monkeypatch of external internals Relies on monkeypatching third-party internals rather than documented exten-sion points 0.7% C.15 Parser grammar feature omission Parser fails to recognize a valid language feature 0.7% C.7 Pipeline reordering without interaction analysis Fix depends on reordering processing steps without analyzing interactions 0.7% 
+
+Appending feedback to evaluation results works best because the mutation LLM processes it in the same context as its assessment of program quality; system-message placement is treated as background instruction. 
+
+I.2 Feedback-form diagnostic 
+
+We compare three feedback presentations on TheoremQA: structured AdaMAST codes, a prose summary of the same judge output, and raw trace excerpts. The underlying judge-trace content is held fixed. The three presentations fall within seed noise of one another (the prose mean is carried by a single high seed), and raw excerpts do not lag far behind. This is the format-null result referenced in Section 1: the value of AdaMAST does not come from the categorical formatting of any single prompt, but from inducing the vocabulary once and reusing it across procedures and traces. 37 Table 31: Per-(arm, code) firing counts on SWE-bench Verified Mini under the Claude Code harness, 
+
+n=50 sessions per arm. Single-seed run. Per-arm splits into resolved/unresolved firings are released in figures/data_swebench_cc_3arm.py .                                                          
+
+> Code Base MAST AdaMAST runtime skill A.2 232B.1 100B.2 7811 B.3 714B.6 211B.7 21 17 23 B.8 411B.9 101B.10 100B.11 211B.12 011C.4 111C.5 001C.7 010C.11 201C.15 010
+> Total firings 51 36 48 Resolved (out of 50) 30 34 35
+
+Table 32: Injection-location ablation on TheoremQA. The same taxonomy feedback is inserted at three locations in the mutation prompt; single-seed (seed 42), reported as directional like the other small ablations. Appending it to evaluation results performs best.     
+
+> Injection position Accuracy Appended to evaluation results 63.3%
+> Inline comments in code 53.3% System message 46.7%
+
+This diagnostic isolates formatting from content in one small setting. It is not used as a main claim. The result suggests that, once the same trace evidence is supplied, the categorical form is not always separable from the content at this sample size. We therefore frame AdaMAST ’s categorical structure as a reusable interface across procedures, not as a claim that code formatting always beats token-matched prose in one prompt. 38 Table 33: Feedback-form diagnostic on TheoremQA. Mean post-search accuracy across three seeds. 
+
+Feedback form Mean post-search accuracy Per-seed scores Structured AdaMAST codes 56 .7% 56 .7, 60 .0, 53 .3
+
+Prose summary 61 .1% 56 .7, 70 .0, 56 .7
+
+Raw trace excerpts 56 .7% 50 .0, 53 .3, 66 .7
+
+39

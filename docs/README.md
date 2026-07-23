@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-07-14 ~ 2026-07-23</span>
+      <span class="dpr-home-dashboard-kicker">2026-07-23</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 24 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 11 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>13</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>4</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-07-23 11:43:58 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-07-23 21:33:57 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共处理24篇论文，精读13篇，其中《Self-Aware Recursively Self-Improving Agents》获满分10分，聚焦Agent自我改进与个人奇点架构。</p>
-<p>最值得关注：Agent具备步骤级置信度自评估机制（《Critic Experience Bank》），以及通过记忆系统自适应管理提升任务鲁棒性（《Memory as a Controlled Process》）。</p>
-<p>对普通读者：可优先精读两篇10分和9分论文，理解Agent如何实现“自省”与“经验复用”；速读中的《SPyCE》探讨技能-策略共进化，是探索多模态Agent的有趣切入点。</p>
+<p>今日处理11篇论文，精读《Knowledge-Centric Self-Improvement》（10分）与《Branching Policy Optimization》（9分）两大高影响力工作。知识中心自我改进与沙盒原生语言智能体强化学习是最大亮点，奖励驱动智能体工作流也值得关注。建议优先深入自我改进方法与策略优化框架，尤其在知识密集型任务和自主决策场景中应用。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">13 篇</strong>
+    <strong class="dpr-home-dashboard-count">4 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Self-Aware Recursively Self-Improving Agents for Personal Singularity: A Goal-, Scope-, Tool-, and Benchmark-Driven Multi-Agent Architecture">Self-Aware Recursively Self-Improving Agents for Personal Singularity: A Goal-, Scope-, Tool-, and Benchmark-Driven Multi-Agent Architecture</span></li><li><span class="dpr-home-dashboard-paper-title" title="Critic Experience Bank: Self-Evolving Step-Level Confidence Estimation for LLM Agents">Critic Experience Bank: Self-Evolving Step-Level Confidence Estimation for LLM Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="EvoGraph-R1: Self-Evolving Multimodal Knowledge Hypergraphs for Agentic Retrieval">EvoGraph-R1: Self-Evolving Multimodal Knowledge Hypergraphs for Agentic Retrieval</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Knowledge-Centric Self-Improvement">Knowledge-Centric Self-Improvement</span></li><li><span class="dpr-home-dashboard-paper-title" title="Branching Policy Optimization: Sandbox-Native Language Agent Reinforcement Learning">Branching Policy Optimization: Sandbox-Native Language Agent Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Recursive Harness Self-Improvement">Recursive Harness Self-Improvement</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>13</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>4</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Memory as a Controlled Process: Learned Adaptive Memory Management for LLM Agents">Memory as a Controlled Process: Learned Adaptive Memory Management for LLM Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Learning Robust Execution in Robotic Manipulation with Agentic Reinforcement Learning">Learning Robust Execution in Robotic Manipulation with Agentic Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="SPyCE: Skill-Policy Co-evolution for Multimodal Agents">SPyCE: Skill-Policy Co-evolution for Multimodal Agents</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Reward-Driven LLM Agent Workflows: Synthesizing POMDP Routing and Self-Correction for Autonomous Decision-Making">Reward-Driven LLM Agent Workflows: Synthesizing POMDP Routing and Self-Correction for Autonomous Decision-Making</span></li><li><span class="dpr-home-dashboard-paper-title" title="Why Does Feedback-Augmented Self-Distillation Fail to Improve Retrieval-Interleaved Search Agents?">Why Does Feedback-Augmented Self-Distillation Fail to Improve Retrieval-Interleaved Search Agents?</span></li><li><span class="dpr-home-dashboard-paper-title" title="SR-Agent: An Experience-Driven Agentic Framework for Post-Ranking Strategy Refinement in E-Commerce Recommendation">SR-Agent: An Experience-Driven Agentic Framework for Post-Ranking Strategy Refinement in E-Commerce Recommendation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>11</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>7</strong></span></div>
 </section>
 </div>
 
