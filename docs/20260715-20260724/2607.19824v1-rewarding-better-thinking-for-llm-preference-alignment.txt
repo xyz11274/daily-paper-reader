@@ -1,0 +1,865 @@
+Title: Rewarding Better Thinking for LLM Preference Alignment
+
+URL Source: https://arxiv.org/pdf/2607.19824v1
+
+Published Time: Thu, 23 Jul 2026 00:31:07 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# Rewarding Better Thinking for LLM Preference Alignment 
+
+## Xubo Liu 1, Wenya Guo 1, Ruxue Yan 1, Xinying Qian 1, Ying Zhang 1
+
+> 1
+
+VCIP, DISSec, College of Computer Science, Nankai University, Tianjin, China {liuxubo, guowenya, yanruxue, qianxinying}@dbis.nankai.edu.cn, yingzhang@nankai.edu.cn 
+
+Abstract 
+
+LLM preference alignment aims to optimize models toward human preferences across diverse user instructions. Reinforce-ment learning has become a major post-training approach for this goal, but existing proxy rewards are often outcome-level, mainly evaluating the final response while providing limited guidance for the reasoning trajectory. This can make credit as-signment coarse when multiple responses receive similar final scores, leaving trajectory-level preferences under-specified. To address this limitation, we propose Thinking Checklist Reward (TCR), a process-oriented reward for RL-based preference alignment. TCR converts preference pairs into sample-specific thinking checklists and uses them to evaluate whether the generated reasoning trace addresses the preference-implied considerations. To reduce overlap with outcome-level supervi-sion, TCR further introduces an exponential moving average (EMA) residual formulation to isolate a complementary think-ing surplus beyond what is predictable from the outcome reward. Experiments on five models from three model families show that TCR consistently improves alignment performance across diverse benchmarks, with ablations further validat-ing the importance of EMA-based residual formulation and sample-specific checklist supervision. 
+
+## Introduction 
+
+Reinforcement learning (RL) has emerged as a major post-training paradigm for large language models (LLMs) (Yang et al. 2025; Guo et al. 2025). In domains with objective verifiers, such as mathematics and coding, reinforcement learning with verifiable rewards (RLVR) has become a central approach to training reasoning models, exemplified by GRPO (Shao et al. 2024). Building on this success, recent works (Wang and Xiong 2025; Xu et al. 2025; Zhang et al. 2025b; Simonds et al. 2025; Su et al. 2025; Shen et al. 2026; Ou et al. 2026) have begun to extend reinforcement fine-tuning to open-ended alignment using proxy reward signals, often provided by reward models (Liu et al. 2024) or LLM judges (Zheng et al. 2023). Despite these advances, most proxy rewards used in open-ended alignment remain predominantly outcome-level: they assess the final response while providing little direct sig-nal about the generation trajectory. This can limit credit assignment in reasoning-oriented LLMs, especially when multiple responses receive similar final-response scores. In Qwen2.5-3B  
+
+> Qwen2.5-7B
+> Llama3.2-3B
+> Llama3.1-8B
+> deepseek-7b
+> Qwen2.5-3B
+> Qwen2.5-7B
+> Llama3.2-3B
+> Llama3.1-8B
+> deepseek-7b
+> Intermediate Reasoning Question Answer
+> Thinking Checklist
+> Reward (TCR)
+> Outcome
+> Reward
+> Proxy Models
+> Instance-specific
+> Thinking Checklist
+> Residual
+> Addition
+
+Figure 1: (Upper) For each input, a sample-specific thinking checklist is inferred from preference pairs, the generated reasoning trace is evaluated against the checklist, and the resulting process-level signal is combined with the outcome reward through a residual formulation. (Lower) On Vicuna Eval’s pairwise evaluation, training with TCR consistently improves alignment performance across five models. such cases, outcome-only rewards provide limited guidance on which trajectories better reflect the user’s intent, con-straints, and preference-implied considerations. As a result, useful reasoning patterns discovered during exploration may be under-credited, even when they could support more robust and well-aligned behavior. Process Reward Models (PRMs) have been proposed to address a related limitation in mathematics and coding by pro-viding supervision over intermediate reasoning steps (Chen et al. 2024, 2025; Ye et al. 2025; He et al. 2025; Zou et al. 2025; Fan et al. 2025). Such supervision is effective in these domains where intermediate steps can often be locally evalu-ated according to correctness or their contribution to solving the problem. However, directly extending these PRMs to arXiv:2607.19824v1 [cs.AI] 22 Jul 2026 open-ended alignment is challenging (Zhang et al. 2025a; Tian et al. 2026). Unlike mathematics or coding, open-ended tasks often lack a unique solution path or locally verifiable intermediate steps. The value of a reasoning trace may instead lie in whether the overall trajectory captures the user’s intent, relevant constraints, trade-offs, and contextual appropriate-ness, rather than whether each individual step is independently correct. Such trajectory-level considerations guide how the final response selects information, balances constraints, and satisfies preference-implied requirements. To this end, we propose the Thinking Checklist Reward (TCR), a process-oriented reward component for open-ended alignment. As illustrated in Figure 1, TCR first infers a sample-specific thinking checklist from preference pairs by extracting the key considerations that make the preferred response better. It then evaluates the generated reasoning trace against this checklist and converts the evaluation into a trajectory-level reward signal. In this way, TCR transforms preference information into explicit supervision for the reasoning process, helping distinguish trajectories that receive similar outcome-level scores but differ in their underlying reasoning quality. A further issue is that reasoning quality and final-response quality are often positively correlated. As a result, directly adding a checklist-based reward may introduce reward re-dundancy by reinforcing information already captured by the outcome reward. To mitigate this reward overlap, TCR adopts a residual formulation based on an exponential moving aver-age, which estimates the predictable component of checklist quality from the outcome reward and retains only the remain-ing thinking surplus. This design makes TCR complementary to outcome-level supervision and allows it to be incorporated into standard RL post-training frameworks. We evaluate TCR on five models from three model families and show consistent improvements across diverse benchmarks. Our contributions are summarized as follows: 
+
+• We propose TCR, a preference-derived checklist reward that evaluates reasoning traces in a sample-specific and trajectory-level manner. 
+
+• We introduce a residual reward formulation that reduces overlap with outcome-level supervision and isolates a complementary thinking surplus for RL post-training. 
+
+• We empirically show that our sample-specific thinking checklist outperforms unified global checklists and generic trajectory scoring. 
+
+## Related Work 
+
+RL Post-training for LLM Alignment. RL has become a central post-training paradigm for LLM alignment, from RLHF-style preference optimization to RLVR for reasoning tasks (Shao et al. 2024; Guo et al. 2025; Yu et al. 2025). Re-cent work extends RL to open-ended alignment with reward models or LLM judges as proxy rewards (Liu et al. 2024; Zheng et al. 2023; Wang and Xiong 2025; Xu et al. 2025; Zhang et al. 2025b; Zhong et al. 2026). However, these signals mostly evaluate final responses, so they provide limited guid-ance when different reasoning trajectories lead to similarly rated answers. TCR instead derives trajectory-level supervi-sion from preference pairs, encouraging desirable reasoning behaviors without requiring a fixed answer or solution path. 
+
+Process Supervision. Process supervision and PRMs pro-vide denser feedback for math, code, and long-CoT reasoning, where intermediate correctness can often be assessed (Chen et al. 2024, 2025; Ye et al. 2025; He et al. 2025; Zou et al. 2025; Fan et al. 2025). Such supervision is harder to trans-fer to open-ended alignment, which lacks unique solution paths and locally verifiable steps (Zhang et al. 2025a). TCR addresses this setting by evaluating whole reasoning traces against preference-derived considerations rather than judging each step by local correctness. It also residualizes the checklist signal against outcome rewards, making the process signal complementary to final-answer supervision. 
+
+Rubric- and Checklist-based Evaluation. Rubric and checklist methods improve the granularity and interpretability of LLM evaluation and reward modeling (Lee et al. 2024; Wang and Xiong 2025; Shen et al. 2026; Liu et al. 2025; Zhou and Tan 2026; Tian et al. 2026). These methods show that ex-plicit natural-language criteria can capture preference-relevant dimensions beyond scalar scores, including for reasoning-oriented evaluation and supervision. TCR is related to these studies in using explicit criteria, but differs by deriving sample-specific checklists from pairwise preferences and applying them to reasoning traces during online RL training. More-over, TCR residualizes the checklist-based signal against the outcome reward to retain complementary process-level supervision beyond final-answer quality. 
+
+## Preliminary 
+
+Trajectory Generation Given a question q, a reasoning model M generates a response o = ( T , F), where T is the intermediate reasoning trace and F is the final answer. The model first produces T and then generates F conditioned on both q and T , making the reasoning trajectory observable for supervision beyond the final answer. 
+
+Process Supervision Given o = ( T , F), outcome-level rewards assign a scalar reward rout mainly according to the quality of F. Process supervision instead provides an auxiliary signal for T . In open-ended alignment, step-level supervision is difficult because preferences often depend on user intent, constraints, trade-offs, factual relevance, and con-textual appropriateness. We therefore focus on trajectory-level process supervision, which evaluates the whole reasoning trace according to preference-implied considerations. 
+
+## Thinking Checklist 
+
+In this section, we define a Thinking Checklist as a sample-specific set of criteria for evaluating the reasoning trace T .Each checklist is inferred from preference pairs and captures preference-implied considerations such as intent, constraints, trade-offs, and contextual appropriateness. 
+
+Empirical Analysis 
+
+We next examine whether checklist scores provide a useful process-level signal. Such a signal should be broadly aligned with outcome quality while retaining local sensitivity beyond Qwen3-4B Qwen3-8B Qwen3-14B Qwen3-32B 
+
+> Thinking Checklist Score
+
+Figure 2: Empirical relationship between outcome scores and thinking checklist scores. Top row: checklist scores are moderately positively correlated with outcome scores, showing that checklist-based evaluation is globally aligned with outcome-level quality. Bottom row: when samples are grouped by outcome rank, checklist scores still exhibit substantial within-group variation, indicating that they provide additional fine-grained resolution beyond outcome-level reward. final-response scores. We use GPT-4o 1 to assign both outcome and checklist scores across Qwen3 models of different scales. 
+
+Coarse alignment with outcome quality. As shown in Figure 2 (top row), checklist scores are moderately corre-lated with outcome scores across model scales, with Pearson correlations from 0.459 to 0.503. This moderate correla-tion is important: it indicates that checklist evaluation is not an arbitrary trajectory preference, but remains aligned with final-response quality at the global level. In other words, responses that receive higher outcome scores also tend to exhibit reasoning traces that better satisfy the corresponding preference-derived checklist. 
+
+Fine-grained sensitivity beyond outcome rewards. This correlation does not imply redundancy. Figure 2 (bottom row) shows substantial checklist-score variation among responses with similar outcome ranks, especially in lower-outcome groups where trajectory quality is more diverse. Thus, out-come rewards can be too coarse for policy optimization: two responses may receive similar final-answer scores while differ-ing in whether their reasoning considers the user’s constraints, trade-offs, or contextual requirements. Checklist scores pro-vide additional resolution over such trajectories. Together, the global correlation and within-rank variation motivate our residual design: instead of naively adding checklist rewards, we residualize them against outcome rewards and retain only the complementary thinking surplus for RL training. 
+
+## Method 
+
+We present Thinking Checklist Reward (TCR), a process-oriented reward for open-ended alignment. As illustrated in Figure 3, TCR is constructed from sample-specific checklists 
+
+> 1https://developers.openai.com/api/docs/models/gpt-4o
+
+inferred from pairwise preference data and used as an addi-tional trajectory-level reward term within RL post-training. It is combined with an outcome reward and a format reward to form the scalar reward for policy optimization. 
+
+Thinking Checklist Construction 
+
+Let Dpair = {(q, o +, o −)} denote pairwise preference data. For each pair, we use GPT-4o to infer a sample-specific checklist C(q) = {ck}Kq
+
+> k=1
+
+, where each item represents a preference-implied consideration such as user intent, task constraints, trade-offs, or contextual appropriateness. This converts preference information into a trajectory-level super-vision target without assuming locally verifiable reasoning steps. The checklist is constructed offline before RL training and shared by all sampled responses for the same question. 
+
+Reward Formulation 
+
+Given a sampled response oi = ( Ti, Fi), we define three reward components: an outcome-level reward on the final an-swer, a format reward on the output structure, and a checklist-based reward on the reasoning trace. 
+
+(1) Outcome-level Reward rout  
+
+> i
+
+. This reward evaluates the quality of the final answer Fi using a conventional reward model. Formally, we write rout  
+
+> i
+
+= Rout (q, Fi). It serves as the main supervision signal during training and preserves the standard outcome-level alignment objective. In implementa-tion, the raw score is clipped to a fixed interval and linearly normalized into [0 , 1] .
+
+(2) Format Reward rfmt  
+
+> i
+
+. This binary reward ensures struc-tural compliance by verifying whether the model output follows the prescribed format, namely, placing the reasoning trace inside <think>...</think> and the final answer inside Final Answer 
+
+> ℱ𝐀
+> (in <answer> …
+> </answer>)
+
+Pairwise Preference Data 𝐀 pair = {( 𝐀 , 𝐀 + , 𝐀 −)} LLM-based Checklist Inference Sample-Specific Checklist 
+
+𝐀 
+
+Input 
+
+Question 
+
+> Policy Model
+
+𝐀 𝐀 
+
+Rollouts 
+
+{𝐀 𝐀 }𝐀 =1                              
+
+> 𝐀
+> Reasoning
+> Trace 𝐀 𝐀
+> (in <think> …
+> </think>)
+> Format Reward
+> Format Check 𝐀 𝐀
+> 𝐀 𝐀 𝐀 ∈{0,1}
+> Outcome Reward
+> Reward
+> Model 𝐀 𝐀
+> 𝐀 𝐀 𝐀 ∈[0,1]
+> Clip &
+> Normalize
+> Residual Thinking Surplus
+> 𝐀 𝐀 =𝐀 𝐀 𝐀 −1+ ( 1−𝐀 )𝐀 𝐀
+> 𝐀 ℎ𝐀
+> 𝐀 𝐀
+> 𝐀 𝐀 𝐀 +ϵ
+> 𝐀 𝐀
+> 𝐀 𝐀 𝐀 =[𝐀 𝐀
+> 𝐀 ℎ𝐀 −𝐀 𝐀 𝐀 𝐀
+> 𝐀 𝐀 𝐀 ]+
+> 𝐀 𝐀 =(1−𝐀 𝐀 𝐀 𝐀 )𝐀 𝐀
+> 𝐀 𝐀 𝐀
+> +𝐀 𝐀 𝐀 𝐀 𝐀 𝐀
+> 𝐀 𝐀 𝐀 +𝐀 𝐀 𝐀 𝐀 𝐀 𝐀
+> 𝐀 𝐀 𝐀
+> Checklist-based Reward
+> Judge
+> Model 𝐀 𝐀
+> 𝐀 ℎ𝐀 ∈[0,1]
+> Averaging&
+> Calibration
+
+Offline Stage 
+
+Online Training Stage Reward 
+
+𝐀 1 𝐀 𝐀 ... 
+
+> Group
+> Computation
+> Advantage
+
+𝐀 1 𝐀 𝐀 
+
+... Figure 3: Overview of the training pipeline with TCR. A sample-specific thinking checklist is first constructed from pairwise data, and the generated reasoning trace is evaluated against it to obtain a checklist-based reward. This reward is then residualized and combined with the outcome-level reward and format reward to produce the overall training reward for policy optimization. 
+
+<answer>...</answer> . We assign rfmt  
+
+> i
+
+= 1 if the format is correct, and rfmt  
+
+> i
+
+= 0 otherwise. This term mainly supports reliable extraction of Ti and Fi, a design that has also been adopted in prior work (Xie et al. 2025; Guo et al. 2025). 
+
+(3) Raw Checklist-based Reward rchk  
+
+> i
+
+. To score the reason-ing trace, we use a judge model, Qwen3-30B-A3B-Instruct-2507-FP8 (Team 2025), to evaluate how well Ti addresses the checklist items in C(q). Each checklist item is scored on a discrete five-level scale, with corresponding values in 
+
+{2, 4, 6, 8, 10 }. Let sk(Ti, c k) denote the score assigned to 
+
+Ti on checklist item ck. We first compute the overall checklist score by averaging the item-level scores: 
+
+¯si = 1
+
+KqKq
+
+X
+
+> k=1
+
+sk(Ti, c k). (1) We then transform it into a centered process reward, 
+
+rchk  
+
+> i
+
+=
+
+ ¯si − 64
+
+
+
+> +
+
+, (2) where [·]+ = max( ·, 0) . This transformation serves two purposes. First, it centers the checklist score at the adequate 
+
+level, so that the reward reflects reasoning quality beyond a merely acceptable trace. Second, by retaining only the non-negative part, it lets the checklist-based term provide positive process supervision for sufficiently good reasoning without allowing low-confidence or noisy negative deviations to dominate the reward. As motivated by the empirical analysis, directly adding rchk 
+
+> i
+
+would overlap with outcome-level supervision. We therefore transform it into TCR through a residual formulation. 
+
+Residual Thinking Surplus 
+
+We maintain a global exponential moving average that is updated sequentially over sampled responses during reward computation. Let m denote the index of the response-level reward computation. For the sampled response oi, we update 
+
+αm = μα m−1 + (1 − μ) rchk 
+
+> i
+
+rout  
+
+> i
+
++ ϵ , (3) where μ ∈ [0 , 1) is the decay factor and ϵ > 0 is a small constant for numerical stability. Intuitively, the ratio 
+
+rchk  
+
+> i
+
+/(rout  
+
+> i
+
++ ϵ) characterizes the typical scale relationship between the raw checklist-based reward and the outcome-level reward, while αm provides a stable running estimate of this relationship throughout training. Based on this estimate, we define the residual thinking surplus as 
+
+rsur  
+
+> i
+
+= rchk  
+
+> i
+
+− αmrout 
+
+> i
+
+ 
+
+> +
+
+, (4) where [·]+ = max( ·, 0) . Here, the subtraction term αmrout 
+
+> i
+
+represents the coarse component of checklist quality that is already predictable from final-response quality. Accordingly, 
+
+rsur  
+
+> i
+
+retains only the additional part of reasoning quality that is not already captured by the final answer. The positive-part operator further ensures that this term acts as a complementary bonus, rather than introducing unnecessary penalties when the checklist-based reward is already well explained by the outcome-level reward. We then define the TCR as 
+
+rTCR  
+
+> i
+
+= λTCR rsur  
+
+> i
+
+, (5) where λTCR controls the strength of process-level supervision. In this way, TCR is not the overall training reward itself, but the residualized checklist-based reward term introduced to complement conventional outcome-level supervision. 
+
+Overall Training Reward 
+
+We now combine the above components into the final scalar reward used for RL training: 
+
+ri = (1 − λfmt ) rout  
+
+> i
+
++ λfmt rfmt  
+
+> i
+
++ rTCR  
+
+> i
+
+, (6) where λfmt controls the contribution of the format reward. The first term anchors optimization to the conventional outcome-level objective, the second term encourages structured outputs, and the third term injects additional supervision on the rea-soning trace through the residualized checklist-based reward. In this way, the final training reward preserves the origi-nal alignment direction while incorporating complementary process-level information. Base LLM Method Vicuna Eval Dolly Eval BPO-test Eval ∆WR A B A win tie B win A win tie B win A win tie B win 
+
+Qwen Models 
+
+Qwen2.5-3B DAPO ori 50.00 2.50 47.50 47.50 15.00 37.50 46.00 16.50 37.50 +7.00 DPO ori 48.75 3.75 47.50 46.50 17.50 36.00 44.50 16.50 39.00 +5.75 DAPO + TCR DPO 58.75 2.50 38.75 44.00 17.50 38.50 44.00 18.50 37.50 +10.67 DAPO + TCR DAPO 51.25 8.75 40.00 45.00 22.00 33.00 38.00 26.50 35.50 +8.58 DAPO + TCR w/o EMA 50.00 7.50 42.50 51.50 11.00 37.50 45.00 12.50 42.50 +8.00 Qwen2.5-7B DAPO ori 50.00 8.75 41.25 51.00 18.50 30.50 43.50 21.00 35.50 +12.42 DPO ori 51.25 7.50 41.25 40.50 25.00 34.50 40.50 19.50 40.00 +5.50 DAPO + TCR DPO 46.25 8.75 45.00 58.00 13.50 28.50 50.00 16.50 33.50 +15.75 DAPO + TCR DAPO 51.25 13.75 35.00 42.50 23.50 34.00 42.00 24.00 34.00 +10.92 DAPO + TCR w/o EMA 47.50 7.50 45.00 42.50 19.00 38.50 41.50 19.00 39.50 +2.83 
+
+Llama Models 
+
+Llama3.2-3B DAPO ori 47.50 6.25 46.25 45.50 24.50 30.00 45.50 12.50 42.00 +6.75 DPO ori 53.75 3.75 42.50 45.00 23.50 31.50 46.50 15.50 38.00 +11.08 DAPO + TCR DPO 47.50 5.00 47.50 51.50 21.50 27.00 45.00 15.50 39.50 +10.00 DAPO + TCR DAPO 51.25 8.75 40.00 42.50 23.50 34.00 47.50 13.00 39.50 +9.25 DAPO + TCR w/o EMA 53.75 5.00 41.25 39.50 28.00 32.50 48.00 11.00 41.00 +8.83 Llama3.1-8B DAPO ori 55.00 5.00 40.00 45.00 22.50 32.50 46.50 15.00 38.50 +11.83 DPO ori 53.75 5.00 41.25 40.00 20.50 39.50 42.50 17.00 40.50 +5.00 DAPO + TCR DPO 52.50 7.50 40.00 49.50 17.50 33.00 55.50 9.00 35.50 +16.33 DAPO + TCR DAPO 52.50 5.00 42.50 40.00 22.50 37.50 45.50 19.50 35.00 +7.67 DAPO + TCR w/o EMA 47.50 5.00 47.50 42.50 18.50 39.00 44.50 12.50 43.00 +1.67 
+
+DeepSeek Model 
+
+DeepSeek-llm-7B DAPO ori 48.75 11.25 40.00 41.00 23.50 35.50 42.50 18.00 39.50 +5.75 DPO ori 51.25 3.75 45.00 45.00 13.50 41.50 47.00 14.50 38.50 +6.08 DAPO + TCR DPO 56.25 5.00 38.75 44.00 13.50 42.50 49.50 9.50 41.00 +9.17 DAPO + TCR DAPO 50.00 13.75 36.25 41.00 20.50 38.50 47.00 13.00 40.00 +7.75 DAPO + TCR w/o EMA 47.50 12.50 40.00 42.50 17.00 40.50 44.50 17.50 38.00 +5.33 
+
+Table 1: Pairwise evaluation results on Vicuna Eval, Dolly Eval, and BPO-test Eval using GPT-4.1 as the judge model. ∆WR is the average win-rate difference (A win − B win ) across the three benchmarks. DAPO+TCR denotes DAPO training with the proposed TCR, and w/o EMA removes the EMA-based residualization. 
+
+Policy Optimization 
+
+We optimize the policy πθ using the DAPO framework (Yu et al. 2025), where θ denotes the policy parameters and ri is the overall reward defined above. For each input question q,the behavior policy πθold samples a group of responses 
+
+{oi}Gi=1 ∼ πθold (· | q).
+
+Their rewards are then normalized within the group to obtain relative advantages: 
+
+ˆAi = ri − mean( {rj }Gj=1 )std( {rj }Gj=1 ) + δ , (7) where δ is a small constant for numerical stability. The resulting advantage is shared across all tokens in the same response. For the t-th token of response oi, the importance ratio is defined as 
+
+ρi,t (θ) = πθ (oi,t | q, o i,<t )
+
+πθold (oi,t | q, o i,<t ) , (8) and its decoupled clipped counterpart is given by 
+
+¯ρi,t (θ) = clip( ρi,t (θ), 1 − εlow , 1 + εhigh ) , (9) where εlow and εhigh are the lower and upper clipping co-efficients, respectively. Based on these two quantities, the token-level clipped surrogate is then 
+
+ℓi,t (θ) = min 
+
+
+
+ρi,t (θ) ˆAi, ¯ρi,t (θ) ˆAi
+
+
+
+. (10) The optimization objective is given by 
+
+J (θ) = E
+
+ 1
+
+PGi=1 |oi|
+
+> G
+
+X
+
+> i=1
+> |oi|
+
+X
+
+> t=1
+
+ℓi,t (θ)
+
+ , (11) where the expectation is taken over q and {oi}Gi=1 ∼ πθold (· | 
+
+q).Overall, policy optimization in our method follows the DAPO framework with GRPO-style group-normalized ad-vantages and decoupled clipping, while omitting the KL term and disabling dynamic sampling in our experiments. 
+
+## Experiments 
+
+Experiment Setups 
+
+Evaluation. We evaluate our method on four open-ended benchmarks: Dolly Eval (Conover et al. 2023), Vicuna Eval (Chiang et al. 2023), BPO-test Eval (Cheng et al. 2024), and Base LLM Metric ori DAPO DPO DAPO + TCR w/o EMA                                                                            
+
+> Qwen Models
+> Qwen2.5-3B WR 12.99 14.48 12.39 14.80 12.68 DWR 12.92 14.41 12.30 14.97 12.61 LCWR 11.75 12.74 11.92 13.44 11.47 Qwen2.5-7B WR 23.88 24.62 22.63 27.14 26.43 DWR 24.65 24.09 23.47 27.19 26.46 LCWR 23.83 24.05 24.64 25.79 24.49
+> Llama Models
+> Llama3.2-3B WR 11.31 11.92 13.06 13.84 13.59 DWR 11.12 11.86 13.04 13.66 13.54 LCWR 10.09 11.13 11.62 13.10 12.67 Llama3.1-8B WR 17.28 19.83 18.08 20.03 19.34 DWR 17.20 19.94 18.39 20.06 19.01 LCWR 15.48 16.85 16.82 16.87 16.20
+> DeepSeek Model
+> DeepSeek-llm-7B WR 3.44 3.06 3.40 4.25 3.36 DWR 3.42 2.98 3.35 4.16 3.23 LCWR 4.74 4.28 5.52 5.96 4.85
+
+Table 2: Results on AlpacaEval 2.0. WR, DWR, and LCWR denote win_rate , discrete_win_rate , and 
+
+length_controlled_winrate , respectively. AlpacaEval 2.0 (Li et al. 2023). For all benchmarks, we adopt a pairwise evaluation protocol using GPT-4.1 2 as the judge model. The evaluation prompt is based on the AlpacaEval scoring template. To mitigate position bias, we randomly shuffle the order of model responses in each comparison. Additional dataset and prompt details are provided in the supplementary material. 
+
+Training. We conduct experiments on five LLMs from three model families: Qwen2.5-3B, Qwen2.5-7B (Team 2024), Llama3.2-3B, Llama3.1-8B (Grattafiori et al. 2024), and DeepSeek-LLM-7B-chat (Bi et al. 2024). All models are trained on the BPO dataset (Cheng et al. 2024) using the 
+
+verl framework (Sheng et al. 2025). Our method follows the DAPO optimization and incorporates TCR as an addi-tional residualized checklist-based reward term. The thinking checklists are constructed offline from pairwise preference data and used only during reward computation. Additional hyperparameters are provided in the supplementary material. 
+
+Baselines. For each model, we compare against three base-lines: the original base LLM, DPO, and DAPO. The base LLM measures the effect of post-training, while DPO serves as an offline preference optimization baseline using the same type of pairwise supervision. DAPO uses the same RL optimiza-tion framework as our method but excludes TCR, allowing us to directly evaluate the contribution of the proposed TCR. 
+
+Main Results 
+
+Tables 1 and 2 present the main results on open-ended alignment benchmarks. Overall, incorporating TCR into DAPO consistently improves alignment performance across model families and evaluation settings. As shown in Ta-ble 1, DAPO+TCR achieves positive average win-rate differ-
+
+> 2
+
+https://openai.com/index/gpt-4-1 Vicuna Dolly BPO-test Avg.  
+
+> Benchmark
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> ΔWR Gain
+> 85.0 69.5 58.5 71.0 90.0 74.5 71.5 78.7 TCR over Generic Traj. Reward TCR over Global Checklist Reward
+
+Figure 4: Ablation of reward design on Qwen2.5-7B. We report the gain of TCR over Generic Traj. Reward and Global Checklist Reward. ences over DAPO on all five backbone models across Vicuna Eval, Dolly Eval, and BPO-test Eval, with gains of +8.58, +10.92, +9.25, +7.67, and +7.75 ∆WR, respectively. Since DAPO+TCR and DAPO use the same RL optimization frame-work, these improvements indicate that the gains come from the additional trajectory-level reward introduced by TCR. DAPO+TCR also generally outperforms DPO, suggesting that converting pairwise preference information into checklist-based reasoning supervision provides benefits beyond stan-dard offline preference optimization. Table 2 further shows that DAPO+TCR achieves the best results on AlpacaEval 2.0 across all five backbones and all three metrics, including WR, DWR, and LCWR. The consistent improvement in LCWR suggests that the gains are not merely due to longer responses, but reflect better length-controlled alignment quality. To-gether, these results show that TCR is an effective reward component for improving DAPO-based open-ended RL align-ment. Bootstrap confidence intervals over pooled instances, reported in the supplementary material, further support the observed improvements. 
+
+Ablation Study 
+
+We conduct ablations on the key design choices of TCR. 
+
+Effect of EMA-based residual formulation. To examine the role of residualization, we compare TCR with a w/o EMA variant that directly uses the raw checklist-based reward. As shown in Table 1, DAPO+TCR consistently outperforms this variant across all five backbones, with average gains of +8.00, +2.83, +8.83, +1.67, and +5.33 ∆WR, respectively. The same trend is observed on AlpacaEval 2.0 in Table 2. These results show that the EMA-based residual formulation is more effective than directly adding raw checklist rewards. This supports our motivation that checklist rewards should be dynamically calibrated against outcome rewards, rather than treated as an independent additive signal. 
+
+Reward design comparison. We further compare TCR with two controlled variants on Qwen2.5-7B. Generic Traj. Reward directly scores the whole reasoning trajectory, while Global Checklist Reward replaces the sample-specific checklist with a unified checklist shared across samples; prompt details 0 20 40 60 80 100      
+
+> Training Progress (%)
+> 0.10
+> 0.12
+> 0.14
+> 0.16
+> 0.18
+> Residual Surplus
+> 020 40 60 80 100
+> Training Progress (%)
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> EMA Ratio
+
+Figure 5: Reward component analysis on Qwen2.5-7B. Left: residual surplus rsur . Right: EMA ratio. Qwen2.5-3B 
+
+w/ TCR 
+
+Qwen2.5-7B 
+
+w/ TCR 
+
+Llama3.2-3B 
+
+w/ TCR 
+
+Llama3.1-8B 
+
+w/ TCR 
+
+deepseek-7b 
+
+w/ TCR 
+
+Qwen2.5-3B 
+
+w/o TCR 
+
+Qwen2.5-7B 
+
+w/o TCR 
+
+Llama3.2-3B 
+
+w/o TCR 
+
+Llama3.1-8B 
+
+w/o TCR 
+
+deepseek-7b 
+
+w/o TCR 
+
+Figure 6: Vicuna Eval’s evaluation using Gemini 2.5 Pro. are provided in the supplementary material. As shown in Figure 4, TCR achieves clear ∆WR gains over both variants across Vicuna, Dolly, and BPO-test. This suggests that TCR’s improvement is not merely from adding a generic trajectory-level reward; preference-derived sample-specific checklist criteria provide more targeted process supervision. 
+
+Additional Analysis 
+
+Reward components. To better understand how residual-ization behaves during training, we track the residual surplus and EMA ratio on Qwen2.5-7B. As shown in Figure 5 (left), the residual surplus remains consistently above zero, indi-cating that the checklist signal is not fully absorbed by the outcome reward and continues to provide auxiliary process-level supervision throughout training. Figure 5 (right) shows that the EMA ratio gradually decreases during training. This is expected because the overall reward is dominated by the outcome reward, so policy optimization primarily improves final-answer quality, while checklist satisfaction need not in-crease at the same rate. The changing ratio also suggests that the coupling between checklist and outcome rewards is not fixed, supporting the use of EMA-based adaptive calibration. 
+
+Evaluator robustness. Since our main evaluation relies on GPT-4.1, we further test whether the observed gains are robust to the choice of judge model. Specifically, we evaluate DAPO+TCR against DAPO on Vicuna Eval using Gemini-2.5-Pro 3 as an additional judge. As shown in Figure 6, Gemini also prefers DAPO+TCR over DAPO across all five backbones. 
+
+> 3
+
+https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro 0 10 20 30 40 50 60 70 80 90 100 110 
+
+> Training Step
+> 300
+> 320
+> 340
+> 360
+> 380
+> 400
+> Mean Response Length
+> w/ TCR w/o TCR
+
+Figure 7: Mean response length during Qwen2.5-7B training. Qwen2.5-3B Qwen2.5-7B Llama3.2-3B Llama3.1-8B DeepSeek-7B  
+
+> 0
+> 100
+> 200
+> 300
+> 400
+> Average Answer Length (Words)  +3.5% +1.2% -0.2% -6.5% -5.3% w/ TCR w/o TCR
+
+Figure 8: Average answer length on AlpacaEval 2.0. This suggests that the improvement is not specific to GPT-4.1 and is less likely to be an artifact of a single evaluator. 
+
+Response length. We examine whether TCR’s gains mainly come from longer generations. Figure 7 shows that DAPO+TCR produces longer overall responses during Qwen2.5-7B training, indicating a change in generation be-havior. Yet Figure 8 shows that final answer length remains largely unchanged on AlpacaEval 2.0, suggesting that this change mainly occurs in the reasoning rather than final an-swers. Together with the LCWR improvements in Table 2, this suggests that TCR improves alignment quality by shaping the thinking process, without relying on answer-length inflation. 
+
+## Conclusion 
+
+We propose TCR, a process-oriented reward for open-ended LLM preference alignment. TCR converts preference infor-mation into sample-specific checklists to evaluate reasoning traces, providing process supervision beyond outcome-level rewards. To reduce reward overlap, TCR introduces an EMA-based residual formulation that retains complementary think-ing surplus beyond final-response reward. Experiments on five LLMs from three families show that adding TCR to DAPO consistently improves alignment performance over DAPO and DPO baselines. Ablation, length analysis, and evaluator-robustness results further support the effectiveness of the proposed reward design, with additional checklist analyses and case studies provided in the supplementary material. References 
+
+Achiam, J.; Adler, S.; Agarwal, S.; Ahmad, L.; Akkaya, I.; Aleman, F. L.; Almeida, D.; Altenschmidt, J.; Altman, S.; Anadkat, S.; et al. 2023. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 .Bai, Y.; Jones, A.; Ndousse, K.; Askell, A.; Chen, A.; Das-Sarma, N.; Drain, D.; Fort, S.; Ganguli, D.; Henighan, T.; et al. 2022. Training a helpful and harmless assistant with reinforcement learning from human feedback. arXiv preprint arXiv:2204.05862 .Bi, X.; Chen, D.; Chen, G.; Chen, S.; Dai, D.; Deng, C.; Ding, H.; Dong, K.; Du, Q.; Fu, Z.; et al. 2024. Deepseek llm: Scaling open-source language models with longtermism. 
+
+arXiv preprint arXiv:2401.02954 .Chen, B.; Gao, X.; Hu, C.; Yu, P.; Zhang, H.; and Bao, B.-K. 2025. Reasongrm: Enhancing generative reward models through large reasoning models. arXiv preprint arXiv:2506.16712 .Chen, G.; Liao, M.; Li, C.; and Fan, K. 2024. Step-level value preference optimization for mathematical reasoning. In 
+
+Findings of the Association for Computational Linguistics: EMNLP 2024 , 7889–7903. Cheng, J.; Liu, X.; Zheng, K.; Ke, P.; Wang, H.; Dong, Y.; Tang, J.; and Huang, M. 2024. Black-box prompt optimization: Aligning large language models without model training. In 
+
+Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,3201–3219. Chiang, W.-L.; Li, Z.; Lin, Z.; Sheng, Y.; Wu, Z.; Zhang, H.; Zheng, L.; Zhuang, S.; Zhuang, Y.; Gonzalez, J. E.; et al. 2023. Vicuna: An open-source chatbot impressing gpt-4 with 90%* chatgpt quality. See https://vicuna. lmsys. org (accessed 14 April 2023) , 2(3): 6. Conover, M.; Hayes, M.; Mathur, A.; Xie, J.; Wan, J.; Shah, S.; Ghodsi, A.; Wendell, P.; Zaharia, M.; and Xin, R. 2023. Free dolly: Introducing the world’s first truly open instructiontuned llm. Fan, L.; Zhang, Y.; Chen, M.; and Liu, Z. 2025. Posterior-grpo: Rewarding reasoning processes in code generation. arXiv preprint arXiv:2508.05170 .Grattafiori, A.; Dubey, A.; Jauhri, A.; Pandey, A.; Kadian, A.; Al-Dahle, A.; Letman, A.; Mathur, A.; Schelten, A.; Vaughan, A.; et al. 2024. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 .Guo, D.; Yang, D.; Zhang, H.; Song, J.; Wang, P.; Zhu, Q.; Xu, R.; Zhang, R.; Ma, S.; Bi, X.; et al. 2025. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 .He, T.; Mu, R.; Liao, L.; Cao, Y.; Liu, M.; and Qin, B. 2025. Good learners think their thinking: Generative PRM makes large reasoning model more efficient math learner. arXiv preprint arXiv:2507.23317 .Köpf, A.; Kilcher, Y.; Von Rütte, D.; Anagnostidis, S.; Tam, Z. R.; Stevens, K.; Barhoum, A.; Nguyen, D.; Stanley, O.; Nagyfi, R.; et al. 2023. Openassistant conversations-democratizing large language model alignment. Advances in neural information processing systems , 36: 47669–47681. Lee, Y.; Kim, J.; Kim, J.; Cho, H.; and Kang, P. 2024. Checke-val: Robust evaluation framework using large language model via checklist. arXiv preprint arXiv:2403.18771 , 3(5). Li, X.; Zhang, T.; Dubois, Y.; Taori, R.; Gulrajani, I.; Guestrin, C.; Liang, P.; and Hashimoto, T. B. 2023. Alpacaeval: An automatic evaluator of instruction-following models. Liu, C. Y.; Zeng, L.; Liu, J.; Yan, R.; He, J.; Wang, C.; Yan, S.; Liu, Y.; and Zhou, Y. 2024. Skywork-Reward: Bag of Tricks for Reward Modeling in LLMs. arXiv preprint arXiv:2410.18451 .Liu, T.; Xu, R.; Yu, T.; Hong, I.; Yang, C.; Zhao, T.; and Wang, H. 2025. Openrubrics: Towards scalable synthetic rubric generation for reward modeling and llm alignment. 
+
+arXiv preprint arXiv:2510.07743 .Ou, W.; Zheng, Y.; Sun, S.; Zhang, W.; Dong, B.; Zhu, H.; Huang, R.; Yu, G.; Yan, P.; and Qiao, Y. 2026. Serl: Self-examining reinforcement learning on open-domain. In 
+
+Proceedings of the AAAI Conference on Artificial Intelligence ,volume 40, 32619–32627. Peng, B.; Li, C.; He, P.; Galley, M.; and Gao, J. 2023. Instruc-tion tuning with gpt-4. arXiv preprint arXiv:2304.03277 .Shao, Z.; Wang, P.; Zhu, Q.; Xu, R.; Song, J.; Bi, X.; Zhang, H.; Zhang, M.; Li, Y.; Wu, Y.; et al. 2024. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 .Shen, W. F.; Qiu, X.; Whitehouse, C.; Alazraki, L.; Goel, S.; Barbieri, F.; Willi, T.; Mathur, A.; and Leontiadis, I. 2026. Rethinking Rubric Generation for Improving LLM Judge and Reward Modeling for Open-ended Tasks. arXiv preprint arXiv:2602.05125 .Sheng, G.; Zhang, C.; Ye, Z.; Wu, X.; Zhang, W.; Zhang, R.; Peng, Y.; Lin, H.; and Wu, C. 2025. Hybridflow: A flexible and efficient rlhf framework. In Proceedings of the Twentieth European Conference on Computer Systems , 1279–1297. Simonds, T.; Lopez, K.; Yoshiyama, A.; and Garmier, D. 2025. RLSR: Reinforcement Learning from Self Reward. 
+
+arXiv preprint arXiv:2505.08827 .Su, Y.; Yu, D.; Song, L.; Li, J.; Mi, H.; Tu, Z.; Zhang, M.; and Yu, D. 2025. Crossing the reward bridge: Expanding rl with verifiable rewards across diverse domains. arXiv preprint arXiv:2503.23829 .Team, Q. 2024. Qwen2.5: A Party of Foundation Models. Team, Q. 2025. Qwen3 Technical Report. arXiv:2505.09388. Tian, X.; Yuan, S.; Ding, M.; Chen, H.; and Jiang, X. 2026. RiT: Rubrics-in-Thinking Reinforcement Learning for Im-proved Reasoning in Large Language Models. In Findings of the Association for Computational Linguistics: ACL 2026 ,3944–3957. Wang, T.; and Xiong, C. 2025. Autorule: Reasoning chain-of-thought extracted rule-based rewards improve preference learning. arXiv preprint arXiv:2506.15651 .Xie, T.; Gao, Z.; Ren, Q.; Luo, H.; Hong, Y.; Dai, B.; Zhou, J.; Qiu, K.; Wu, Z.; and Luo, C. 2025. Logic-rl: Unleashing llm reasoning with rule-based reinforcement learning. arXiv preprint arXiv:2502.14768 .Xu, Y.; Chakraborty, T.; Sharma, S.; Nunes, L.; Kıcıman, E.; Lu, S.; and Chandra, R. 2025. Direct reasoning optimization: Llms can reward and refine their own reasoning for open-ended tasks. arXiv e-prints , arXiv–2506. Yang, A.; Li, A.; Yang, B.; Zhang, B.; Hui, B.; Zheng, B.; Yu, B.; Gao, C.; Huang, C.; Lv, C.; et al. 2025. Qwen3 technical report. arXiv preprint arXiv:2505.09388 .Ye, Z.; Melo, L. C.; Kaddar, Y.; Blunsom, P.; Staton, S.; and Gal, Y. 2025. Uncertainty-aware step-wise verification with generative reward models. arXiv preprint arXiv:2502.11250 .Yu, Q.; Zhang, Z.; Zhu, R.; Yuan, Y.; Zuo, X.; Yue, Y.; Dai, W.; Fan, T.; Liu, G.; Liu, L.; et al. 2025. Dapo: An open-source llm reinforcement learning system at scale. arXiv preprint arXiv:2503.14476 .Zhang, K.; Zhang, J.; Li, H.; Zhu, X.; Hua, E.; Lv, X.; Ding, N.; Qi, B.; and Zhou, B. 2025a. Openprm: Building open-domain process-based reward models with preference trees. In The thirteenth international conference on learning representations .Zhang, M.; Liu, X.; Ding, S.; Yin, W.; Sun, Y.; Wu, H.; Guo, W.; and Zhang, Y. 2025b. Auditable-choice reframing unlocks RL-based verification for open-ended tasks. arXiv e-prints , arXiv–2511. Zheng, L.; Chiang, W.-L.; Sheng, Y.; Zhuang, S.; Wu, Z.; Zhuang, Y.; Lin, Z.; Li, Z.; Li, D.; Xing, E.; et al. 2023. Judging llm-as-a-judge with mt-bench and chatbot arena. Advances in neural information processing systems , 36: 46595–46623. Zhong, W.; Liu, C.; Wu, Y.; Tan, B.; Sun, C.; Wang, Y.; Liu, X.; and Kuang, K. 2026. P2S: Probabilistic Process Supervision for General-Domain Reasoning Question Answering. arXiv preprint arXiv:2601.20649 .Zhou, K.; and Tan, C. 2026. AutoChecklist: Composable Pipelines for Checklist Generation and Scoring with LLM-as-a-Judge. arXiv preprint arXiv:2603.07019 .Zou, J.; Yang, L.; Gu, J.; Qiu, J.; Shen, K.; He, J.; and Wang, M. 2025. Reasonflux-prm: Trajectory-aware prms for long chain-of-thought reasoning in llms. arXiv preprint arXiv:2506.18896 .
+
+## Reward Computation Algorithm 
+
+Algorithm 1 summarizes the overall reward computation with TCR during RL training. 
+
+## Experimental Details 
+
+Training Data 
+
+We use the BPO training data (Cheng et al. 2024) for pol-icy optimization. The BPO training set is constructed from four preference-annotated datasets, covering both human-annotated and model-generated preference signals. Specifically, OASST1 (Köpf et al. 2023) is a crowd-sourced instruction-following dataset with human-annotated response quality ratings. For each instruction, the response with the highest score is used as the preferred response, and the re-sponse with the lowest score is used as the rejected response. HH-RLHF (Bai et al. 2022) provides human preferences Algorithm 1: Reward Computation with TCR                                                                                         
+
+> Require: Output oi, question q, checklist C(q)
+> Require: Outcome RM Rout , checklist judge Jchk
+> Require: EMA α, decay μ, ratio bound M
+> Require: Weights λfmt , λ TCR
+> Ensure: Final reward ri
+> 1: Extract Fifrom <answer>...</answer>
+> 2: if Fiis missing then
+> 3: return invalid reward 4: end if
+> 5: Extract Tifrom <think>...</think>
+> 6: Compute format reward:
+> rfmt
+> i=I{oihas valid tags }.
+> 7: Compute outcome reward:
+> xi=Rout (q, Fi),rout
+> i= clip( xi, L, U )−LU−L.
+> 8: Initialize rsur
+> i←0
+> 9: if Tiexists and C(q)̸=∅then
+> 10: Score Tiwith Jchk and obtain mean score ¯si
+> 11: Compute raw checklist reward:
+> rchk
+> i=
+> ¯si−64
+> 
+> +
+> .
+> 12: Update EMA ratio:
+> γi= min
+> rchk
+> i
+> rout
+> i+ϵ , M
+> 
+> ,α←μα + (1 −μ)γi.
+> 13: Compute residual surplus:
+> rsur
+> i=
+> h
+> rchk
+> i−αr out
+> i
+> i
+> +
+> .
+> 14: end if
+> 15: Compute final reward:
+> ri= (1 −λfmt )rout
+> i+λfmt rfmt
+> i
+> +λTCR rsur
+> i.
+> 16: return clip( ri,0,1)
+
+over helpfulness and harmlessness. Chatbot Arena Conversa-tions (Zheng et al. 2023) contains pairwise human preferences collected from the Chatbot Arena platform. BPO also includes the comparison subset of Alpaca-GPT4 (Peng et al. 2023), where preferences are generated by GPT-4 (Achiam et al. 2023). To ensure data quality, only samples in which GPT-4 responses outperform text-davinci-003 responses are retained. For our method, we construct a sample-specific thinking checklist for each training question using its pairwise prefer-ence annotation. The resulting checklist is stored offline and used during reward computation. During RL training, all sam-pled responses for the same question share the same checklist, ensuring that checklist-based rewards are comparable within each rollout group. Configuration Value RL framework verl                                
+
+> RL algorithm DAPO Advantage estimator GRPO Responses per prompt G8Training prompt batch size 128 Generation prompt batch size 128 PPO mini-batch size 32 PPO micro-batch size per GPU 16 Max prompt length 512 Max response length 4096 Loss aggregation token-mean Learning rate 1×10 −6
+> LR warmup steps 10 Weight decay 0.1 Gradient clipping 1.0 KL in reward disabled KL loss disabled KL coefficient 0.0 Entropy coefficient 0.0 Clip ratio low / high 0.2/0.24
+> Dynamic sampling disabled Overlong buffer disabled Rollout backend vLLM Rollout temperature 1.0 Rollout top-p1.0 Rollout top-k-1 Validation temperature 0.6 Validation top-p0.95 Number of nodes / GPUs 1/2
+
+Table 3: Main RL training hyperparameters. 
+
+Training Configuration 
+
+All RL experiments are implemented with the verl frame-work (Sheng et al. 2025) following the DAPO training recipe (Yu et al. 2025). Unless otherwise specified, we use the same training configuration across backbone models. The main training hyperparameters are summarized in Table 3. We use Skywork-Reward-V2-Llama-3.1-8B (Liu et al. 2024) as the outcome reward model and Qwen3-30B-A3B-Instruct-2507-FP8 (Team 2025) as the checklist scoring model. The raw outcome reward is clipped to [−25 , 70] and linearly normalized to [0 , 1] . For checklist scoring, the judge model assigns each checklist item one of five scores, {2, 4, 6, 8, 10 },where 6 corresponds to the adequate level. The checklist reward is centered by (s − 6) /4 and only the non-negative part is retained. For EMA-based residualization, we use a decay factor μ = 0 .99 , a numerical constant ϵ = 10 −6, and clip the checklist-to-outcome reward ratio by a maximum value of 5.0. The format reward weight is set to λfmt = 0 .1,and the TCR weight is set to λTCR = 0 .05 .We use the same reward-related hyperparameters and normalization settings across all backbone models, with-out model-specific tuning. These values are selected based on the default DAPO training recipe and common RL post-training practice. This unified configuration allows us to evaluate whether TCR serves as a generally effective reward component, rather than a setting heavily tuned for a particular model or benchmark. In practical applications, these hyper-parameters can be further adjusted according to the target model, task domain, and computational budget. 
+
+Evaluation Benchmarks 
+
+We evaluate the trained models on four open-ended instruction-following benchmarks: Vicuna Eval, Dolly Eval, BPO-test Eval, and AlpacaEval 2.0. 
+
+Vicuna Eval. Vicuna Eval (Chiang et al. 2023) contains 80 diverse questions covering eight categories. It is com-monly used to evaluate open-ended instruction-following and conversational ability. 
+
+Dolly Eval. Dolly Eval (Conover et al. 2023) is a subset of 200 instances randomly sampled from the Dolly dataset. The original Dolly dataset is human-generated and covers eight categories of instruction-following tasks. 
+
+BPO-test Eval. BPO-test Eval is a 200-instance subset sampled from the test set of BPO (Cheng et al. 2024). We use it to measure open-ended alignment performance. 
+
+AlpacaEval 2.0. AlpacaEval 2.0 (Li et al. 2023) is an auto-matic evaluation benchmark for instruction-following models. We report the official win_rate , discrete_win_rate , and 
+
+length_controlled_winrate . The length-controlled win rate is used to mitigate the effect of response length in auto-matic pairwise evaluation. 
+
+Evaluation Metrics 
+
+For AlpacaEval 2.0, we report three official metrics: win_rate , discrete_win_rate , and 
+
+length_controlled_winrate . win_rate measures the average preference probability that the evaluated model response is preferred over the baseline response. 
+
+discrete_win_rate converts each pairwise comparison into a discrete win/loss outcome and reports the proportion of wins. length_controlled_winrate adjusts the win rate by controlling for response length, reducing the effect of verbosity on open-ended evaluation. In the main text, we abbreviate these metrics as WR, DWR, and LCWR, respectively. 
+
+Bootstrap Confidence Intervals 
+
+To further assess the reliability of the pairwise evaluation results, we conduct a bootstrap analysis for DAPO+TCR against DAPO. It is worth noting that the ∆WR reported in Table 1 is computed as the average of the win-rate differences across Vicuna Eval, Dolly Eval, and BPO-test Eval. In contrast, the bootstrap confidence intervals reported here are computed over pooled evaluation instances from the three benchmarks. Specifically, for each backbone model, we merge all pairwise comparison instances from Vicuna Eval, Dolly Eval, and BPO-test Eval, and perform 10,000 bootstrap resampling runs over the pooled instances with replacement. For each resampled set, we compute the pooled ∆WR, and then take the 2.5th and 97.5th percentiles as the 95% confidence interval. As shown in Table 4, the confidence intervals are above zero for Qwen2.5-3B, Qwen2.5-7B, and Llama3.2-3B, indi-cating statistically reliable improvements on these models. For Llama3.1-8B and DeepSeek-LLM-7B, the intervals slightly Base LLM 95% CI of pooled ∆WR      
+
+> Qwen2.5-3B [0.21, 16.04] Qwen2.5-7B [1.88, 17.54] Llama3.2-3B [0.62, 16.67] Llama3.1-8B [-0.63, 15.00] DeepSeek-LLM-7B [-1.46, 14.61]
+
+Table 4: Bootstrap 95% confidence intervals of pooled ∆WR for DAPO+TCR against DAPO. The intervals are computed with 10,000 bootstrap resampling runs over the pooled pair-wise evaluation instances from Vicuna Eval, Dolly Eval, and BPO-test Eval.             
+
+> # Checklist Items Count Percentage 380.06% 41,140 8.24% 510,332 74.72% 62,191 15.85% 7156 1.13%
+
+Table 5: Distribution of checklist lengths. overlap zero, while their point estimates in Table 1 remain positive. Overall, these results provide additional statistical support for the effectiveness of TCR. 
+
+## Checklist Analysis 
+
+To better understand the properties of the generated thinking checklists, we analyze their length distribution, the types of thinking behaviors they capture, and representative checklist examples. This analysis focuses on the checklists used during training, where each checklist is constructed from pairwise preference data and serves as a sample-specific supervision target for the reasoning trace. 
+
+Checklist Length Distribution 
+
+We first analyze the length distribution of the generated thinking checklists. All 13,827 training samples have non-empty checklists, resulting in 70,482 checklist items in total. Each sample contains 5.10 checklist items on average, with a median of 5 and a standard deviation of 0.53. The checklist length ranges from 3 to 7 items, and each item contains 8.41 words on average. In addition, the number of unique item types is close to the total number of checklist items, with 70,359 unique item types and only 105 duplicated item types, suggesting that the generated checklists are highly sample-specific rather than dominated by repeated templates. As shown in Table 5, most samples contain five checklist items, while a smaller portion contains four or six items. This suggests that the checklist construction process produces compact and stable supervision targets, rather than overly long rubrics. Meanwhile, the variation from three to seven items indicates that the checklist is not generated from a rigid fixed-length template, but adapts moderately to the complexity of each sample.                       
+
+> Thinking Behavior Count Percentage Context Grounding 927 18.54% User Adaptation 862 17.24% Completeness Planning 796 15.92% Logical Planning 519 10.38% Answer Organization 421 8.42% Trade-off Awareness 394 7.88% Evidence Checking 364 7.28% Intent Decomposition 285 5.70% Risk/Safety Awareness 225 4.50% Constraint Tracking 207 4.14%
+
+Table 6: Distribution of thinking behavior categories captured by generated checklist items, computed on a random subset of 5,000 checklist items. 
+
+Checklist Category Distribution 
+
+We further analyze what types of thinking behaviors are captured by the generated checklists. Since the checklist is designed to supervise reasoning traces rather than final responses, we categorize checklist items according to the reasoning behavior they require from the model’s thinking process. We classify a random subset of 5,000 checklist items using this taxonomy. As shown in Table 6, the generated check-lists cover a diverse set of thinking behaviors. The most frequent categories are context grounding, user adaptation, and completeness planning, accounting for 18.54%, 17.24%, and 15.92% of the analyzed items, respectively. This suggests that the checklists often encourage the model to anchor its reasoning in the specific input, adapt its reasoning strategy to user needs, and plan the key aspects to cover before answering. Other categories, such as logical planning, answer organiza-tion planning, trade-off awareness, and evidence checking, further indicate that the checklists supervise structured rea-soning behaviors rather than generic response-level qualities. Table 7 defines the thinking-behavior taxonomy used in this analysis. 
+
+Judge Consistency 
+
+To examine whether checklist-based scoring is overly de-pendent on a single judge model, we randomly sample 500 responses and ask different LLM judges to score the same rea-soning traces with the same generated checklists. The scores are generally consistent across judges. This suggests that checklist-based scoring is a relatively simple and constrained judging task, because the checklist already specifies what thinking behaviors should be checked. Thus, the judge only needs to assess whether the reasoning trace satisfies these explicit criteria, rather than make an unconstrained preference judgment. 
+
+Examples of Generated Checklist Items 
+
+Table 8 presents representative generated checklist items for the ten thinking behavior categories. All examples are selected from the analyzed checklist items without rewrit-ing. We choose items that explicitly describe process-level Thinking Behavior Definition Intent Decomposition Identifying, inferring, or decomposing the user’s goal, intent, or task objective before generating the final answer. Constraint Tracking Tracking explicit requirements, formats, conditions, or constraints specified in the user request during reasoning. Context Grounding Grounding the reasoning process in the specific context, scenario, or background of the input question. Evidence and Fact Checking Checking factual claims, assumptions, evidence, and logical consistency before committing to the final response. Logical Planning Forming a coherent reasoning path, causal analysis, step-by-step plan, or analytical structure. Completeness Planning Identifying the key aspects that need to be covered and avoiding important omissions during planning. Trade-off Awareness Considering alternatives, limitations, pros and cons, or nuanced trade-offs when the task involves multiple possible directions. Risk and Safety Awareness Anticipating potential risks, sensitive issues, unsafe advice, bias, or inappropriate conclusions during reasoning. Answer Organization Planning Planning how the final answer should be structured, sequenced, or presented based on the reasoning outcome. User Adaptation Adapting the reasoning strategy to the user’s needs, background, tone, expected level of detail, or practical use case. 
+
+Table 7: Definitions of thinking behavior categories used for checklist analysis. Each category describes a process-level behavior expected from the reasoning trace, rather than a surface-level rubric for the final answer. 
+
+Representative Generated Checklist Items by Thinking Behavior Intent Decomposition. User intent interpretation (clarify underlying needs without violating confidentiality norms). Clarification of user intent (probe underlying needs or nuances in the question). 
+
+Constraint Tracking. Relevance to query scope (focus on exact word constraints: “five letters”, “al-”, “-e”). Environment compatibility (space needs and adaptability to specific living conditions). 
+
+Context Grounding. Contextual background (clarifies origins, goals, and intentions of the topic). Historical context (timelines of adoption, obsolescence, and replacement). 
+
+Evidence and Fact Checking. Assumption validation (addressing implicit assumptions within the user’s question). Evidence alignment (considering scientific evidence and how it supports the argument). 
+
+Logical Planning. Alternative root causes (explore diverse potential sources beyond the immediate error context). Logical connections (relationships between causes, consequences, and underlying principles). 
+
+Completeness Planning. Range of potential causes (breadth of contributing factors considered). Consideration of exceptions (addresses edge cases or deviations from the norm). 
+
+Trade-off Awareness. Plausibility of multiple hypotheses (weigh competing explanations across different contexts and evidence). Survival trade-offs (weighing benefits like protection against potential disadvantages or risks). 
+
+Risk and Safety Awareness. Ethical implications of knowledge sharing (evaluate risks of harmful misuse of information). Risk management focus (consider identification and mitigation of potential hazards). 
+
+Answer Organization Planning. Transparency of reasoning (consider whether steps are explicitly outlined for comprehension). Hierarchical clarity (organizes ideas, distinguishes broader concepts from specific examples). 
+
+User Adaptation. Problem anticipation (proactive thinking about potential user needs or clarifications). User comprehension focus (attentiveness to anticipated audience knowledge and needs). 
+
+Table 8: Representative generated checklist items for each thinking behavior category. considerations for the reasoning trace, such as clarifying in-tent, tracking constraints, validating assumptions, considering alternatives, and anticipating risks. 
+
+## Prompts 
+
+This section lists the prompts and checklist used in our exper-iments. Specifically, we provide four prompts for checklist construction, checklist-based reasoning evaluation, generic trajectory reward evaluation, and pairwise response evalua-tion, together with the unified global checklist used by the Global Checklist Reward baseline. 
+
+## Case Study 
+
+We provide case studies comparing models trained with and without TCR. The detailed examples are presented in Tables 14, 15, and 16. Checklist Construction Prompt 
+
+You are an experienced data annotator specializing in creating high-quality training data for reward models. Your task is to analyze the following input: [User Question] {user_question} [Better Answer] {good_res} [Weaker Answer] {bad_res} Task: - From the two answers, infer the **thinking dimensions** the better answer attends to that the weaker answer overlooks or underdevelops. ,→
+
+- Convert these into a **thinking checklist** that guides what to think about (cognitive focuses), not what to do (procedures). - Each item should be a concise **noun phrase or evaluation criterion** that names the mental consideration, optionally followed by a brief clarifier (<= 12 words). ,→
+
+Output Format (strict): Thinking Checklist: Key point 1: <thinking dimension / criterion (optional brief clarifier)> Key point 2: <thinking dimension / criterion (optional brief clarifier)> ... Additional Requirements: - Do not mention the existence of two answers or compare them explicitly. - Focus on **what to examine/consider/evaluate**, not how to write/format/structure steps. - Avoid procedural verbs like “write”, “explain”, “list”, “provide”, “format”, “walk through”. - Keep items generalizable and domain-relevant; 2–7 items total; each on one line. 
+
+Table 9: Prompt used to construct thinking checklists from pairwise preference data. 
+
+Pairwise Evaluation Prompt 
+
+System prompt: Please act as an impartial judge and evaluate the quality of the responses provided by two AI assistants to the user question displayed below. You should choose the assistant that follows the user 's instructions and answers the user 's question better. Your evaluation should consider factors such as the helpfulness, relevance, accuracy, depth, creativity, and level of detail of their responses. Begin your evaluation by comparing the two responses and provide a short explanation. Avoid any position biases and ensure that the order in which the responses were presented does not influence your decision. Do not allow the length of the responses to influence your evaluation. Do not favor certain names of the assistants. Be as objective as possible. After providing your explanation, output your final verdict by strictly following this format: "[[A]]" if assistant A is better, "[[B]]" if assistant B is better, and "[[C]]" for a tie. 
+
+> ,→
+> ,→
+> ,→
+> ,→
+> ,→
+> ,→
+> ,→
+
+Prompt template: [User Question] {question} [The Start of Assistant A 's Answer] {answer_a} [The End of Assistant A 's Answer] [The Start of Assistant B 's Answer] {answer_b} [The End of Assistant B 's Answer] Output format: [[A]] 
+
+Table 10: Prompt used for pairwise response evaluation. The order of responses is randomly shuffled during evaluation to reduce position bias. Checklist Scoring Prompt 
+
+You are a strict and conservative evaluator. Your goal is to provide stable, low-variance, and evidence-based judgments. IMPORTANT: Scoring must follow a TWO-STEP process. STEP 1 — Choose exactly ONE rating level from the following list: - "very poor" - "poor" - "adequate" - "good" - "excellent" STEP 2 — Map the chosen rating level to a numeric score using this fixed mapping: - very poor → 2- poor → 4- adequate → 6- good → 8- excellent → 10 For each checklist item: 1) First identify concrete flaws, gaps, or weaknesses. 2) Briefly explain how well the {subject_type.lower()} satisfies the criterion (1–2 sentences). 3) Choose ONE rating level. 4) Output the corresponding numeric score. After all items: - Provide an overall summary (3–4 sentences). - Compute overall_score as the arithmetic mean of all numeric scores, rounded to one decimal. Output MUST be valid JSON only, exactly following this schema: {"items": [ {"criterion": "<text>", "explanation": "<1-2 sentences>", "rating_level": "<very poor | poor | adequate | good | excellent>", "score": <2 | 4 | 6 | 8 | 10> }], "overall_summary": "<3-4 sentences>", "overall_score": <number with one decimal> }If the checklist is empty, return: - "items": [] - "overall_score": 0.0 with an appropriate overall_summary. --- {subject_type} ---{subject_text} --- Checklist ---{checklist_display} Return valid JSON only. No extra text. 
+
+Table 11: Prompt used to score a generated reasoning trace against the thinking checklist. Generic Trajectory Reward Prompt 
+
+You are a strict and conservative evaluator of reasoning quality. Given a user question and a model-generated reasoning trace, evaluate the overall quality of the reasoning process. IMPORTANT: - Do NOT evaluate the final answer itself. - Do NOT reward verbosity by itself. - Only evaluate whether the reasoning trace is useful, coherent, relevant, and likely to support a high-quality answer. Evaluate the reasoning trace according to the following aspects: 1) Whether it correctly understands the user 's intent. 2) Whether it identifies relevant requirements, constraints, and context. 3) Whether it develops a coherent and useful reasoning process. 4) Whether it avoids unsupported assumptions, hallucinations, and irrelevant reasoning. 5) Whether it is logically consistent and helpful for producing a good final answer. Choose exactly ONE rating level: - "very poor" - "poor" - "adequate" - "good" - "excellent" Map the rating level to a numeric score: - very poor -> 2 - poor -> 4 - adequate -> 6 - good -> 8 - excellent -> 10 Output MUST be valid JSON only, exactly following this schema: {"explanation": "<brief explanation in 2-3 sentences>", "rating_level": "<very poor | poor | adequate | good | excellent>", "score": <2 | 4 | 6 | 8 | 10> }--- User Question ---{question} --- Reasoning Trace ---{think} Return valid JSON only. No extra text. 
+
+Table 12: Prompt used by the Generic Traj. Reward baseline to directly score the whole reasoning trace without checklist guidance. 
+
+Global Thinking Checklist 
+
+1. Correctly understand the user 's intent and the main task. 2. Identify the key requirements, constraints, and conditions in the question. 3. Develop a coherent and useful reasoning plan before answering. 4. Use relevant information from the question and avoid irrelevant reasoning. 5. Avoid unsupported assumptions, hallucinated facts, or overgeneralization. 6. Consider important trade-offs, edge cases, or contextual factors when needed. 7. Ensure the reasoning process is logically consistent and leads toward a helpful answer. 
+
+Table 13: Global thinking checklist used by the Global Checklist Reward baseline. Case Study 1: Challenges in the Education Sector Question. What are the major challenges faced by the education sector today? 
+
+Reasoning w/o TCR. 
+
+To address the major challenges faced by the education sector today, I need to consider several key areas that have been impacted by various factors such as technological advancements, socio-economic changes, and global events. These areas include access to education, quality of education, teacher training, curriculum relevance, and the integration of technology. 
+
+> ,→
+> ,→
+
+Answer w/o TCR. 
+
+The education sector today faces several significant challenges: 1. **Access to Education**: Despite progress, many regions still struggle with providing equitable access to education. [...] 2. **Quality of Education**: Ensuring that all students receive a high-quality education that prepares them for the future is a major challenge. [...] ,→
+
+3. **Teacher Training and Support**: Teachers need continuous professional development [...] 4. **Curriculum Relevance**: The curriculum needs to evolve to reflect the changing needs of society and the workforce. [...] 5. **Integration of Technology**: While technology has the potential to enhance learning, its integration into education faces challenges [...] ,→
+
+6. **Global Events and Societal Changes**: Events such as pandemics, economic downturns, and political instability can disrupt education systems [...] ,→
+
+Reasoning w/ TCR. 
+
+To address the major challenges faced by the education sector today, I need to consider several key areas that have been impacted by various factors such as technological advancements, socio-economic changes, and global events. Here are the steps I 'll take: ,→
+
+1. Identify broad categories of challenges. 2. Provide specific examples under each category. 3. Consider the impact of these challenges on different stakeholders (students, educators, administrators). 4. Ensure the answer is comprehensive and covers the most significant issues. 
+
+Answer w/ TCR. 
+
+The education sector today faces several significant challenges that impact its effectiveness and accessibility. Here are some of the major challenges: ,→
+
+1. **Technological Integration and Accessibility**: - **Digital Divide**: Not all students have equal access to technology and the internet [...] - **Digital Literacy**: Educators and students need to develop skills to effectively use digital tools and platforms. 2. **Curriculum Relevance and Adaptability**: - **Changing Job Market**: The rapid pace of technological change requires curricula to be updated frequently [...] - **Global Competitiveness**: Educational systems must adapt to compete globally [...] 3. **Educational Inequality**: - **Resource Allocation**: Schools in affluent areas often have better resources [...] - **Social and Economic Barriers**: Students from lower socio-economic backgrounds may face additional challenges [...] 4. **Teacher Quality and Professional Development**: - **Retention and Recruitment** [...] - **Professional Growth** [...] 5. **Assessment and Evaluation**: - **Standardized Testing** [...] - **Holistic Assessment** [...] 6. **Mental Health and Well-being**: - **Stress and Anxiety** [...] - **Support Services** [...] 7. **Global Events and Disruptions**: - **Pandemics and Natural Disasters** [...] - **Political and Economic Instability** [...] 
+
+Observation. The model trained w/ TCR first plans how to organize the analysis, including category construction, examples, stakeholder impact, and coverage. This planning is reflected in the final answer, which covers more concrete and contemporary challenges such as the digital divide, digital literacy, educational inequality, assessment, mental health, and disruption risks. 
+
+Table 14: Case study on education-sector challenges. The model trained w/ TCR produces more planned reasoning and a more comprehensive final answer. Case Study 2: Automation, Job Creation, and Technological Progress Question. In a world where automation is becoming increasingly prevalent, is it more important to prioritize job creation or technological progress? 
+
+Reasoning w/o TCR. 
+
+To determine whether job creation or technological progress should be prioritized in a world where automation is becoming increasingly prevalent, I need to consider the benefits and drawbacks of each approach. ,→
+
+1. Technological progress: - Innovation drives economic growth and can lead to new industries and job opportunities. - Automation can increase efficiency and productivity [...] - However, rapid technological change can also lead to job displacement and income inequality. 2. Job creation: - Ensuring that people have employment can improve quality of life and reduce poverty. - Job creation can provide a sense of purpose and fulfillment [...] - However, simply creating jobs does not guarantee that they are sustainable or well-paying. The challenge is to balance these factors. 
+
+Answer w/o TCR. 
+
+In a world where automation is becoming increasingly prevalent, it is important to balance the priorities of job creation and technological progress. While technological progress is essential for long-term economic growth and can lead to the development of new industries, it is also crucial to manage the transition in a way that mitigates job displacement and income inequality. Simultaneously, job creation is important to ensure that people have meaningful and well-compensated work. The key is to invest in education and retraining programs [...] 
+
+> ,→
+> ,→
+> ,→
+> ,→
+
+Reasoning w/ TCR. 
+
+The question of whether to prioritize job creation or technological progress in a world dominated by automation is complex and multifaceted. Let 's break it down: ,→
+
+1. Economic Growth and Innovation: Technological progress often drives economic growth and innovation. New technologies can create entirely new industries and job sectors [...] ,→
+
+2. Job Displacement: Automation can also lead to job displacement in certain sectors. Jobs that are repetitive or can be easily automated might become obsolete [...] ,→
+
+3. Skill Mismatch: As technology advances, there is often a mismatch between the skills that are in demand and the skills that the workforce possesses. This can exacerbate inequality and economic disparity. ,→
+
+4. Long-term Benefits [...] 5. Policy and Education [...] 6. Sustainability and Ethical Considerations [...] Given these considerations, it seems that both job creation and technological progress are important, but they are not mutually exclusive. ,→
+
+Answer w/ TCR. 
+
+In a world where automation is becoming increasingly prevalent, it is crucial to strike a balance between prioritizing job creation and technological progress. Technological progress is essential for driving economic growth, innovation, and addressing global challenges like climate change. However, it is equally important to ensure that this progress does not lead to significant job displacement and skill mismatches. By implementing effective policies and education systems that support workforce retraining and upskilling, we can harness the benefits of technological advancement while creating new job opportunities. The key is to foster an environment where technological progress and job creation are mutually reinforcing, rather than competing, goals. 
+
+> ,→
+> ,→
+> ,→
+> ,→
+> ,→
+
+Observation. The model trained w/ TCR moves beyond a simple two-sided comparison and explicitly reasons about skill mismatch, policy and education, and sustainability and ethical issues. The final answer also reflects this improved reasoning by reframing job creation and technological progress as mutually reinforcing goals rather than competing priorities. 
+
+Table 15: Case study on trade-off reasoning under automation. The model trained w/ TCR better captures the interaction between technological progress, job displacement, and policy responses. Case Study 3: Podcast Script on Streaming Platforms Question. Structure a podcast script for an episode discussing the influence of streaming platforms on the music industry. 
+
+Reasoning w/o TCR. 
+
+To structure a podcast episode on the influence of streaming platforms on the music industry, I need to consider the key points that would be interesting and informative for listeners. The episode should cover the rise of streaming, its impact on album sales, artist discovery, and revenue models. It 's also important to include perspectives from both industry insiders and artists themselves. The script should flow logically, starting with an introduction, moving through the main points, and ending with a conclusion or call to action. 
+
+> ,→
+> ,→
+> ,→
+
+Answer w/o TCR. 
+
+[intro music plays] Host: [welcoming tone] Welcome to "The Soundtrack of Our Lives," your go-to podcast for all things music and technology. [...] [Transition music] Host: First, let 's talk about the rise of streaming platforms. Services like Spotify, Apple Music, and Tidal have grown exponentially since their inception. [...] ,→
+
+[Transition music] Host: One of the most significant impacts of streaming has been on album sales. [...] [Transition music] Host: Let 's hear from a real artist about this change. [Name of artist], a [genre] artist, has been in the industry for over a decade. [...] [Transition music] Host: Streaming platforms have made it easier than ever to discover new artists. [...] [Transition music] Host: As we wrap up today 's episode, it 's clear that streaming platforms have had a profound impact on the music industry. [...] 
+
+Reasoning w/ TCR. 
+
+To structure a podcast episode on the influence of streaming platforms on the music industry, I need to consider the key points that would be interesting and informative for listeners. The episode should cover the rise of streaming, its impact on album sales, artist discovery, and revenue models. It 's also important to discuss the challenges and opportunities that streaming presents to both established and up-and-coming artists. I should include examples of successful artists who have thrived on streaming platforms and perhaps some case studies of artists who have struggled. Additionally, I should touch on the broader implications for the industry, such as changes in how music is produced and consumed. The episode should be engaging and accessible, so I 'll aim for a conversational tone and include anecdotes or interviews with industry experts. 
+
+> ,→
+> ,→
+> ,→
+> ,→
+> ,→
+> ,→
+
+Answer w/ TCR. 
+
+[Podcast Intro Music] Host: [Warm, inviting tone] Welcome to "The Soundtrack of Our Lives," where we explore the music industry and its impact on our daily lives. [...] [Transition Music] Host: Let 's start by looking at how streaming platforms like Spotify, Apple Music, and Tidal have reshaped the music industry. Before streaming, the primary way to listen to music was through physical media like CDs and vinyl, or through radio. But with the advent of streaming, the way we consume music has shifted dramatically. [...] 
+
+> ,→
+> ,→
+
+[Segment Transition Music] Host: One of the most significant impacts of streaming has been on album sales. With the rise of streaming, the concept of the "album" as a cohesive unit has become less relevant. Listeners can now access individual songs and playlists, which has led to a shift in how artists release music. [...] 
+
+> ,→
+> ,→
+
+[Transition Music] Host: Speaking of standing out, let 's talk about how streaming has changed the way artists are discovered. [...] [Segment Transition Music] Host: However, the shift to streaming has also brought challenges. For one, the revenue model for artists is different. While streaming platforms pay artists per stream, the payouts are often small. This has led to debates about fair compensation and the value of individual streams. [...] ,→
+
+[Transition Music] Host: To get a deeper understanding of these issues, I spoke with [Name of Industry Expert], a music industry analyst and former record label executive. [...] ,→
+
+Host: That 's a great point. It 's clear that while streaming has opened up new opportunities, it 's also created new challenges. [...] 
+
+Observation. The model trained w/ TCR plans the script around a richer set of industry-level considerations, including opportunities and challenges for different artists, case examples, expert input, and changes in music production and consumption. These considerations appear in the final script through more concrete segments on consumption shifts, album unbundling, revenue challenges, fair compensation, and industry adaptation. 
+
+Table 16: Case study on podcast-script generation. The model trained w/ TCR produces more comprehensive reasoning and a richer final script structure.
