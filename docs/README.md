@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-07-15 ~ 2026-07-24</span>
+      <span class="dpr-home-dashboard-kicker">2026-06-25 ~ 2026-07-24</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 22 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 29 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>10</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>18</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-07-24 02:24:47 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-07-24 03:40:39 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>本周22篇论文聚焦LLM高效适配与长时任务智能体，两篇高分文章关注注意力头重加权和信用分配。</p>
-<p>最值得精读的方向是《Data-Efficient Adaptation of LLMs via Attention Head Reweighting》利用注意力头重加权实现数据高效微调，以及《TRACE: Turn-level Reward Assignment via Credit Estimation》针对长时智能体优化奖励分配。</p>
-<p>建议普通读者关注LLM微调技巧（如注意力头重加权）和智能体训练中的信用分配方法，能显著提升模型与任务性能。</p>
+<p>本期日报共收录29篇论文，精读18篇，速读11篇，核心聚焦于递归自改进智能体与自进化强化学习系统。</p>
+<p>最值得精读的两篇10.0/10与9.0/10论文分别提出了多智能体架构实现递归自改进和下一代自进化智能体框架，速读8.0/10的三篇则涉及规则-策略联合学习、世界模型自进化及无漂移语义巩固。</p>
+<p>建议普通读者优先从《How to Realize Recursively Self-Improving Agents》入手理解自改进架构设计，再结合《Next-Generation Agentic RL Systems》把握工程化落地方向。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +73,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">10 篇</strong>
+    <strong class="dpr-home-dashboard-count">18 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Data-Efficient Adaptation of LLMs via Attention Head Reweighting">Data-Efficient Adaptation of LLMs via Attention Head Reweighting</span></li><li><span class="dpr-home-dashboard-paper-title" title="TRACE: Turn-level Reward Assignment via Credit Estimation for Long-Horizon Agents">TRACE: Turn-level Reward Assignment via Credit Estimation for Long-Horizon Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Is External Database Protection Static in Retrieval-Augmented Generation? Rethinking Privacy Preservation under Dynamic Queries">Is External Database Protection Static in Retrieval-Augmented Generation? Rethinking Privacy Preservation under Dynamic Queries</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="How to Realize Recursively Self-Improving Agents and Personal Singularity: A Goal-, Scope-, Tool-, and Benchmark-Driven Multi-Agent Architecture">How to Realize Recursively Self-Improving Agents and Personal Singularity: A Goal-, Scope-, Tool-, and Benchmark-Driven Multi-Agent Architecture</span></li><li><span class="dpr-home-dashboard-paper-title" title="Next-Generation Agentic Reinforcement Learning Systems Enable Self-Evolving Agents">Next-Generation Agentic Reinforcement Learning Systems Enable Self-Evolving Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="EvoPolicyGym: Evaluating Autonomous Policy Evolution in Interactive Environments">EvoPolicyGym: Evaluating Autonomous Policy Evolution in Interactive Environments</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">llm-trends <strong>7</strong></span><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ads <strong>15</strong></span><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">12 篇</strong>
+    <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="AgentCompass: A Unified Evaluation Infrastructure for Agent Capabilities">AgentCompass: A Unified Evaluation Infrastructure for Agent Capabilities</span></li><li><span class="dpr-home-dashboard-paper-title" title="Step-Level Preference Learning for Generative Agents in Social Simulations">Step-Level Preference Learning for Generative Agents in Social Simulations</span></li><li><span class="dpr-home-dashboard-paper-title" title="ToolVerse: Unlocking Massive Environments and Long-Horizon Tasks for Agentic Reinforcement Learning">ToolVerse: Unlocking Massive Environments and Long-Horizon Tasks for Agentic Reinforcement Learning</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Joint Learning of Experiential Rules and Policies for Large Language Model Agents">Joint Learning of Experiential Rules and Policies for Large Language Model Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving World Models for LLM Agent Planning">Self-Evolving World Models for LLM Agent Planning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Episodic-to-Semantic Consolidation Without Identity Drift">Episodic-to-Semantic Consolidation Without Identity Drift</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>8</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>4</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ads <strong>7</strong></span><span class="dpr-home-dashboard-tag">ase <strong>4</strong></span></div>
 </section>
 </div>
 
