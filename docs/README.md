@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-06-25 ~ 2026-07-24</span>
+      <span class="dpr-home-dashboard-kicker">2026-07-26</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 29 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 18 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>18</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-07-24 03:40:39 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-07-26 21:13:41 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>本期日报共收录29篇论文，精读18篇，速读11篇，核心聚焦于递归自改进智能体与自进化强化学习系统。</p>
-<p>最值得精读的两篇10.0/10与9.0/10论文分别提出了多智能体架构实现递归自改进和下一代自进化智能体框架，速读8.0/10的三篇则涉及规则-策略联合学习、世界模型自进化及无漂移语义巩固。</p>
-<p>建议普通读者优先从《How to Realize Recursively Self-Improving Agents》入手理解自改进架构设计，再结合《Next-Generation Agentic RL Systems》把握工程化落地方向。</p>
+<p>今日精读7篇速读11篇，共18篇论文。最值得关注的是《Constraint-Anchored Reasoning Traces》和《SkyVLaM》两项9.0分研究，分别聚焦约束锚定推理与无人机遥感多模态大模型。建议优先阅读轻量级微调与合成数据避免模型崩溃相关论文。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">18 篇</strong>
+    <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="How to Realize Recursively Self-Improving Agents and Personal Singularity: A Goal-, Scope-, Tool-, and Benchmark-Driven Multi-Agent Architecture">How to Realize Recursively Self-Improving Agents and Personal Singularity: A Goal-, Scope-, Tool-, and Benchmark-Driven Multi-Agent Architecture</span></li><li><span class="dpr-home-dashboard-paper-title" title="Next-Generation Agentic Reinforcement Learning Systems Enable Self-Evolving Agents">Next-Generation Agentic Reinforcement Learning Systems Enable Self-Evolving Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="EvoPolicyGym: Evaluating Autonomous Policy Evolution in Interactive Environments">EvoPolicyGym: Evaluating Autonomous Policy Evolution in Interactive Environments</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Constraint-Anchored Reasoning Traces">Constraint-Anchored Reasoning Traces</span></li><li><span class="dpr-home-dashboard-paper-title" title="SkyVLaM: Multimodal Large Language Model for UAV Video Understanding in Remote Sensing">SkyVLaM: Multimodal Large Language Model for UAV Video Understanding in Remote Sensing</span></li><li><span class="dpr-home-dashboard-paper-title" title="D2VBench: Benchmarking Large Language Models with Value Dilemmas in Daily Scenarios">D2VBench: Benchmarking Large Language Models with Value Dilemmas in Daily Scenarios</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ads <strong>15</strong></span><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">llm-trends <strong>7</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -89,9 +87,9 @@
     <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Joint Learning of Experiential Rules and Policies for Large Language Model Agents">Joint Learning of Experiential Rules and Policies for Large Language Model Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving World Models for LLM Agent Planning">Self-Evolving World Models for LLM Agent Planning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Episodic-to-Semantic Consolidation Without Identity Drift">Episodic-to-Semantic Consolidation Without Identity Drift</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Schema-Constrained Document-Level Event Argument Extraction with Lightweight LLM Fine-Tuning">Schema-Constrained Document-Level Event Argument Extraction with Lightweight LLM Fine-Tuning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Learning from Synthetic Data without Model Collapse in Iterative Instruction Tuning">Learning from Synthetic Data without Model Collapse in Iterative Instruction Tuning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Token-Level Off-Policy Learning for Faithful Generation Under Distribution Shift">Token-Level Off-Policy Learning for Faithful Generation Under Distribution Shift</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ads <strong>7</strong></span><span class="dpr-home-dashboard-tag">ase <strong>4</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">llm-trends <strong>10</strong></span><span class="dpr-home-dashboard-tag">ase <strong>1</strong></span></div>
 </section>
 </div>
 
