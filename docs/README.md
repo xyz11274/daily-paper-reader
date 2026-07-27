@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-07-26</span>
+      <span class="dpr-home-dashboard-kicker">2026-07-27</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 18 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 22 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>10</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-07-26 21:13:41 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-07-27 21:54:28 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读7篇速读11篇，共18篇论文。最值得关注的是《Constraint-Anchored Reasoning Traces》和《SkyVLaM》两项9.0分研究，分别聚焦约束锚定推理与无人机遥感多模态大模型。建议优先阅读轻量级微调与合成数据避免模型崩溃相关论文。</p>
+<p>今日聚焦递归自我改进智能体与元技能强化学习，两篇满分论文揭示前沿方向。</p>
+<p>最值得关注的是AREX深度研究智能体的自我迭代能力，以及用强化学习培养LLM核心元技能的方法。</p>
+<p>建议普通读者优先精读这两篇10分论文，探索智能体自主进化的潜力。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +73,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">10 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Constraint-Anchored Reasoning Traces">Constraint-Anchored Reasoning Traces</span></li><li><span class="dpr-home-dashboard-paper-title" title="SkyVLaM: Multimodal Large Language Model for UAV Video Understanding in Remote Sensing">SkyVLaM: Multimodal Large Language Model for UAV Video Understanding in Remote Sensing</span></li><li><span class="dpr-home-dashboard-paper-title" title="D2VBench: Benchmarking Large Language Models with Value Dilemmas in Daily Scenarios">D2VBench: Benchmarking Large Language Models with Value Dilemmas in Daily Scenarios</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="AREX: Towards a Recursively Self-Improving Agent for Deep Research">AREX: Towards a Recursively Self-Improving Agent for Deep Research</span></li><li><span class="dpr-home-dashboard-paper-title" title="Teaching LLMs to Self-Evolve: Cultivating Core Meta-Skills with Reinforcement Learning">Teaching LLMs to Self-Evolve: Cultivating Core Meta-Skills with Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Skill Self-Play: Pushing the Frontier of LLM Capability with Co-Evolving Skills">Skill Self-Play: Pushing the Frontier of LLM Capability with Co-Evolving Skills</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">llm-trends <strong>7</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>9</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Schema-Constrained Document-Level Event Argument Extraction with Lightweight LLM Fine-Tuning">Schema-Constrained Document-Level Event Argument Extraction with Lightweight LLM Fine-Tuning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Learning from Synthetic Data without Model Collapse in Iterative Instruction Tuning">Learning from Synthetic Data without Model Collapse in Iterative Instruction Tuning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Token-Level Off-Policy Learning for Faithful Generation Under Distribution Shift">Token-Level Off-Policy Learning for Faithful Generation Under Distribution Shift</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="RELIC: Revealed Principles for Learning Interpretable Composable Skills in Multi-Agent Planning">RELIC: Revealed Principles for Learning Interpretable Composable Skills in Multi-Agent Planning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Environment-free Synthetic Data Generation for API-Calling Agents">Environment-free Synthetic Data Generation for API-Calling Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="WAR: Workload-Aware Rollouts for Synchronous Agentic Reinforcement Learning">WAR: Workload-Aware Rollouts for Synchronous Agentic Reinforcement Learning</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">llm-trends <strong>10</strong></span><span class="dpr-home-dashboard-tag">ase <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">llm-trends <strong>7</strong></span><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span></div>
 </section>
 </div>
 
