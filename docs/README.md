@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-06-30 ~ 2026-07-29</span>
+      <span class="dpr-home-dashboard-kicker">2026-07-29</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 32 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>20</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-07-29 09:22:42 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-07-29 21:46:23 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日推荐32篇论文，聚焦智能体强化学习与自我进化。精读满分论文揭示智能体可通过自我反馈重试或自进化机制持续提升能力。建议关注智能体在开放世界泛化与失败中学习的速读文章如《Learning from Failure》等。</p>
+<p>今日聚焦智能体高效学习与授权机制，精读两篇高分论文。</p>
+<p>最值得关注：从智能体经验中高效学习的方法，以及演进智能体在固定权限下的授权验证。</p>
+<p>建议优先精读这两篇9分论文，再速读专家行为先验强化学习和自评估偏差论文。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +73,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">20 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Next-Generation Agentic Reinforcement Learning Systems Enable Self-Evolving Agents">Next-Generation Agentic Reinforcement Learning Systems Enable Self-Evolving Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agent Reinforcement Learning via Pivotal-Aware Self-Feedback Retry">Agent Reinforcement Learning via Pivotal-Aware Self-Feedback Retry</span></li><li><span class="dpr-home-dashboard-paper-title" title="Harness-Aware Self-Evolving: Co-Evolving Model Weights, Harness, and Task Solutions">Harness-Aware Self-Evolving: Co-Evolving Model Weights, Harness, and Task Solutions</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Sample-Efficient Learning from Agent Experience">Sample-Efficient Learning from Agent Experience</span></li><li><span class="dpr-home-dashboard-paper-title" title="Are You Still the Agent I Authorized? Earned Authority under a Fixed Ceiling for Evolving Agents">Are You Still the Agent I Authorized? Earned Authority under a Fixed Ceiling for Evolving Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Static Evaluation: Building Simulation Environments for Scalable Agentic Reinforcement Learning">Beyond Static Evaluation: Building Simulation Environments for Scalable Agentic Reinforcement Learning</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>17</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>6</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">12 篇</strong>
+    <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Learning from Failure: Inference-Time Self-Improvement for Computer-Use Agents">Learning from Failure: Inference-Time Self-Improvement for Computer-Use Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Can Agents Generalize to the Open World? Unveiling the Fragility of Static Training in Tool Use">Can Agents Generalize to the Open World? Unveiling the Fragility of Static Training in Tool Use</span></li><li><span class="dpr-home-dashboard-paper-title" title="Can Language Models Actually Retrieve In-Context? Drowning in Documents at Million Token Scale">Can Language Models Actually Retrieve In-Context? Drowning in Documents at Million Token Scale</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Expert Behavior Prior Reinforcement Learning">Expert Behavior Prior Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="OpenForgeRL: Train Harness-native Agents in Any Environment">OpenForgeRL: Train Harness-native Agents in Any Environment</span></li><li><span class="dpr-home-dashboard-paper-title" title="When Do Agent Loops Mistake Stagnation for Progress? Self-Evaluation Bias and Externally Grounded Verification in Long-Running Autonomous LLM Agent Loops">When Do Agent Loops Mistake Stagnation for Progress? Self-Evaluation Bias and Externally Grounded Verification in Long-Running Autonomous LLM Agent Loops</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>9</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>10</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>1</strong></span></div>
 </section>
 </div>
 
