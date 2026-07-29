@@ -1,0 +1,567 @@
+Title: Greedy dynamical meta-learning
+
+URL Source: https://arxiv.org/pdf/2607.23925v1
+
+Published Time: Tue, 28 Jul 2026 01:25:25 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Greedy dynamical meta-learning 
+
+Aria Yom ariaxiv@proton.me Rhodora 
+
+## Abstract 
+
+Gradient descent scales well to large models, but becomes unstable over long time horizons. Gradient-free optimizers can scale to arbitrary timespans, but are hobbled by high dimensions. Since learning occurs in large models over long timescales, nei-ther of these approaches is likely to produce traits which can accelerate the learning process. Instead, we propose a meta-learning algorithm in which the agent learns to modify its own weights and biases. Our algorithm consists of an inner loop, wherein the agent performs some high-dimensional optimization upon itself, and an outer loop, wherein we perform some low-dimensional optimization upon the inner loop. Since the outer loop handles very few parameters, standard zeroth-order methods may be used. 
+
+## 1 Introduction 
+
+The child knows little, but can learn with ease. In the ML community, we have long envied this design. Few-shot learning in Large Language Models (LLMs) (Radford et al., 2019; Brown et al., 2020) and the remarkable efficiency of fine-tuning (Donahue et al., 2014; Yosinski et al., 2014; Howard & Ruder, 2018; Devlin et al., 2018) are the closest we have come to such adaptability thus far. These capacities scale with network size, and modern neural nets already outperform humans on a variety of tasks (Hestness et al., 2017; Devlin et al., 2018; Kaplan et al., 2020; Wei et al., 2022; Schaeffer et al., 2023). Accordingly, the dominant deep learning paradigm today centers around pretraining, fine-tuning, and continual reinforcement learning of large models. But historically, many have argued that insofar as intelligence is the ability to learn, true intelligence will only be achieved by algorithms that optimize the learning process itself. Such is the meta-learning mantra, although there is some disagreement over what it entails (Thrun & Pratt, 1998; Li & Malik, 2017; Hospedales et al., 2022; Vettoruzzo et al., 2024). For our part, we shall focus on approaches which optimize the parameter updates themselves. This includes early works on optimizing synaptic learning rules and self-referential networks (Bengio et al., 1995; Runarsson & Jonsson, 2000; Schmidhuber, 1993), but excludes such popular techniques as Siamese Networks and Model-Agnostic Meta Learning (MAML) (Koch et al., 2015; Finn et al., 2017). We recommend the reviews of Huisman et al. (2021) and Hospedales et al. (2022) and the brief history section of Andrychowicz et al. (2016) for more background. Two meta-learning approaches are of particular interest to us: the reinforcement learning (meta-RL) approach (Schmidhuber et al., 1999; Li & Malik, 2017) and the self-referential network (SRN) approach (Schmidhuber, 1992; 1993). In the meta-RL approach, the learning algorithm is viewed as some parametrized policy πϕ guiding the evolution of a base-model θ. The goal is to devise some 
+
+meta -learning algorithm to adjust πϕ so as to maximize the growth of a reward function R(θ) over a long time horizon. The hope is that the learned algorithm πϕ may come to outperform gradient descent in some way. 1arXiv:2607.23925v1 [cs.LG] 27 Jul 2026 The problem of course is that this simply replaces the search for θ with the search for ϕ. Should we then pursue a meta-meta-learning algorithm on top of this, and so on? The SRN approach closes this loop by employing a recurrent neural network (RNN) capable of addressing and modifying its own internal parameters. The theory is that the network can embody its own learning algorithm, update its weights as it sees fit, and rewrite its algorithm as it learns new things. Needless to say, this vision has not been realized in experiments, but why? One reason may be that modern algorithms are simply not suitable for training meta-networks like SRNs. Unlike a typical static model, which stores its knowledge in some fixed weights and biases, the SRN is a dynamical system, storing its knowledge precariously in the orbits of its parameters. As we detail in Secs. 1.1 - 1.3, contemporary learning algorithms are not equipped to handle this problem. A new perspective is required, a dynamic one. In Sec. 1.4, we outline a simple framework for the training of dynamical systems. In Secs. 2.1 and 2.2, we develop a sort of evolutionary algorithm for meta-learning in these systems. The main technical difficulty is the handling of dynamical timescales. In Secs. 2.3 and 2.4, we describe an elegant algorithm for tuning these timescales. Readers familiar with the exploding gradient problem and the curse of dimensionality in zeroth-order optimization may skip ahead to these sections, but we suspect that many will find our take on these problems intriguing. 
+
+1.1 Why the gradient won’t work for AI 
+
+Learning is a process which occurs over time. The gradient is an object which compounds over time. In general, if a dynamical system spends t time steps learning something, then the singular values of its derivative will evolve like σi ∼ eλit. Positive Lyapunov exponents λi lead to the well-known exploding gradient problem, while negative ones lead to vanishing gradients. Many of the greatest advancements in deep learning may be viewed as techniques to combat this problem. Rectified linear units (ReLUs), skip connections, and layer normalization are prominent examples (Srivastava et al., 2015; He et al., 2016; Ba et al., 2016). The problem is most pronounced in RNNs, where the gradient must be backpropagated through time (Bengio et al., 1994; Pascanu et al., 2013). Many workarounds have been proposed, including gradient clipping and unitary matrices for exploding gradients (Pascanu et al., 2013; Arjovsky et al., 2016) and non-saturating activations and long short-term memory (LSTM) for vanishing ones (Hochreiter & Schmidhuber, 1997; Le et al., 2015; Chandar et al., 2019). Ultimately however, the problem can never truly be overcome, as compression and nonlinear transformation of information are the essence of neural computation (Bengio et al., 1994). It is helpful to view the problem through the lens of chaos theory, wherein the stretching and folding of phase space give rise to the butterfly effect. In chaotic systems, the predictability horizon 
+
+is defined roughly as Tλ = 1max λi . Beyond this point, the gradient becomes unstable, and precise forecasting becomes impossible. This is not to say that nothing beyond the horizon can be known, as the probabilities of various outcomes may still be determined through simulation. Rather, the predictability horizon simply represents some limit beyond which the gradient cannot see. 2−p q
+
+−1 0 1
+
+Figure 1: The taffy map. There are essentially two possibilities. If the horizon is distant, and if the learning landscape is barren afar, then there is little need for us to wander beyond the gradient’s field of view. But if the horizon is near, and if the world beyond the horizon is rich with possibility, then to rely on the gradient alone as our compass would be to abandon the most fruitful lands to remain forever unexplored. There are many reasons to believe in the latter possibility. First of all, empirical evidence suggests that the horizon is near. Gradients in RNNs are typically truncated after less than 100 steps, and the active components of residual networks are only tens of layers deep (Veit et al., 2016; Merity et al., 2017; Zaremba et al., 2014). Second of all, we know that deep networks are capable of things shallow networks are not. It seems unlikely that deep cognition will be possible in less than 100 time steps. Third of all, the best (only?) known examples of superhuman intelligence today come from algorithms that combine deep learning with structured search (Silver et al., 2017; Schrittwieser et al., 2020; Hafner et al., 2020; Hubert et al., 2025). The search, it would appear, covers a key blind spot of the gradient, but it is not clear that this is the only blind spot, and it is unlikely that these techniques can be generalized. All this leads us to a simple conclusion, that gradient descent is unfit to produce learning systems. From this perspective, models today should be regarded not as intelligent , but merely as performant .To further clarify this point, and to foreshadow our solution, let us consider a simple example: 
+
+1.2 Example: the tortoise, the hare, and the taffy 
+
+In this section we show that simple sampling beats gradient descent in chaotic systems. Consider the following variant of the doubling map over xn ∈ (−1, 1) , with p, q ∈ (0 , 1) (Fig. 1): 
+
+xn+1 = Tp,q (xn) =  
+
+> 
+> xn+p
+> 1−p
+
+−1 < x n < −p 
+
+> xn+pp
+
+−p < x n < 0 
+
+> xn−qq
+
+0 < x n < q  
+
+> xn−q
+> 1−q
+
+q < x n < 1
+
+(1) 3Figure 2: First-order and zeroth-order gradient estimates at (p, q ) = ( .2, . 3) for N = 10 4. x0 was sampled from the invariant measure (Eqn. 2), while (δp, δq ) was drawn from a circle of radius .1.This map is equivalent to cutting a piece of taffy in half, stretching the two halves alongside each other, and remixing them together (Fig. 1). After many cycles, the probability density of a point winding up in either half of the taff will be: 
+
+ρ(x) ≈ 
+
+> 
+> qp+q
+
+−1 < x < 0 
+
+> pp+q
+
+0 < x < 1 (2) Let us consider the simple reward function R(x) = x. We would like to adjust p and q so as to maximize the long-term reward R = lim n→∞ 1 
+
+> n
+> ∑ni=1
+
+R(xi). The gradient of R may be estimated in two ways, either by backpropagation or by a zeroth-order approximation: 
+
+g1(p, q, N ) = E 
+
+> [
+
+1
+
+N
+
+> N∑
+> i=1
+
+∇p,q R(T ip,q (x0))]
+
+(3) 
+
+g0(p, q, N ) = E 
+
+> [
+
+1
+
+N
+
+> N∑
+> i=1
+
+R(T ip+δp, q +δq (x0)) − R (T ip−δp, q −δq (x0))
+
+|δθ|2 δθ
+
+> ]
+
+(4) where the expectation is taken over x0 and δθ = ( δp, δq ), and where δθ is drawn uniformly from a sufficiently small circle. But we know from Eqn. 2 that the reward should be R = p−q 
+
+> 2p+2 q
+
+, so it is easy to compare these two approaches to the analytic solution and see which is more accurate. From Fig. 2 we can see that the zeroth-order estimate slowly and steadily converges, while the first-order estimate sprints off to infinity and gets lost in the taffy. The source of this behavior is the hidden randomness of the map, which the gradient cannot see, but which the statistics always reveal. Our claim is that many cognitive processes, such as search, have an essential randomness to them which only trial and error can capture. If our learning agents were as two-dimensional as this example, then there would be little more to say, but as is well-known, zeroth-order approaches face quite a challenge in higher dimensions: 41.3 The curse of dimensionality 
+
+Nongradient methods appropriate for many-parameter stochastic optimization all share a basic structure. They consist of some scheme for randomly sampling parameters θ along with some rule for iteratively improving these samples over time. The problem of course is that when parameter space is large, there are always many more ways to decay into a high-entropy state than to improve into a high-performance state. To see this, suppose that the loss near θ is locally quadratic, such that small perturbations δθ
+
+change the loss by roughly: 
+
+δL ≈ g · δθ + h|δθ|2
+
+If δθ points in a random direction in Rd, the gradient term will contribute roughly ± |g|√d |δθ|, while the Hessian term will incur a cost of h|δθ|2. Thus, large steps will always result in a loss of performance, and the optimal step size will be roughly |δθ| ∼ |g| 
+
+> h√d
+
+. The improvement per step will go like δL ∼ − 1 
+
+> d
+
+.The situation only worsens with the introduction of noise. If the loss measurement is noise dom-inated, which it inevitably will be at these small scales, then the number of samples required to resolve a difference will scale inversely with δL2. Thus, it will take O(d2) measurements to estimate the gradient. If the noise scales with d, then the penalty could be even worse. Evidently, for a billion-parameter model, this price is unpayable. For this reason, many algorithms have been devised to reduce the dimensionality of the search space (Hansen et al., 1995; Ros & Hansen, 2008; Wang et al., 2016; Maheswaranathan et al., 2019; Bäck et al., 2023). One example is the Covariance Matrix Adaptation Evolution Strategy (CMA-ES), which shrinks mutations along axes with high loss curvature and grows mutations in directions that produce beneficial adaptations (Hansen & Ostermeier, 1996; 2001). In so doing, it attempts to squeeze mutations orthogonal to the sweep of the gradient out of existence, leaving only the components in a critical low-dimensional subspace. The main problems with this type of approach are that (a) the size of the covariance matrix scales like O(d2), (b) the mutations must be normally distributed, and (c) the learning landscape must be relatively stable. We too would like to optimize the shape of the mutation distribution, but in order to overcome these challenges, we take a different approach. The problem of finding a good mutation distribution is no different from any other problem we face in machine learning. We are seeking some low-dimensional manifold in a high-dimensional space. We cannot write down an equation for it. Strategies for where and how to search and tactics for compressing the space amount to little more than feature engineering. They may see some initial success, but are ultimately doomed (Sutton, 2019). The only path forward is to train a system to discover the optimal mutation distribution for us. The only path forward is meta-learning. 5Figure 3: Time and greed. In the short-term case, 3 mutants are generated at each time step, with the best surviving and reproducing. The long-term plot is similar, but the system is simulated 3
+
+steps into the future before crowning the winner. In a more realistic scenario, “long-term” would likely mean much more than 3 steps. Gray dashed lines denote paths sampled. Black dashed lines denote the winning paths from each branch point. The solid line denotes the optimization trajectory. Note that the winning paths extend beyond the solid line. 
+
+1.4 Dynamical systems meta-learning 
+
+We are now finally in a position to explain our meta-learning algorithm. Let us begin with an overview of the dynamical systems meta-learning (DSML) framework. A dynamical system is a state x(t) governed by some fixed laws of motion, such as Hooke’s law x′′ = −x. In our case, these dynamics must be stochastic, so as to generate discernable variations in x(t). It is important to understand that both the weights and activations are contained within x and will evolve over time. A DSML protocol consists of three parts: 1. The dynamics x′ = D(x)
+
+2. The reward function R(x)
+
+3. The training algorithm A(x, R, D)
+
+In the interest of brevity, in this paper we will focus only on the training algorithm. We will have more to say about the system architecture and dynamical equations in an upcoming publication, and we have quite little to say about how to devise a good reward function. Our approach will be to simulate the system along many trajectories and select for the most favorable ones. The simplest algorithm of this form is probably the (1 , λ )-ES algorithm, which produces a clutch of λ mutants in each generation and selects the top performer to sire the next generation (Beyer & Schwefel, 2002). This algorithm is illustrated in Fig. 3a. We call such an approach greedy , as it always exploits the best mutant and never explores other branches. It is also short-term in the sense that it evaluates each mutant at its current fitness rather than considering its potential growth over a long time horizon. The (1 , λ )-ES algorithm can easily be modified into a longer-term form by simulating each trajectory out several steps into the future and evaluating each mutant by its late-time fitness. This is illustrated in Fig. 3b, and is essentially the algorithm we will be developing in Secs. 2.1 and 2.2. 6It is worth noting that both of these greedy approaches may be vulnerable to getting stuck in local optima. Ideally, we would employ a non-greedy algorithm to perform some judicious exploratory rollouts (Fig. 3c). Unfortunately, we were not able to devise a principled algorithm along these lines, but the lesson of deep learning seems to be that large networks are fairly unencumbered by local optima, so hopefully this will hold for DSML as well. The difference between the DSML and meta-RL frameworks is that in meta-RL the time evolution is determined by a trainable policy, whereas in DSML, it is given by some immutable laws of motion. Our agents have no agency to rewrite these laws. Furthermore, their performance will likely depend on these laws being well-designed. So it may appear that we are simply inventing a worse version of meta-RL, one devoid of any ability to improve its policy, one with even more hand-crafted features, and one inherently vulnerable to local optima. How on Earth is this supposed to be better? The lack of a trainable policy is not a bug, it is a feature. In meta-RL, the system parameters are divided between the model and the policy. Nothing the model learns can be used to refine its evolution. By contrast, our goal is to create an agent that gains knowledge from the training data and utilizes that knowledge to improve its own mutations. If it can squeeze these mutations down to a few key axes, then it will be no trouble for the evolutionary razor to distinguish the best mutants. By eliminating the policy parameters, we force all of the meta-information into the system state 
+
+x itself. When trained over a long time horizon, it becomes necessary for the agent not only to perform well, but to produce mutations which enhance its performance over the measured horizon, or at least to avoid mutations which may destroy its knowledge. But how long should the time horizon be? What follows is essentially a study in the handling of this and other timescales. 
+
+1.5 Summary 
+
+The preceding argument may be summarized as follows: 1. Learning is a process which occurs over long timespans. 2. The gradient becomes unstable over long timespans. It is magical thinking to believe that the butterfly effect can be overcome by some clairvoyant mathematics. 3. The only way to learn how to learn is to generate mutations at random, evaluate them over long timescales, and select the best learners. 4. Unfortunately, the concept of randomness presupposes an underlying distribution, and it is not clear what the mutation distribution should be. Any attempt to hand-craft a clever mutation distribution is ill-fated. 5. We would instead like the agent itself to learn how to generate its own mutations. 6. Our solution is to encode the agent in a stochastic dynamical system. The system state then determines how its weights will evolve, subject to some laws of motion. 7. By selecting high-performing agents over long timescales, we will also be selecting for those which routinely generate beneficial variations, preserve learned structures, and recover from damaging mutations. 72 Results 
+
+2.1 Mutation and evaluation timescales 
+
+Suppose our system begins in some low-intelligence, high-entropy attractor. In order to learn, it will need to escape this attractor. Since the dynamics are stochastic, there will always be some trajectories which randomly jump some distance out of the heart of the attractor before sliding back in. Our goal is to find these trajectories, truncate them at their apexes before falling back down, and respawn new trajectories from these higher intelligence states. By iterating this process, we can slowly ascend up the walls of the attractor basin, potentially crossing into the basins of more intelligent attractors along the way. Unfortunately, this is only possible if we can measure the intelligence, which we have no direct means of doing. The hope is that it may suffice to find a good reward function f . If we identify the intelligence roughly with the growth rate of the reward, then f will be a lagging measure of the intelligence. Thus, the distinction between the latent intelligence and the measured performance is not merely philosophical. There are two distinct timescales: the optimal mutation time μ, at which the apexes of the intelligence occur, and the optimal evaluation time ν, at which the performances are maximally distinguishable. In order for learning to occur, these two timescales must be properly calibrated. If μ or ν are too small, then the trajectories will not have had enough time to meaningfully diverge. But if they are too large, then the trajectories will fall back down into the nearest attractor. In the case of μ,this will result in a loss of intelligence, whereas in the case of ν, this will result in the trajectories becoming indistinguishable. Thus, the intelligence exists and is observable neither in the short term nor in the long term, but in the medium term. In order to better understand these points, let us consider a simple toy example. Suppose the “intelligence” z evolves according to the Ornstein-Uhlenbeck equation dz = −zdt + dW . In the absence of any selection pressure, z will always come to hover around the attractor at z = 0 . Now suppose the measurable performance y of the system evolves according to dy dt = −y + z3, such that 
+
+z influences how quickly the performance grows 1. What do the dynamics of such a system look like? In Fig. 4, we plot several random trajectories of this system diverging from the point (t, z, y ) = (0 , 1, 12 ). We choose the high starting intelligence z = 1 so as to emulate being in the middle of a training run. Evidently, the pink trajectory is best, with maximal intelligence occurring around 
+
+μ ≈ .25 . But the performance is maximally distinguishable around ν ≈ 1. So if we had chosen to produce the next generation of mutants from the state xpink (t = ν), we would have realized a loss of intelligence. In fact, if we had chosen the absolute maximal performance state xpink (t = .6) , we still would have realized a loss of intelligence. In other words, by the time the trajectories can be distinguished, the best-performing trajectory may already have lost the qualities that enabled it to gain such distinction. We cannot know a priori how far ν will lag behind μ. This gap is DSML’s raison d’etre. It is neither addressed by static models, which fail to evolve over the course of their evaluations, nor by evolutionary algorithms, which spawn new mutants directly from the evaluated state.       
+
+> 1The simpler dy dt =−y+zproduces essentially the same results, but the cube helps visually exaggerate the effect.
+
+8Figure 4: Simulation of the system dz = −zdt + dW , dy = ( −y + z3)dt , for a Wiener process W .Initial conditions z = 1 and y = .5 were used for 10 random trajectories. The optimal mutation timescale μ is highlighted in the upper z plot, while the optimal evaluation timescale ν is highlighted in the lower y plot. 92.2 Learning cycle 
+
+With the two timescales μ and ν in mind, we may construct the following simple evolutionary algorithm: Every generation begins with a state xparent , from which m mutants xi(t) are spawned, with xi(0) = xparent . From each mutant, n evaluation trajectories yji (t) are spawned, with yji (μ) = 
+
+xi(μ). These trajectories are then evaluated k times at the optimal timescale, rji, 1 . . . r ji,k 
+
+> iid
+
+∼ f (yji (ν)) ,and the mutant with the greatest mean performance zi = 1 
+
+> nk
+> ∑
+> j,l
+
+rji,l is chosen to sire the next generation. Much like μ and ν, the parameters m, n, k must be properly balanced in order to ensure the algorithm runs efficiently. Taking too many samples is wasteful, while taking too few will lead to degenerating performance. Thus, there are five parameters we must balance in our algorithm: 
+
+μ = How long is a generation? 
+
+m = How many mutants should we spawn per generation? 
+
+n = How many trajectories should we sample per mutant? 
+
+k = How many evaluations should we perform per trajectory? 
+
+ν = How far into the future should we perform the evaluations? Our solution to the first of these Goldilocks problems can be found in the next section. The second is given by Rechenberg (1973). In this section, we assume that μ and m are fixed, and show that the last three parameters n, k, ν can all be combined into one using the classic ∫ 1 
+
+> t
+
+= log t trick. To begin, let us note that the intent of the sample mean zi = 1 
+
+> nk
+> ∑
+> j,l
+
+rji,l is to estimate the true mean E[f (yi(ν))] of a trajectory spawned from yi(μ) = xi(μ). Measuring a single trajectory many times reduces the measurement variance, but does nothing to address the intertrajectory variance. Measuring many trajectories once each produces a better estimate of the mean, but if the cost of simulating each trajectory out to t = ν is large, then this approach is very wasteful. The optimal parameters n and k arise from trying to obtain the best estimate of the mean E[f (yi(ν))] for the least computational cost. Suppose that we have found the optimal n, k, ν , and let us assume that simulating a single timestep costs the same amount of compute as performing a single f evaluation. Then our optimized algorithm will cost n(k + ν − μ) units of compute per mutant. We will now show that we can avoid the matter of finding n, k, ν altogether with a sampling scheme which is only logarithmically worse than the optimum. Suppose we simulate each trajectory yji (t) out to t = τj for each j = 1 . . . τ 2. Then, for each trajectory, we perform an f evaluation at every timestep t > μ (we may discard the trajectories which terminate before t = μ). The amounts of compute spent on simulations and evaluations in this scheme will be roughly the same, and neither will exceed τ log τ .The key point of this approach is that the amount of compute it spends at every timescale is the same 3. In particular, over the optimal timescale t ∈  
+
+> (12
+
+ν, 2ν
+
+> )
+
+, it samples roughly τν trajectories ν
+
+times each. Thus, if we simply take τ = max {nk, nν }, then our logarithmic algorithm will take at       
+
+> 2We encourage the reader not to think too much about whether these times are discrete or continuous.
+> 3It is important to note that when we say “timescale”, we really mean something like log( t)±1, rather than t±1.
+
+10 least as many samples around ν as the optimal scheme, and it will spread them out over at least as many trajectories. But, the excess cost from sampling over all timescales is only a factor of log τ 4.This approach is summarized in Alg. 1. 
+
+Algorithm 1: Learning cycle Cμτ 
+
+Input: parent xparent , timescales μ, τ , stochastic evaluator f (x), stochastic mutator g(x)
+
+m = 8 // Rechenberg’s rule 
+
+x1 . . . x m iid 
+
+∼ gμ(xparent ) // sample mutants // run tests 
+
+for i = 1 . . . m do 
+
+zi ← 0
+
+for j = 1 . . . τ do 
+
+yji ← xi
+
+for t = μ . . . τj do 
+
+yji ← g(yji )
+
+zi ← zi + f (yji )
+
+// crown winner 
+
+imax ← arg max i zi
+
+xparent ← ximax 
+
+Output: xparent 
+
+The algorithm should work under two conditions: First, it must not be necessary to evaluate the trajectories at the exact time ν. Measurements at the same time scale around t ∈  
+
+> (12
+
+ν, 2ν
+
+> )
+
+must also suffice to distinguish the trajectories, which seems only logical (Fig. 4). Second, the measurement error must not vary too much with the timescale. If it diverges as t → ∞ or as t → 0, then although we may take sufficiently many samples around t = ν, our signal will be lost in the noise from other timescales. This condition should be satisfied by any well-behaved reward function. So we have managed to combine the parameters n, k, ν into a single timescale τ , paying only polylogarithmically more than if we had used the optimal parameters. Furthermore, we know from Rechenberg’s rule that for well-behaved mutations, we may generally take m ≈ 10 (Rechenberg, 1973; Beyer & Schwefel, 2002). Thus, the only parameters which remain to be optimized are the two timescales μ and τ .
+
+2.3 Tuning algorithm 
+
+In the previous section, we derived a learning subroutine x → Cμτ (x) to iteratively improve the per-formance of a dynamical system with respect to an objective f (x). The parameters μ−1 and τ each quantify a sort of evolutionary selection pressure and a corresponding computational cost. In gen-eral, we imagine that under sufficient pressure, the system will evolve towards a high-performance state, but it may take a very long time to do so. The challenge therefore is to adjust μ and τ so as to maximize performance whilst minimizing computational cost. 
+
+> 4Although there is potentially an additional log associated with the excess noise coming from these other timescales.
+
+11 Our parameter tuning algorithm consists of running a series of learning cycles xi+1 = C◦Tμτ (xi) in which we apply our subroutine T times and subsequently evaluate our system over N samples. We then use these samples to readjust the parameters μ and τ so as to maximize the quantity 
+
+Q(μ, τ ) = E[f (Cμτ (x)) −f (x)]  
+
+> τ
+
+, which corresponds roughly to the training speed. This can be done by solving for dQ = 0 :
+
+dQ = d 
+
+> (
+
+μS τ
+
+> )
+
+= μτ
+
+> (
+
+dS + 
+
+> (
+
+dμ μ − dτ τ
+
+> )
+
+S
+
+> )
+
+= 0 (5) 
+
+dS = S(d log τ − d log μ) (6) where we have defined S(μ, τ ) = E[f (Cμτ (x)) −f (x)]  
+
+> μ
+
+for reasons which will become clear in the next section. The right hand side of Eqn. 6 is easily estimated from samples of S, while the gradient on the left must be estimated from a zeroth-order method. We will be using random direction stochastic approximation (RDSA), but since there are only two parameters, essentially any other standard optimizer would suffice (Ermol’ev, 1969; Kushner & Clark, 1978). RDSA involves running two cycles in parallel with slightly different parameters and trying to measure the difference in S between them. Suppose we draw ξμi , ξ τi
+
+> iid
+
+∼ N (0 , σ 2), and let μ± 
+
+> i
+
+=
+
+μi exp( ±ξμi ) and τ ± 
+
+> i
+
+= τi exp( ±ξτi ). Each cycle produces an endstate x± 
+
+> i
+
+= C◦Tμ±  
+
+> i,τ ±
+> i
+
+(xi) with sample mean rewards z± 
+
+> i
+
+= 1 
+
+> N
+> ∑Nj=1
+
+f (x± 
+
+> i
+
+) which may be compared to the original zi = 1 
+
+> N
+> ∑Nj=1
+
+f (xi). We then update the parameters as follows: 
+
+log μi+1 = log μi + η 
+
+> (
+
+1
+
+σ2 (S+ 
+
+> i
+
+− S− 
+
+> i
+
+)ξμi + ( S+ 
+
+> i
+
++ S− 
+
+> i
+
+)
+
+> )
+
+(7) 
+
+log τi+1 = log τi + η 
+
+> (
+
+1
+
+σ2 (S+ 
+
+> i
+
+− S− 
+
+> i
+
+)ξτi − (S+ 
+
+> i
+
++ S− 
+
+> i
+
+)
+
+> )
+
+(8) 
+
+S± 
+
+> i
+
+= z± 
+
+> i
+
+− zi
+
+T μ i exp( ±ξμi ) (9) Eqns. 7 and 8 are the heart of our adaptive tuning algorithm (Alg. 2). xi+1 may be chosen randomly from x+ 
+
+> i
+
+and x− 
+
+> i
+
+, although choosing the one with the higher reward may be slightly better. All that is left is to make some good choices for the hyperparameters η, σ 2, T, N .Let us begin with T and N . Since the shape of the learning landscape will inevitably change during training, we would like to update our μ and τ as frequently as possible. However, since our system is always being evaluated some τ steps into the future, we should probably wait at least that long for the effects of any changes in μ and τ to manifest before reevaluating. Thus T = τμ seems like a reasonable choice. For N , bigger is always better, but we would like to spend the bulk of our compute on learning cycles rather than parameter tuning, and each cycle contains roughly mτ log τ
+
+evaluations, so N ∼ mτ T seems reasonable. This leaves only two remaining hyperparameters, and as we shall see in the next section, σ2 can generally be taken to be around σ2 ≈ .1. Only η is likely to require any difficult tuning. Larger values of η adapt more quickly to changes in the optimal μ and τ . Smaller values of η converge more tightly on stationary optima. Ideally, if the learning landscape does not change too rapidly, a wide range of η should satisfy both of these demands. 12 Algorithm 2: Parameter tuning 
+
+Input: initial state x, stochastic evaluator f (x), learning cycle Cμτ (x), learning rate ημ, τ ← . . . // initializations 
+
+σ2 = .1
+
+for i = 1 , 2, 3 . . . do 
+
+T ← τμ
+
+N ← mτ T 
+
+// learning cycles 
+
+ξμ, ξ τ iid 
+
+∼ N (0 , σ 2)
+
+μ± ← μ exp( ±ξμ)
+
+τ ± ← τ exp( ±ξτ )
+
+x± ← C◦Tμ±τ ± (x) // T loops of subroutine // evaluations 
+
+y1 . . . y N iid 
+
+∼ f (x)
+
+z ← 1
+
+> N
+
+∑ 
+
+> j
+
+yj
+
+y± 
+
+> 1
+
+. . . y ±
+
+> N
+> iid
+
+∼ f (x±)
+
+z± ← 1
+
+> N
+
+∑ 
+
+> j
+
+y±
+
+> j
+
+// updates 
+
+x ← x+ or x−
+
+S± = z±−zT μ ±
+
+μ ← μ exp 
+
+[
+
+η
+
+( 1 
+
+> σ2
+
+(S+ − S−)ξμ + S+ + S−)] 
+
+τ ← τ exp 
+
+[
+
+η
+
+( 1 
+
+> σ2
+
+(S+ − S−)ξτ − S+ − S−)] 
+
+Output: x
+
+13 2.4 The shape of Q
+
+In constructing Alg. 2, we made a number of unexplained design choices. Why did we pull a factor of μ into S = E[f (Cμτ (x)) −f (x)]  
+
+> μ
+
+? Why the logarithms log μ and log τ ? Doesn’t σ2 need to be tuned as well? And can the optimal timescales μ and τ even be found without getting stuck in local optima? In order to see the answers to these questions, we will need to obtain more insight into the relationship between μ, τ , and S.It should not be difficult to believe that S will increase monotonically with either θ ∈ { μ−1, τ }.After all, each θ represents a sort of multiplicative computational expense that contributes to the selection pressure on the population. μ−1 represents the number of generations per unit time, and 
+
+τ represents the number of evaluations per mutant. Presumably, the higher the selection pressure, the sharper the results. We will further argue that S should typically be concave in √θ. It is of course easy to provide counterexamples to this claim 5, but let us consider the context in which these parameters act: We begin with μ−1. Suppose that a mutant’s performance follows a decreasing random walk 
+
+∆f iid 
+
+∼ N (−α∆t, β 2∆t) over the mutation time μ. A mutant one sigma above the mean will have 
+
+∆f ≈ − αμ + √β2μ, and a corresponding S ≈ − α +  
+
+> √β2
+> μ
+
+. So long as we can find such a mutant, shrinking μ yields gains of μ− 12 . But eventually differences in ∆f become too small to distinguish, so S saturates to some constant value. Now consider τ . S is estimated from the mean of roughly τ samples, and will thus have some error proportional to τ − 12 . When distinguishing between two mutants, the probability of selecting the best one will initially grow like 12 + √τ before saturating to 1. This is exactly the same behavior as in μ−1, with S initially growing proportionally to the square root, and eventually levelling off. The implication of this is that along any parameter axis one may presume that S sits between two limiting concave forms, one in which S ∼ √θ − √θ0 saturates far away from its zero θsat ≫ θ0, and one in which S acts like a step function at θ0, saturating immediately at θsat ≈ θ0. These two limits are illustrated in Fig. 5. Crucially, in both cases, when plotted against log θ, the shapes of these curves, and in particular their widths, are unaffected by changes in θ0. Furthermore, the concavity implies that Q has a unique local maximum. In studying these figures one is struck by the realization that a single σ2 may be prescribed for any Q satisfying these assumptions! From Fig. 5, we can see that fluctuations in log θ of about .5
+
+around the optimum will reduce performance by less than a factor of 2. So long as σ is reasonably smaller than this, then in the steady state our tuner should track quite close to the optimum. Of course, the larger we can make σ, the better our resolution of the gradient will be, and the faster our tuner will adapt to changes. Thus, we may conclude that σ2 ≈ .1 should be a reasonable choice for any well-behaved learning landscape. It is important to note that the slope dQ d log θ goes to zero as θ → ∞ (Fig. 5). Accordingly, if for whatever reason we found ourselves at θ ≫ θ0, for example if the learning landscape changed rapidly upon jumping from one attractor to another, the signal in dQ d log θ could become exponentially small. Likewise, dQ d log θ diverges as θ → 0, which we felt could cause some instability. For these reasons, we feel that it is probably better to solve Eqn. 6 from estimates of S rather than Q.
+
+> 5In fact one can provide counterexamples to the monotonicity and saturation as well...
+
+14 Figure 5: Shapes of S and Q. The solid blue line represents the limiting case where S ∝ √θ − √θ0.The solid orange line represents the limiting case where S saturates to its maximum immediately upon crossing θ > θ 0. The dashed line represents a “typical” case in between these two limits. The gray horizontal lines are of unit length and show that fluctuations of size σ ≪ 1 should be well-tolerated for any such concave S.15 3 Discussion 
+
+In this paper, we described a DSML protocol consisting of two parts: an inner loop for greedy meta-learning and an outer loop for tuning the timescales μ and τ on the fly. Our key insights – that the intelligence is distinguishable only at an intermediate timescale, that mutation and evaluation times must be distinct, and that DSML can be boiled down to two key parameters, μ and τ – are all contained in the inner learning cycle. By contrast, the outer loop follows in the footsteps of many parameter optimization schemes stretch-ing as far back as Schwefel’s self-adaptation method, and it may be altered in many ways to suit the task at hand (Schwefel, 1981). In online learning, for example, a consecutive least-squares-type update of the form λi+1 = λi + η(Qi − Qi−1)( ξi − ξi−1) with perturbations ξi ∼ N (λi, σ 2) may be used 6. The bipartite organization of our protocol should help facilitate this, and we hope that our results in Sec. 2.4 will help readers to devise their own techniques which may be better than ours. An interesting outcome of our analysis is that the learning rate η is the only hyperparameter that requires any careful handling. The learning rate must be small enough that the parameter fluctuations are no greater than σ, yet it must be large enough that it can adapt quickly to changes in the learning landscape. Hopefully, these shifts will occur slowly enough that a wide range of η
+
+values can be used, but if rapid changes occur, then this may turn out to be a tricky balancing act. Future refinements to the tuning algorithm may handle this problem with adaptive learning rates similar to those we have seen in stochastic gradient descent (Duchi et al., 2011; Kingma & Ba, 2015). The biggest question we have left unanswered in DSML is whether superior non-greedy algorithms exist. An affirmative answer will require both theoretical and experimental results. On the the-oretical side, one would need to devise a principled algorithm to obtain some big-O improvement over the greedy approach. On the experimental side, one would have to show that local optima are a serious problem for greedy DSML, and that a non-greedy algorithm can overcome this problem to such an extent as to justify its inevitable logarithmic overhead. There is much more to discover in the budding field of DSML. We look forward to discussing how to craft the architecture and dynamics of meta-learning systems in an upcoming publication. There are also open questions as to whether modern hardware is fit for this form of machine learning, whether DSML will support or supplant gradient descent, whether DSML will come to devour as much compute as deep learning, and many more mysteries we have yet to ponder. We invite you to join us on our journey beyond the predictability horizon. These lands, it would appear, have fruit to bear, not only for ML systems, but for ML researchers as well! 
+
+## References 
+
+Marcin Andrychowicz, Misha Denil, Sergio Gómez Colmenarejo, Matthew W. Hoffman, David Pfau, Tom Schaul, Brendan Shillingford, and Nando de Freitas. Learning to learn by gradient descent by gradient descent. In Proceedings of the 30th International Conference on Neural Information Processing Systems , NIPS’16, pp. 3988–3996, Red Hook, NY, USA, 2016. Curran Associates Inc. ISBN 9781510838819. 
+
+> 6We are not entirely sure who to credit for such an optimizer. It is very similar to residual feedback (Zhang et al., 2021). It is also little more than an evolution strategy (ES) or parameter-exploring policy gradient (PGPE) with a fixed variance normal distribution (Sehnke et al., 2010; Wierstra et al., 2014). These in turn are just variations on Berny (2000), which in turn is a variation on Williams (1992)...
+
+16 Martin Arjovsky, Amar Shah, and Yoshua Bengio. Unitary evolution recurrent neural networks. In Maria Florina Balcan and Kilian Q. Weinberger (eds.), Proceedings of The 33rd International Conference on Machine Learning , volume 48 of Proceedings of Machine Learning Research , pp. 1120–1128, New York, New York, USA, 20–22 Jun 2016. PMLR. URL https://proceedings. mlr.press/v48/arjovsky16.html .Jimmy Lei Ba, Jamie Ryan Kiros, and Geoffrey E. Hinton. Layer normalization, 2016. URL 
+
+https://arxiv.org/abs/1607.06450 .Y. Bengio, P. Simard, and P. Frasconi. Learning long-term dependencies with gradient descent is difficult. 5(2):157–166, March 1994. ISSN 1045-9227. doi: 10.1109/72.279181. URL https: //doi.org/10.1109/72.279181 .Yoshua Bengio, Samy Bengio, and Jocelyn Cloutier. On the search for new learning rules for anns. 
+
+Neural Processing Letters , 2(751):26–30, 1995. doi: 10.1007/BF02279935. A. Berny. Selection and reinforcement learning for combinatorial optimization. In Marc Schoenauer, Kalyanmoy Deb, Günther Rudolph, Xin Yao, Evelyne Lutton, Juan Julian Merelo, and Hans-Paul Schwefel (eds.), Parallel Problem Solving from Nature PPSN VI , pp. 601–610, Berlin, Heidelberg, 2000. Springer Berlin Heidelberg. ISBN 978-3-540-45356-7. Hans-Georg Beyer and Hans-Paul Schwefel. Evolution strategies - a comprehensive introduction. 
+
+Natural Computing , 1(1):3–52, 2002. doi: 10.1023/A:1015059928466. Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel Ziegler, Jeffrey Wu, Clemens Winter, Chris Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei. Language models are few-shot learners. In H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin (eds.), Advances in Neural Information Processing Systems ,volume 33, pp. 1877–1901. Curran Associates, Inc., 2020. URL https://proceedings.neurips. cc/paper_files/paper/2020/file/1457c0d6bfcb4967418bfb8ac142f64a-Paper.pdf .Thomas H. W. Bäck, Anna V. Kononova, Bas van Stein, Hao Wang, Kirill A. Antonov, Roman T. Kalkreuth, Jacob de Nobel, Diederick Vermetten, Roy de Winter, and Furong Ye. Evolutionary algorithms for parameter optimization—thirty years later. Evolutionary Computation , 31(2):81– 122, 06 2023. ISSN 1063-6560. doi: 10.1162/evco_a_00325. URL https://doi.org/10.1162/ evco_a_00325 .Sarath Chandar, Chinnadhurai Sankar, Eugene Vorontsov, Samira Ebrahimi Kahou, and Yoshua Bengio. Towards non-saturating recurrent units for modelling long-term dependencies. CoRR ,abs/1902.06704, 2019. URL http://arxiv.org/abs/1902.06704 .Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. BERT: pre-training of deep bidirectional transformers for language understanding. CoRR , abs/1810.04805, 2018. URL 
+
+http://arxiv.org/abs/1810.04805 .Jeff Donahue, Yangqing Jia, Oriol Vinyals, Judy Hoffman, Ning Zhang, Eric Tzeng, and Trevor Dar-rell. Decaf: A deep convolutional activation feature for generic visual recognition. In Eric P. Xing and Tony Jebara (eds.), Proceedings of the 31st International Conference on Machine Learning ,17 volume 32 of Proceedings of Machine Learning Research , pp. 647–655, Bejing, China, 22–24 Jun 2014. PMLR. URL https://proceedings.mlr.press/v32/donahue14.html .John Duchi, Elad Hazan, and Yoram Singer. Adaptive subgradient methods for online learning and stochastic optimization. Journal of Machine Learning Research , 12(61):2121–2159, 2011. URL 
+
+http://jmlr.org/papers/v12/duchi11a.html .Yu. M. Ermol’ev. On the method of generalized stochastic gradients and quasi-féjer sequences. 
+
+Cybernetics , 5:208–220, 1969. URL https://api.semanticscholar.org/CorpusID:123001116 .Chelsea Finn, Pieter Abbeel, and Sergey Levine. Model-agnostic meta-learning for fast adaptation of deep networks. In Proceedings of the 34th International Conference on Machine Learning -Volume 70 , ICML’17, pp. 1126–1135. JMLR.org, 2017. Danijar Hafner, Timothy P. Lillicrap, Mohammad Norouzi, and Jimmy Ba. Mastering atari with discrete world models. CoRR , abs/2010.02193, 2020. URL https://arxiv.org/abs/2010. 02193 .N. Hansen and A. Ostermeier. Adapting arbitrary normal mutation distributions in evolution strategies: the covariance matrix adaptation. In Proceedings of IEEE International Conference on Evolutionary Computation , pp. 312–317, 1996. doi: 10.1109/ICEC.1996.542381. Nikolaus Hansen and Andreas Ostermeier. Completely derandomized self-adaptation in evolution strategies. Evolutionary Computation , 9(2):159–195, 2001. doi: 10.1162/106365601750190398. Nikolaus Hansen, Andreas Ostermeier, and Andreas Gawelczyk. On the adaptation of arbitrary normal mutation distributions in evolution strategies: The generating set adaptation. Proceedings of the Sixth International Conference on Genetic Algorithms , pp. 57–64, 1995. Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep Residual Learning for Image Recognition . In 2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) ,pp. 770–778, Los Alamitos, CA, USA, June 2016. IEEE Computer Society. doi: 10.1109/CVPR. 2016.90. URL https://doi.ieeecomputersociety.org/10.1109/CVPR.2016.90 .Joel Hestness, Sharan Narang, Newsha Ardalani, Gregory F. Diamos, Heewoo Jun, Hassan Kianine-jad, Md. Mostofa Ali Patwary, Yang Yang, and Yanqi Zhou. Deep learning scaling is predictable, empirically. CoRR , abs/1712.00409, 2017. URL http://arxiv.org/abs/1712.00409 .Sepp Hochreiter and Jürgen Schmidhuber. Long short-term memory. Neural Comput. , 9(8): 1735–1780, November 1997. ISSN 0899-7667. doi: 10.1162/neco.1997.9.8.1735. URL https: //doi.org/10.1162/neco.1997.9.8.1735 .Timothy Hospedales, Antreas Antoniou, Paul Micaelli, and Amos Storkey. Meta-Learning in Neural Networks: A Survey . IEEE Transactions on Pattern Analysis & Machine Intelligence ,44(09):5149–5169, September 2022. ISSN 1939-3539. doi: 10.1109/TPAMI.2021.3079209. URL 
+
+https://doi.ieeecomputersociety.org/10.1109/TPAMI.2021.3079209 .Jeremy Howard and Sebastian Ruder. Fine-tuned language models for text classification. CoRR ,abs/1801.06146, 2018. URL http://arxiv.org/abs/1801.06146 .Thomas Hubert, Rishi Mehta, Laurent Sartran, Miklós Z. Horváth, Goran Žužić, Eric Wieser, Aja Huang, Julian Schrittwieser, Yannick Schroecker, Hussain Masoom, Ottavia Bertolli, Tom 18 Zahavy, Amol Mandhane, Jessica Yung, Iuliya Beloshapka, Borja Ibarz, Vivek Veeriah, Lei Yu, Oliver Nash, Paul Lezeau, Salvatore Mercuri, Calle Sönne, Bhavik Mehta, Alex Davies, Daniel Zheng, Fabian Pedregosa, Yin Li, Ingrid von Glehn, Mark Rowland, Samuel Albanie, Ameya Velingker, Simon Schmitt, Edward Lockhart, Edward Hughes, Henryk Michalewski, Nicolas Sonnerat, Demis Hassabis, Pushmeet Kohli, and David Silver. Olympiad-level for-mal mathematical reasoning with reinforcement learning. Nature , 651:607–613, 2025. doi: 10.1038/s41586-025-09833-y. URL https://doi.org/10.1038/s41586-025-09833-y .Mike Huisman, Jan N. van Rijn, and Aske Plaat. A survey of deep meta-learning. Artif. Intell. Rev. , 54(6):4483–4541, August 2021. ISSN 0269-2821. doi: 10.1007/s10462-021-10004-4. URL 
+
+https://doi.org/10.1007/s10462-021-10004-4 .Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B. Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. Scaling laws for neural language models. CoRR , abs/2001.08361, 2020. URL https://arxiv.org/abs/2001.08361 .Diederik P. Kingma and Jimmy Ba. Adam: A method for stochastic optimization. International Conference on Learning Representations , 2015. Gregory Koch, Richard Zemel, and Ruslan Salakhutdinov. Siamese neural networks for one-shot image recognition. 2015. Harold J. Kushner and David S. Clark. Stochastic Approximation Methods for Constrained and Unconstrained Systems . Springer-Verlag New York, Inc., New York, NY, USA, 1978. Quoc V. Le, Navdeep Jaitly, and Geoffrey E. Hinton. A simple way to initialize recurrent networks of rectified linear units. CoRR , abs/1504.00941, 2015. URL http://arxiv.org/abs/1504.00941 .Ke Li and Jitendra Malik. Learning to optimize neural nets. CoRR , abs/1703.00441, 2017. URL 
+
+http://arxiv.org/abs/1703.00441 .Niru Maheswaranathan, Luke Metz, George Tucker, Dami Choi, and Jascha Sohl-Dickstein. Guided evolutionary strategies: augmenting random search with surrogate gradients. In Kamalika Chaudhuri and Ruslan Salakhutdinov (eds.), Proceedings of the 36th International Conference on Machine Learning , volume 97 of Proceedings of Machine Learning Research , pp. 4264–4273. PMLR, 09–15 Jun 2019. URL https://proceedings.mlr.press/v97/maheswaranathan19a. html .Stephen Merity, Nitish Shirish Keskar, and Richard Socher. Regularizing and optimizing LSTM language models. CoRR , abs/1708.02182, 2017. URL http://arxiv.org/abs/1708.02182 .Razvan Pascanu, Tomas Mikolov, and Yoshua Bengio. On the difficulty of training recurrent neural networks. In Proceedings of the 30th International Conference on International Conference on Machine Learning - Volume 28 , ICML’13, pp. III–1310–III–1318. JMLR.org, 2013. Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. Language models are unsupervised multitask learners. 2019. Ingo Rechenberg. Evolutionsstrategie: Optimierung technischer Systeme nach Prinzipien der biol-ogischen Evolution . Frommann-Holzboog, Stuttgart, 1973. 19 Raymond Ros and Nikolaus Hansen. A simple modification in cma-es achieving linear time and space complexity. In Günter Rudolph, Thomas Jansen, Nicola Beume, Simon Lucas, and Carlo Poloni (eds.), Parallel Problem Solving from Nature – PPSN X , pp. 296–305, Berlin, Heidelberg, 2008. Springer Berlin Heidelberg. ISBN 978-3-540-87700-4. T.P. Runarsson and M.T. Jonsson. Evolution and design of distributed learning rules. In 2000 IEEE Symposium on Combinations of Evolutionary Computation and Neural Networks. Proceedings of the First IEEE Symposium on Combinations of Evolutionary Computation and Neural Networks (Cat. No.00 , pp. 59–63, 2000. doi: 10.1109/ECNN.2000.886220. Rylan Schaeffer, Brando Miranda, and Sanmi Koyejo. Are emergent abilities of large language models a mirage? In Thirty-seventh Conference on Neural Information Processing Systems ,2023. URL https://openreview.net/forum?id=ITw9edRDlD .J. Schmidhuber. A neural network that embeds its own meta-levels. In IEEE International Con-ference on Neural Networks , pp. 407–412 vol.1, 1993. doi: 10.1109/ICNN.1993.298591. J Schmidhuber, Jieyu Zhao, and Marco Wiering. Simple principles of metalearning. 02 1999. Jurgen Schmidhuber. Steps towards ‘self-referential’ learning: a thought experiment. (CU-CS-627-92), 1992. Julian Schrittwieser, Ioannis Antonoglou, Thomas Hubert, Karen Simonyan, Laurent Sifre, Simon Schmitt, Arthur Guez, Edward Lockhart, Demis Hassabis, Thore Graepel, Timothy Lillicrap, and David Silver. Mastering atari, go, chess and shogi by planning with a learned model. Nature ,588:604–609, 2020. doi: 10.1038/s41586-020-03051-4. Hans-Paul Schwefel. Numerical Optimization of Computer Models . Wiley, Chichester, 1981. Frank Sehnke, Christian Osendorfer, Thomas Rückstieß, Alex Graves, Jan Peters, and Jür-gen Schmidhuber. Parameter-exploring policy gradients. Neural Networks , 23(4):551–559, 2010. ISSN 0893-6080. doi: https://doi.org/10.1016/j.neunet.2009.12.004. URL https://www. sciencedirect.com/science/article/pii/S0893608009003220 . The 18th International Con-ference on Artificial Neural Networks, ICANN 2008. David Silver, Julian Schrittwieser, Karen Simonyan, Ioannis Antonoglou, Aja Huang, Arthur Guez, Thomas Hubert, Lucas Baker, Matthew Lai, Adrian Bolton, Yutian Chen, Timothy Lillicrap, Fan Hui, Laurent Sifre, George van den Driessche, Thore Graepel, and Demis Hassabis. Mastering the game of go without human knowledge. Nature , 550:354–359, 2017. doi: 10.1038/nature24270. Rupesh Kumar Srivastava, Klaus Greff, and Jürgen Schmidhuber. Highway networks. CoRR ,abs/1505.00387, 2015. URL http://arxiv.org/abs/1505.00387 .Richard S. Sutton. The bitter lesson. http://www.incompleteideas.net/IncIdeas/ BitterLesson.html , March 2019. Accessed: 2026-06-18. Sebastian Thrun and Lorien Pratt. Learning to Learn: Introduction and Overview , pp. 3–17. Springer US, Boston, MA, 1998. ISBN 978-1-4615-5529-2. doi: 10.1007/978-1-4615-5529-2_1. URL https://doi.org/10.1007/978-1-4615-5529-2_1 .Andreas Veit, Michael J. Wilber, and Serge J. Belongie. Residual networks are exponential ensem-bles of relatively shallow networks. CoRR , abs/1605.06431, 2016. URL http://arxiv.org/abs/ 1605.06431 .20 Anna Vettoruzzo, Mohamed-Rafik Bouguelia, Joaquin Vanschoren, Thorsteinn Rögnvaldsson, and KC Santosh. Advances and challenges in meta-learning: A technical review. IEEE Trans. Pattern Anal. Mach. Intell. , 46(7):4763–4779, July 2024. ISSN 0162-8828. doi: 10.1109/TPAMI.2024. 3357847. URL https://doi.org/10.1109/TPAMI.2024.3357847 .Ziyu Wang, Frank Hutter, Masrour Zoghi, David Matheson, and Nando de Freitas. Bayesian optimization in a billion dimensions via random embeddings, 2016. URL https://arxiv.org/ abs/1301.1942 .Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yo-gatama, Maarten Bosma, Denny Zhou, Donald Metzler, Ed H. Chi, Tatsunori Hashimoto, Oriol Vinyals, Percy Liang, Jeff Dean, and William Fedus. Emergent abilities of large language mod-els, 2022. ISSN 2835-8856. URL https://openreview.net/forum?id=yzkSU5zdwD . Survey Certification. Daan Wierstra, Tom Schaul, Tobias Glasmachers, Yi Sun, Jan Peters, and Jurgen Schmidhuber. Natural evolution strategies. Journal of Machine Learning Research , 15(27):949–980, 2014. URL 
+
+http://jmlr.org/papers/v15/wierstra14a.html .R.J. Williams. Simple statistical gradient-following algorithms for connectionist reinforcement learning. Mach Learn , 8:229–256, 1992. doi: 10.1007/BF00992696. Jason Yosinski, Jeff Clune, Yoshua Bengio, and Hod Lipson. How transferable are features in deep neural networks? CoRR , abs/1411.1792, 2014. URL http://arxiv.org/abs/1411.1792 .Wojciech Zaremba, Ilya Sutskever, and Oriol Vinyals. Recurrent neural network regularization. 
+
+CoRR , abs/1409.2329, 2014. URL http://arxiv.org/abs/1409.2329 .Yan Zhang, Yi Zhou, Kaiyi Ji, and Michael M. Zavlanos. A new one-point residual-feedback oracle for black-box learning and control, 2021. URL https://arxiv.org/abs/2006.10820 .21
