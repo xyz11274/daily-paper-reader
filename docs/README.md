@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-07-29</span>
+      <span class="dpr-home-dashboard-kicker">2026-07-30</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 11 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-07-29 21:46:23 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-07-30 21:10:01 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日聚焦智能体高效学习与授权机制，精读两篇高分论文。</p>
-<p>最值得关注：从智能体经验中高效学习的方法，以及演进智能体在固定权限下的授权验证。</p>
-<p>建议优先精读这两篇9分论文，再速读专家行为先验强化学习和自评估偏差论文。</p>
+<p>今日聚焦智能体演化与强化学习前沿，其中两篇满分论文分别提出交互式智能体进化器（Living-Harness）与自进化评估策略（SERPO）。建议重点研读这两篇精读论文，它们为开放场景智能体与长任务推理提供了突破性方法论。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -76,7 +74,7 @@
     <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Sample-Efficient Learning from Agent Experience">Sample-Efficient Learning from Agent Experience</span></li><li><span class="dpr-home-dashboard-paper-title" title="Are You Still the Agent I Authorized? Earned Authority under a Fixed Ceiling for Evolving Agents">Are You Still the Agent I Authorized? Earned Authority under a Fixed Ceiling for Evolving Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Static Evaluation: Building Simulation Environments for Scalable Agentic Reinforcement Learning">Beyond Static Evaluation: Building Simulation Environments for Scalable Agentic Reinforcement Learning</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Living-Harness Is an Interactive-Agent Evolver">Living-Harness Is an Interactive-Agent Evolver</span></li><li><span class="dpr-home-dashboard-paper-title" title="SERPO: Self-Evolving Rubric Policy Optimization for Open-Ended Test-Time Reinforcement Learning">SERPO: Self-Evolving Rubric Policy Optimization for Open-Ended Test-Time Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Rethinking Self-Evolution: A Constrained Exploration-Exploitation Process for Mitigating Skill Overfitting">Rethinking Self-Evolution: A Constrained Exploration-Exploitation Process for Mitigating Skill Overfitting</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>6</strong></span></div>
 </section>
@@ -86,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Expert Behavior Prior Reinforcement Learning">Expert Behavior Prior Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="OpenForgeRL: Train Harness-native Agents in Any Environment">OpenForgeRL: Train Harness-native Agents in Any Environment</span></li><li><span class="dpr-home-dashboard-paper-title" title="When Do Agent Loops Mistake Stagnation for Progress? Self-Evaluation Bias and Externally Grounded Verification in Long-Running Autonomous LLM Agent Loops">When Do Agent Loops Mistake Stagnation for Progress? Self-Evaluation Bias and Externally Grounded Verification in Long-Running Autonomous LLM Agent Loops</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="AgentOmnia: Scaling Agentic Models for Full-Scenario Applications">AgentOmnia: Scaling Agentic Models for Full-Scenario Applications</span></li><li><span class="dpr-home-dashboard-paper-title" title="ACM: Agentic Context Management for Long Horizon Tasks">ACM: Agentic Context Management for Long Horizon Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgenticCANN: Automated Ascend C Operator Generation via Knowledge-Augmented Agentic Evolution">AgenticCANN: Automated Ascend C Operator Generation via Knowledge-Augmented Agentic Evolution</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>10</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span></div>
 </section>
 </div>
 
