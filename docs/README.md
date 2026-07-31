@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-07-30</span>
+      <span class="dpr-home-dashboard-kicker">2026-07-31</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 11 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 14 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-07-30 21:10:01 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-07-31 20:34:40 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日聚焦智能体演化与强化学习前沿，其中两篇满分论文分别提出交互式智能体进化器（Living-Harness）与自进化评估策略（SERPO）。建议重点研读这两篇精读论文，它们为开放场景智能体与长任务推理提供了突破性方法论。</p>
+<p>今日共梳理14篇论文，精读6篇、速读8篇，焦点集中在智能体自我进化与强化学习反思机制。</p>
+<p>最值得关注的两大方向：通过盲点诊断实现自我进化（SkillMentor，9.0分），以及分组反思式自蒸馏提升Agent强化学习表现（9.0分）。</p>
+<p>建议普通读者先理解“让模型主动发现自身盲区”这一核心思路，再尝试将其应用到个人AI助手的训练中。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -74,7 +76,7 @@
     <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Living-Harness Is an Interactive-Agent Evolver">Living-Harness Is an Interactive-Agent Evolver</span></li><li><span class="dpr-home-dashboard-paper-title" title="SERPO: Self-Evolving Rubric Policy Optimization for Open-Ended Test-Time Reinforcement Learning">SERPO: Self-Evolving Rubric Policy Optimization for Open-Ended Test-Time Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Rethinking Self-Evolution: A Constrained Exploration-Exploitation Process for Mitigating Skill Overfitting">Rethinking Self-Evolution: A Constrained Exploration-Exploitation Process for Mitigating Skill Overfitting</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SkillMentor: LLM Agent Self-Evolution via Learning Blind-Spot Diagnosis">SkillMentor: LLM Agent Self-Evolution via Learning Blind-Spot Diagnosis</span></li><li><span class="dpr-home-dashboard-paper-title" title="Group-Reflective Self-Distillation for Agentic Reinforcement Learning">Group-Reflective Self-Distillation for Agentic Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Learning for Embodied AI with Criticality Model">Self-Evolving Learning for Embodied AI with Criticality Model</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>6</strong></span></div>
 </section>
@@ -84,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">5 篇</strong>
+    <strong class="dpr-home-dashboard-count">8 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="AgentOmnia: Scaling Agentic Models for Full-Scenario Applications">AgentOmnia: Scaling Agentic Models for Full-Scenario Applications</span></li><li><span class="dpr-home-dashboard-paper-title" title="ACM: Agentic Context Management for Long Horizon Tasks">ACM: Agentic Context Management for Long Horizon Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgenticCANN: Automated Ascend C Operator Generation via Knowledge-Augmented Agentic Evolution">AgenticCANN: Automated Ascend C Operator Generation via Knowledge-Augmented Agentic Evolution</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="From Cognitive Architectures to Language Agents: A Mechanism-Level Review of Lineage, Convergence, and Migration Gaps">From Cognitive Architectures to Language Agents: A Mechanism-Level Review of Lineage, Convergence, and Migration Gaps</span></li><li><span class="dpr-home-dashboard-paper-title" title="Nanbeige4.2-3B: Unlocking Agentic Capabilities in a Compact Model">Nanbeige4.2-3B: Unlocking Agentic Capabilities in a Compact Model</span></li><li><span class="dpr-home-dashboard-paper-title" title="SkillSmith: Learning to Compose Parametric Skills and Textual Knowledge">SkillSmith: Learning to Compose Parametric Skills and Textual Knowledge</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>7</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>1</strong></span></div>
 </section>
 </div>
 
