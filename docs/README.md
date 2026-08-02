@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-01</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-02</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 13 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 10 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>5</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-01 21:24:47 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-02 21:10:05 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共解读13篇AI论文，精读2篇，重点聚焦智能体与RAG技术。最值得关注的是《Towards Trustworthy and Cost-Efficient Data Integration》提出的Agentic RAG，以及《EviBack》用证据约束强化学习提升搜索智能体，均获8.0高分。普通读者可留意速读中记忆管理（Metis、ChronoMem）与开放式智能体（PLATO）方向，理解AI如何更可靠地调用知识。</p>
+<p>今日聚焦AI自我改进与强化学习训练范式，精读两篇高分论文：Frontis-MA1探索AI4AI递归自改进，RLVR到RLSVR引入自验证奖励。最值得关注方向：开放任务下的自验证奖励设计，以及混合/塑形奖励在智能体RL中的应用。建议从RLSVR的“任务变换生成可验证奖励”入手，理解其如何提升开放场景训练稳定性。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">2 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Towards Trustworthy and Cost-Efficient Data Integration: From Naïve RAG to Agentic RAG">Towards Trustworthy and Cost-Efficient Data Integration: From Naïve RAG to Agentic RAG</span></li><li><span class="dpr-home-dashboard-paper-title" title="EviBack: Search-Agent Reinforcement Learning via Evidence-Constrained Teacher Backoff">EviBack: Search-Agent Reinforcement Learning via Evidence-Constrained Teacher Backoff</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Frontis-MA1: Training an AI4AI Model towards Recursive Self-Improvement in Machine Learning Engineering">Frontis-MA1: Training an AI4AI Model towards Recursive Self-Improvement in Machine Learning Engineering</span></li><li><span class="dpr-home-dashboard-paper-title" title="From RLVR to RLSVR: Task Transformation Induces Self-Verifiable Rewards for Open-Ended LLM Self-Improvement">From RLVR to RLSVR: Task Transformation Induces Self-Verifiable Rewards for Open-Ended LLM Self-Improvement</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgentOmnia: Scaling Agentic Models for Full-Scenario Applications">AgentOmnia: Scaling Agentic Models for Full-Scenario Applications</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>1</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="PLATO: Pointer Learner for Agent and Task Openness">PLATO: Pointer Learner for Agent and Task Openness</span></li><li><span class="dpr-home-dashboard-paper-title" title="Metis: Memory Foundation Model">Metis: Memory Foundation Model</span></li><li><span class="dpr-home-dashboard-paper-title" title="ChronoMem: Version Control and Semantic Rollback for Large Language Model Agent Memory">ChronoMem: Version Control and Semantic Rollback for Large Language Model Agent Memory</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Optimal Reward Shaping: Autonomous Car Parking Case Study">Optimal Reward Shaping: Autonomous Car Parking Case Study</span></li><li><span class="dpr-home-dashboard-paper-title" title="Hybrid Advantage Estimation with Unified Critic for VLM Agentic Reinforcement Learning">Hybrid Advantage Estimation with Unified Critic for VLM Agentic Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Unified Algorithmic Framework for Hybrid Reinforcement Learning in Tabular MDPs with Shifted Transition Dynamics">A Unified Algorithmic Framework for Hybrid Reinforcement Learning in Tabular MDPs with Shifted Transition Dynamics</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>10</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span></div>
 </section>
 </div>
 
