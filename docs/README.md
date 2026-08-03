@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-02</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-03</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 10 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 11 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>5</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-02 21:10:05 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-03 20:49:48 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日聚焦AI自我改进与强化学习训练范式，精读两篇高分论文：Frontis-MA1探索AI4AI递归自改进，RLVR到RLSVR引入自验证奖励。最值得关注方向：开放任务下的自验证奖励设计，以及混合/塑形奖励在智能体RL中的应用。建议从RLSVR的“任务变换生成可验证奖励”入手，理解其如何提升开放场景训练稳定性。</p>
+<p>今日精读6篇、速读5篇，聚焦智能体工具获取与技能优化；其中最值得关注的两篇满分论文，分别提出本体感知的自进化科学工具获取智能体，以及自监督技能优化方法；建议读者优先了解智能体如何自主习得并复用工具技能，以应对长任务与开放场景。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">5 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Frontis-MA1: Training an AI4AI Model towards Recursive Self-Improvement in Machine Learning Engineering">Frontis-MA1: Training an AI4AI Model towards Recursive Self-Improvement in Machine Learning Engineering</span></li><li><span class="dpr-home-dashboard-paper-title" title="From RLVR to RLSVR: Task Transformation Induces Self-Verifiable Rewards for Open-Ended LLM Self-Improvement">From RLVR to RLSVR: Task Transformation Induces Self-Verifiable Rewards for Open-Ended LLM Self-Improvement</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgentOmnia: Scaling Agentic Models for Full-Scenario Applications">AgentOmnia: Scaling Agentic Models for Full-Scenario Applications</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SciToolAgent-Evo: An Ontology-Aware Self-Evolving Agent for Open-World Scientific Tool Acquisition">SciToolAgent-Evo: An Ontology-Aware Self-Evolving Agent for Open-World Scientific Tool Acquisition</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Supervised Skill Optimization">Self-Supervised Skill Optimization</span></li><li><span class="dpr-home-dashboard-paper-title" title="Code Is the Body: Agent-Owned Software Bodies for Recursive Evolution and Descent">Code Is the Body: Agent-Owned Software Bodies for Recursive Evolution and Descent</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>6</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -87,7 +87,7 @@
     <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Optimal Reward Shaping: Autonomous Car Parking Case Study">Optimal Reward Shaping: Autonomous Car Parking Case Study</span></li><li><span class="dpr-home-dashboard-paper-title" title="Hybrid Advantage Estimation with Unified Critic for VLM Agentic Reinforcement Learning">Hybrid Advantage Estimation with Unified Critic for VLM Agentic Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Unified Algorithmic Framework for Hybrid Reinforcement Learning in Tabular MDPs with Shifted Transition Dynamics">A Unified Algorithmic Framework for Hybrid Reinforcement Learning in Tabular MDPs with Shifted Transition Dynamics</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="When Unlearning Fails: Reliable Data Deletion under Post-Training in Agent Networks">When Unlearning Fails: Reliable Data Deletion under Post-Training in Agent Networks</span></li><li><span class="dpr-home-dashboard-paper-title" title="ACM: Agentic Context Management for Long Horizon Tasks">ACM: Agentic Context Management for Long Horizon Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="Partner Capability Estimation for Task-Agnostic Adaptation in Ad-Hoc Teamwork">Partner Capability Estimation for Task-Agnostic Adaptation in Ad-Hoc Teamwork</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span></div>
 </section>

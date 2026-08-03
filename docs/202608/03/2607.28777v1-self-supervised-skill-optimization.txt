@@ -1,0 +1,442 @@
+Title: Self-Supervised Skill Optimization
+
+URL Source: https://arxiv.org/pdf/2607.28777v1
+
+Published Time: Mon, 03 Aug 2026 00:07:47 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# Self-Supervised Skill Optimization 
+
+Siran Peng 1,2 , Cuiyu Yang 3,4 , Tianyu Fu 3, Tianshuo Zhang 2,1 , Haoyuan Zhang 2,1 , Weisong Zhao 5,Anyang Su 3, Minghui Wu 3, Huiying Li 4, Xiangyu Zhu 1,2 , Chenxu Zhao 3* , Zhen Lei 1,2,6* 1MAIS, CASIA, 2SAI, UCAS, 3Mininglamp Technology, 4JLU, 5IIE, CAS, 6SCSE, FIE, M.U.S.T {pengsiran2023, zhen.lei}@ia.ac.cn, zhaochenxu@mininglamp.com 
+
+> *
+
+Corresponding author 
+
+Abstract 
+
+Agent skills provide frozen large language model (LLM) agents with reusable procedural guidance, and recent work shows that such skills can be optimized with ground-truth (GT) feedback. Many applications, however, lack GT la-bels, task scores, rewards, or reliable task-specific evaluators. We therefore introduce Self-Supervised Skill Optimization (SSO), a comparative framework that learns a reusable skill from unlabeled task instances alone. At each step, SSO runs the current skill on an unlabeled batch, uses a subset of the resulting executions to generate complete skill probes, and runs the probes on the same batch. An LLM judge compares the resulting answers, trajectories, artifacts, or terminal states. A separate behavior extractor identifies behavioral differences without seeing the judge’s decisions. SSO uses these decisions to aggregate evidence for and against the observed behaviors across instances. It then ranks the behaviors by the resulting evidence and renders a new complete skill from the highest-ranked behaviors. The update is accepted only if the new skill outperforms the current one on an unlabeled validation set. SSO outperforms existing GT-free prompt optimizers on both closed-ended and open-ended tasks. On closed-ended bench-marks, it approaches and sometimes exceeds the strongest GT-based skill optimizer without using any GT feedback. 
+
+## Introduction 
+
+Large language model (LLM) agents increasingly tackle tasks through multistep reasoning, tool use, and environment interaction (Yao et al. 2023; Schick et al. 2023; Wang et al. 2024a). Such tasks require agents to coordinate decisions over extended executions, increasing the value of reusable procedural guidance. Agent skills provide such guidance to frozen agents by encoding procedures, policies for tool use, domain conventions, and output constraints (Li et al. 2026; Jiang et al. 2026). In this work, a skill takes the form of a persistent document written in natural language. It can be in-spected, edited, and reused across unseen task instances with-out changing model weights (Ni et al. 2026). These properties make the skill document a natural target for optimization. Recent work constructs and refines skills from execution trajectories, failures, and domain resources (Ni et al. 2026; Alzubi et al. 2026; Liu et al. 2026; Shen et al. 2026). Skil-lOpt (Yang et al. 2026a) directly treats a single skill document as the trainable state of a frozen agent. It converts scored roll-outs into bounded edits and accepts an update only when it Current Skill  Executor      
+
+> LLM Judge
+> Current Skill Skill Probe
+> GT Labels Task Scores
+> Rewards Task -specific
+> Evaluators
+> Executor Executor
+> GT -based Methods
+> GT -derived Feedback Pairwise Comparative Feedback
+> SSO (GT -free)
+
+Figure 1: GT-based skill optimization and SSO. Existing methods use GT feedback to guide skill updates and selec-tion. SSO instead derives optimization feedback from pair-wise comparisons of observable executions on unlabeled task instances and uses no GT feedback during optimization. improves performance on a separate validation set. Its results show that reusable skills can be optimized across models, benchmarks, and execution harnesses. However, both its up-date directions and acceptance decisions rely on ground-truth (GT) feedback from task scores or task-specific evaluators. Such feedback is often unavailable in practice. Open-ended tasks may have no reference answer, enterprise tasks may expose only source documents and execution traces, and interactive or artifact-producing tasks may lack a re-liable task-specific evaluator. Collecting labels or building such evaluators can also diminish the practical benefit of adapting a frozen agent through a skill document. We there-fore ask whether a reusable agent skill can be optimized from unlabeled task instances alone. We call this problem GT-free skill optimization and introduce Self-Supervised Skill Opti-mization (SSO), a comparative framework for addressing it. SSO does not use GT labels, task scores, rewards, or task-specific evaluators to update or select the skill. As shown in Figure 1, it instead derives optimization feedback from pairwise comparisons of the agent’s observable executions. GT-free prompt optimization provides an important prece-dent, showing that pairwise comparisons can support prompt refinement without GT feedback (Xiang et al. 2025; Nair et al. 2025; Wu et al. 2026; Peng et al. 2026). These methods use arXiv:2607.28777v1 [cs.CL] 30 Jul 2026 relative output quality to rank or select complete prompt can-didates. This candidate-level treatment is natural when op-timization is driven by response-level preferences. Its effec-tiveness, however, remains unclear in agentic settings that re-quire extended executions, tool use, environment interaction, or artifact manipulation. Complex skill executions expose behavioral differences that can be compared across candi-dates and tasks. This motivates us to move beyond candidate-level selection and instead aggregate behavior-level evidence across comparisons to render a new skill. SSO realizes this behavior-level approach through a com-parative optimization loop over a single skill. At each step, SSO runs the current skill on an unlabeled batch, uses a subset of the resulting executions to generate complete skill probes, and runs the probes on the same batch. An LLM judge compares each probe execution with the corresponding exe-cution under the current skill. A separate behavior extractor identifies behavioral differences without seeing the judge’s decisions. SSO clusters semantically equivalent behaviors and uses the pairwise decisions to aggregate evidence for and against the observed behaviors across instances. When a de-cisive comparison can be linked to one or more observed be-haviors, SSO distributes one unit of evidence equally among them. This normalization prevents comparisons involving more behaviors from exerting greater overall influence. SSO ranks the behaviors by the strength of the aggregated evi-dence and uses the highest-ranked behaviors to render a new complete skill. It accepts the new skill only if it outperforms the current skill on an unlabeled validation set. The probes serve only to expose alternative behaviors and are never ac-cepted directly. The contributions of this paper are as follows. 
+
+• We formalize GT-free skill optimization as the problem of optimizing a reusable skill for a frozen LLM agent from unlabeled task instances alone, without using GT feedback to generate, rank, or accept updates. 
+
+• We introduce SSO, a comparative framework for improv-ing reusable skills from agent executions on unlabeled task instances. It translates execution-level preferences into evidence for and against observed behaviors. It then ranks the behaviors by the resulting evidence and uses the highest-ranked behaviors to render a new complete skill. 
+
+• We systematically evaluate SSO on closed-ended and open-ended tasks across multiple LLMs. SSO outper-forms existing GT-free prompt optimizers in both settings. On closed-ended benchmarks, it approaches and some-times exceeds the strongest GT-based skill optimizer. 
+
+## Related Work 
+
+Automatic Prompt Optimization 
+
+Prompting techniques such as chain-of-thought (CoT) show that carefully designed prompts can improve reasoning per-formance (Wei et al. 2022; Kojima et al. 2022). Auto-matic prompt optimization formulates prompt refinement as a search problem over textual instructions. APE (Zhou et al. 2023) uses LLMs to generate and select candidate instruc-tions, while ProTeGi (Pryzant et al. 2023) uses textual error feedback to propose prompt revisions. Subsequent methods guide this process with score histories, structured planning, or population-based evolution (Yang et al. 2024; Wang et al. 2024b; Fernando et al. 2024). More recently, TextGrad (Yuk-sekgonul et al. 2024) propagates textual feedback through compound AI systems, while GEPA (Agrawal et al. 2025) uses execution trajectories and natural-language reflection to optimize prompts and language programs. Most prompt optimizers assume access to labeled exam-ples, reference-based metrics, or task scores. Recent GT-free prompt optimizers instead compare outputs produced by competing prompts and use the resulting preferences to guide prompt refinement. SPO (Xiang et al. 2025) greed-ily retains prompt revisions preferred by an LLM judge. PDO (Wu et al. 2026) casts label-free prompt selection as a dueling-bandit problem. UPA (Peng et al. 2026) combines pairwise-guided tree search with uncertainty-aware filtering and global tournament selection. Beyond prompt optimiza-tion, pairwise LLM evaluation is widely used to compare open-ended responses, although it can be sensitive to fac-tors such as response order (Zheng et al. 2023). Existing GT-free prompt optimizers have been evaluated primarily on response-level benchmarks. Their effectiveness in agentic settings that require extended executions, tool use, environ-ment interaction, or artifact manipulation therefore remains unclear. Because they operate on response-level preferences, these methods treat complete prompt candidates as the unit of optimization. Agentic skill executions expose additional behavioral structure. Current methods do not study how evi-dence from this structure can be combined across probes and tasks to construct a skill beyond the compared candidates. 
+
+Agent Skills and Skill Optimization 
+
+Recent work has established agent skills as persistent, reusable artifacts that extend beyond atomic tool calls. Skills-Bench (Li et al. 2026) studies how skills affect agent perfor-mance, while the SoK on agent skills (Jiang et al. 2026) systematizes their representations, design patterns, and life-cycle. Building on this abstraction, one line of work focuses on acquiring and organizing reusable skills. Voyager (Wang et al. 2024a), Trace2Skill (Ni et al. 2026), AutoSkill (Yang et al. 2026b), AutoRefine (Qiu et al. 2026a), and Skill-Foundry (Shen et al. 2026) construct skills from embod-ied experience, execution trajectories, user interactions, or heterogeneous external resources. These systems primarily study skill acquisition, distillation, and library maintenance rather than iterative optimization of a single skill. A second line of work iteratively refines or optimizes skill artifacts using task outcomes. EvoSkill (Alzubi et al. 2026) combines failure analysis with validation scores, Skill-Forge (Liu et al. 2026) uses execution failures to refine skills for cloud-support tasks, and CoEvoSkills (Zhang et al. 2026) co-evolves skills with a surrogate verifier while still con-sulting a GT oracle. SkillGen (Ma et al. 2026) induces a single auditable skill from successful and failed trajectories and evaluates candidate skills through verified repairs and regressions, while HDSO (Shang and Yang 2026) uses ob-served success or failure to validate skill hypotheses through paired control and treatment executions. Among these meth-ods, SkillOpt (Yang et al. 2026a) presents a general frame-LLM Judge                     
+
+> 𝒇 𝐣𝐮𝐝𝐠𝐞
+> 𝒇 𝐞𝐱𝐞𝐜
+> Executor
+> 𝒇 𝐞𝐱𝐞𝐜
+> Executor
+> Probe Generator
+> 𝒇 𝐠𝐞𝐧
+> 𝑺 𝒕
+> Current Skill
+> Steps as follows:
+> Resolve Activations
+> Aggregate Evidence
+> 𝑸 𝒄 ,𝑬 𝒄
+> Rank Behaviors
+> Encourage
+> Suppress
+> Encourage
+> Retain Top Behaviors
+> ↑𝒄 𝟏
+> ↓𝒄 𝟐
+> ↑𝒄 𝟑
+> Obtain 𝜶 𝒊𝒄
+> Calculate
+> Obtain 𝓤 𝒕
+> 𝑺 𝒕
+> Current Skill
+> ෩𝑺 𝒕 +𝟏
+> Candidate Skill
+> 𝒇 𝐞𝐱𝐞𝐜
+> Executor
+> 𝒇 𝐞𝐱𝐞𝐜
+> Executor
+> 𝒇 𝐣𝐮𝐝𝐠𝐞
+> LLM Judge
+> 𝓑 𝒊 ={(𝜷 𝒊𝒋 ,𝜶 𝒊𝒋 )}
+> Behavior Records
+> 𝒇 𝐫𝐞𝐧𝐝𝐞𝐫
+> Renderer
+> 𝒇 𝐜𝐥𝐮𝐬𝐭𝐞𝐫
+> Behavior Clusterer
+> Subset 𝓗 𝒕
+> Probes {𝑷 𝒌 }𝒌 =𝟏
+> 𝑲
+> 𝒓 𝒐
+> Tasks and
+> executions
+> with at least
+> one non -tie
+> {𝒓 𝒌 }
+> 𝒇 𝐛𝐞𝐡
+> Behavior Extractor
+> Probe Generation and
+> Anchored Comparison
+> Behavior Extraction
+> and Clustering
+> Evidence Aggregation
+> and Ranking
+> 𝓒 𝒕
+> {𝒚 𝒌 }
+> Anchored Pairwise Decisions
+> 𝓤 𝒕
+> Whole -Skill Rendering
+> and Unlabeled Validation
+> 𝒓 𝒐
+> 𝒓 𝒏
+> 𝑺 𝒕 +𝟏 =𝑺 𝒕
+> Otherwise :
+> 𝑺 𝒕 +𝟏 =෩𝑺 𝒕 +𝟏
+> If ෩𝑺 𝒕 +𝟏 wins:
+> 𝓥 𝒕
+> Validation Batch
+> 𝓧 𝒕
+> Training Batch
+> {𝜷 𝒊𝒋 }
+> Selection Case
+
+Figure 2: The SSO optimization loop. SSO executes the current skill and K complete probes on the same unlabeled training batch. An LLM judge then produces anchored pairwise decisions. A behavior extractor identifies observable differences without seeing the decisions, and a separate clusterer groups equivalent descriptions. SSO combines the decisions with behavior activations to rank behaviors and render a new skill, accepting it only if it wins against the current skill on a validation batch. work for GT-based optimization of a single reusable skill. It treats the skill document as the trainable state of a frozen agent, converts scored rollouts into bounded edits, and ac-cepts an update only when it improves performance on a validation set. Together, these methods show that reusable skills can be optimized effectively, but GT feedback still in-forms their update directions, acceptance decisions, or both. Recent studies have explored adjacent forms of skill learn-ing and evaluation without GT feedback (Si et al. 2026; Qiu et al. 2026b; Gao et al. 2026; Gautam, Radhakrishna, and Gulwani 2026; Tian et al. 2026; Yan et al. 2026). These works focus on context-specific skills, specialized domains, task-local analysis, or skill libraries. None provides a sys-tematic cross-domain study of GT-free optimization for a single reusable skill over an unlabeled task distribution. We address this gap with SSO, a general comparative framework evaluated across closed-ended and open-ended tasks. 
+
+## Methodology 
+
+Problem Setup and Overview 
+
+Let Dtr = {xi} be an unlabeled training set of task instances, and let Dval be an unlabeled validation set disjoint from Dtr .Let fexec denote the fixed execution function induced by a frozen LLM, and let S be a complete reusable skill document. Executing S on task x produces an observable execution r:
+
+r = fexec (S, x ). (1) Here, r may include an answer, a trajectory, an artifact, or a terminal state, depending on the task. A trajectory may con-tain tool calls, observations, or environment actions. GT-free skill optimization assumes that no GT labels, task scores, rewards, or task-specific evaluators are available during op-timization. Given Dtr , Dval , fexec , and an initial skill S0, the goal is to learn a reusable skill S∗ that improves expected performance relative to S0 on unseen tasks from the same domain, without using GT feedback to generate or select updates. SSO is our solution for this problem. Figure 2 illustrates the SSO optimization loop. At each step, SSO runs the current skill on an unlabeled batch and uses a subset of the resulting executions to generate K com-plete skill probes. It then runs every probe on the same batch, producing alternative executions on matched task instances. A fixed LLM judge compares each probe execution with the corresponding execution under the current skill. Rather than reducing these comparisons to a ranking of probes, SSO uses a separate behavior extractor to identify behavioral dif-ferences without seeing the judge’s decisions. A separate clusterer groups semantically equivalent behaviors. SSO then aggregates evidence for and against them across probes and tasks and ranks them by the resulting scores. Finally, SSO renders a new complete skill from the highest-ranked behav-iors and accepts it only if it outperforms the current skill on an unlabeled validation set. Algorithm 1 summarizes the full procedure of SSO. 
+
+Probe Generation and Anchored Comparison 
+
+At step t, SSO begins by selecting an unlabeled training batch Xt ⊂ D tr . Executing the current skill St on each task 
+
+xi ∈ X t yields an observable execution roi :
+
+roi = fexec (St, x i), xi ∈ X t, (2) which serves as the anchor for subsequent comparisons. To produce skill probes for exposing alternative behaviors, SSO employs an LLM-based probe generator fgen . Conditioning on the current skill St and a subset Ht of its task-execution history, fgen jointly generates K skill probes: 
+
+{Pk}Kk=1 = fgen (St, Ht), Ht ⊆ { (xi, r oi ) | xi ∈ X t} .
+
+(3) Each Pk is a complete skill document rather than an iso-lated edit. A probe may revise multiple parts of St, and is constrained to be distinct from both St and its peer probes. Each probe is then executed on the same training batch: 
+
+rki = fexec (Pk, x i), xi ∈ X t, k = 1 , . . . , K. (4) Here, rki denotes the execution of the k-th probe on task 
+
+xi. SSO uses a fixed comparative judge fjudge , implemented by a frozen LLM, to compare each probe execution with its corresponding anchor: 
+
+yki = fjudge 
+
+ xi, r ki , r oi
+
+ ∈ {− 1, 0, +1 }, (5) Algorithm 1: Self-Supervised Skill Optimization (SSO) 
+
+Require: S0, Dtr , Dval , K, U , and optimization steps T
+
+Ensure: Optimized skill S∗
+
+1: for t = 0 , . . . , T − 1 do 
+
+2: // Probe Generation and Anchored Comparison 
+
+3: Select Xt ⊂ D tr 
+
+4: roi ← fexec (St, x i) for each xi ∈ X t
+
+5: Select history subset Ht
+
+6: {Pk}Kk=1 ← fgen (St, Ht)
+
+7: for k = 1 , . . . , K do 
+
+8: rki ← fexec (Pk, x i) for each xi ∈ X t
+
+9: yki ← fjudge (xi, r ki , r oi ) for each xi ∈ X t
+
+10: end for 
+
+11: // Behavior Extraction and Clustering 
+
+12: for each xi ∈ X t with ∃k, y ki̸ = 0 do 
+
+13: {(βij , α ij )}Ji 
+
+> j=1
+
+← fbeh (xi, r oi , {rki }Kk=1 )
+
+14: end for 
+
+15: Ct ← fcluster ({βij }i,j )
+
+16: // Evidence Aggregation and Ranking 
+
+17: Resolve αic (r) from the clustered records 
+
+18: Qc, E c ← 0 for each c ∈ C t
+
+19: for each (i, k ) with yki̸ = 0 do 
+
+20: Form the changed-cluster set Aki
+
+21: for each c ∈ A ki do 
+
+22: dkic ← αic (rki ) − αic (roi )
+
+23: ekic ← yki dkic /|A ki |
+
+24: Qc ← Qc + ekic 
+
+25: Ec ← Ec + |ekic |
+
+26: end for 
+
+27: end for 
+
+28: Set intents from sign( Qc) and discard Qc = 0 
+
+29: Rank the rest by |Qc|, Ec, and contributing-task count 
+
+30: Retain up to U highest-ranked clusters as Ut
+
+31: // Whole-skill Rendering and Validation 
+
+32: if Ut = ∅ then 
+
+33: St+1 ← St and continue 
+
+34: end if 
+
+35: eSt+1 ← frender (St, Ut)
+
+36: Sample Vt ⊆ D val 
+
+37: for each xm ∈ V t do 
+
+38: Obtain rom and rnm using fexec 
+
+39: vm ← fjudge (xm, r nm, r om)
+
+40: end for 
+
+41: Count candidate wins Wt and losses Lt
+
+42: St+1 ← eSt+1 if Wt > L t; otherwise St
+
+43: end for 
+
+44: S∗ ← ST
+
+45: return S∗
+
+where yki = +1 indicates that the probe execution is pre-ferred, yki = −1 indicates that the anchor execution is pre-ferred, and yki = 0 denotes a tie. For each task, all probe executions are compared against the same current-skill ex-ecution, so no comparisons among probes are required. To mitigate position bias, we randomize the presentation order of the executions and map the resulting decision back to their probe and anchor identities before assigning yki . Rather than using these comparisons only to select one of the generated probes, SSO retains their task-level evidence to construct a new skill that need not match any individual probe. 
+
+Behavior Extraction and Clustering 
+
+SSO next represents observable execution differences as be-haviors, providing a common unit for aggregating evidence across probes and tasks. Semantically equivalent behaviors can then accumulate evidence for and against them across comparisons. To prevent the pairwise outcomes from bias-ing which differences are reported or how they are described, the behavior extractor does not see the judge decisions. For each task with at least one decisive comparison (i.e., at least one non-tie), an LLM-based behavior extractor fbeh receives the task, the current execution, and all probe executions: 
+
+Bi = {(βij , α ij )}Ji 
+
+> j=1
+
+= fbeh 
+
+ xi, r oi , {rki }Kk=1 
+
+ . (6) Here, Bi is the set of behavior records extracted for task xi,
+
+Ji = |B i|, and j indexes these records. Each record pairs a behavior description βij with a mapping αij that assigns an activation state to each input execution: 
+
+αij (r) ∈ { 1, 0, ⊥} . (7) The values 1, 0, and ⊥ indicate that the behavior is present, absent, or unclear, respectively. The extractor may return multiple behaviors when the input executions contain multi-ple observable differences. The behavior descriptions extracted from these task in-stances are then grouped by an LLM-based clusterer fcluster :
+
+Ct = fcluster ({βij }i,j ) . (8) The clusterer receives only the behavior descriptions, with-out activation states or pairwise decisions, and partitions semantically equivalent descriptions into clusters. It groups descriptions only when they express the same observable be-havior; related but distinct behaviors remain separate. Each cluster is represented by one of its original descriptions rather than a newly generated summary, ensuring that clustering does not alter the meaning of the behavior. 
+
+Evidence Aggregation and Ranking 
+
+After clustering, SSO combines the pairwise decisions with behavior activations. For cluster c ∈ Ct, let αic (r) ∈{1, 0, ⊥} denote the activation of its behavior in execution r
+
+for task xi. For each r, αic (r) is the common clear activation assigned by the task-local behavior records in cluster c. For a given execution r, αic (r) = ⊥ if no such record exists, the activation is unclear, or the records disagree. For each comparison, SSO first identifies the clusters whose behav-iors clearly differ between the probe and anchor executions: 
+
+Aki =
+
+n
+
+c ∈ C t αic (rki ),α ic (roi )∈{ 0,1},αic (rki )̸=αic (roi )
+
+o
+
+. (9) For each c ∈ A ki , the activation difference is: 
+
+dkic = αic (rki ) − αic (roi ) ∈ {− 1, +1 }. (10) Here, dkic = +1 means that the behavior appears in the probe execution, while dkic = −1 means that it disappears. For a decisive comparison with Aki̸ = ∅, SSO assigns evidence to each changed behavior cluster: 
+
+ekic = yki dkic 
+
+|A ki | , c ∈ A ki . (11) All other cluster-comparison pairs receive zero evidence. Be-cause yki identifies the preferred execution and dkic identifies where the behavior appears, a behavior present only in the preferred execution receives positive evidence, whereas one present only in the non-preferred execution receives nega-tive evidence. For example, if a preferred probe introduces two changed behaviors, each receives +1 /2 evidence. If the anchor is preferred instead, each receives −1/2. Each deci-sive comparison with at least one clear behavioral difference contributes one normalized unit of absolute evidence: 
+
+X
+
+> c∈A ki
+
+|ekic | = 1 . (12) This normalization gives every such comparison the same total influence regardless of how many behaviors differ be-tween its executions. A decisive comparison with no clear behavioral difference is left unattributed and does not affect any cluster score. The signed score and total evidence mass for cluster c are: 
+
+Qc = X
+
+> i,k
+
+ekic , Ec = X
+
+> i,k
+
+|ekic |. (13) For example, evidence values +1 , +1 , and −1 give Qc = 1 
+
+and Ec = 3 : the net direction is positive, while the total evidence mass is three. The sign of Qc determines the update direction: 
+
+intent( c) = 
+
+
+
+encourage , Qc > 0,
+
+suppress , Qc < 0,
+
+neutral , Qc = 0 .
+
+(14) Clusters with Qc = 0 are discarded. The remaining clusters are ranked by descending |Qc|, with larger Ec and evidence from more distinct tasks used as successive tie-breakers. Any remaining ties are resolved deterministically. Given an update budget U , SSO retains up to U highest-ranked clusters as the behavior units Ut. Each unit contains the representative behavior description, its update direction, its signed score 
+
+Qc, and the evidence for and against the behavior. 
+
+Whole-Skill Rendering and Unlabeled Validation 
+
+If Ut = ∅, SSO does not generate a candidate and keeps the current skill unchanged. Otherwise, an LLM-based renderer 
+
+frender receives the current skill and the selected behaviors: 
+
+eSt+1 = frender (St, Ut). (15) The renderer outputs a new skill. It may add or strengthen an encouraged behavior and remove, weaken, or restrict a suppressed behavior, but it does not introduce an unsupported opposite. Because Ut aggregates evidence across probes and tasks, the candidate can combine supported behaviors from different probes and need not match any individual probe. SSO then samples a validation batch Vt ⊆ D val and exe-cutes the current and rendered skills on every task xm ∈ V t:
+
+rom = fexec (St, x m), rnm = fexec ( eSt+1 , x m). (16) Here, rom and rnm denote the current-skill and candidate exe-cutions. The same comparative judge compares each candi-date execution with its corresponding current-skill execution: 
+
+vm = fjudge (xm, r nm, r om) ∈ {− 1, 0, +1 }. (17) Following the convention for yki , vm = +1 , −1, or 0 denotes a candidate win, candidate loss, or tie, respectively. As in the training comparisons, validation uses no GT feedback and applies the same presentation-order randomization and identity mapping. Let Wt and Lt denote the numbers of candidate wins and losses on Vt. The update rule is: 
+
+St+1 =
+
+( eSt+1 , Wt > L t,St, otherwise . (18) Ties contribute to neither count, and the candidate is accepted only when it wins more comparisons than it loses. 
+
+## Experiments 
+
+Experimental Setup 
+
+Benchmarks. We evaluate SSO on six closed-ended benchmarks and three open-ended multi-turn dialogue tasks. The closed-ended suite covers retrieval QA with SearchQA (Dunn et al. 2017), spreadsheet artifact manip-ulation with SpreadsheetBench (Ma et al. 2024), grounded enterprise QA with OfficeQA (Opsahl-Ong et al. 2026), mul-timodal document understanding with DocVQA (Mathew, Karatzas, and Jawahar 2021), advanced multiple-choice mathematics with LiveMathematicianBench (He et al. 2026), and embodied household decision making with ALF-World (Shridhar et al. 2021). For open-ended evaluation, we use three tasks from MT-Bench-101 (Bai et al. 2024): Con-text Memory (CM), Content Rephrasing (CR), and Proactive Interaction (PI). They respectively measure the model’s per-ceptivity, adaptability, and interactivity. Additional dataset details are provided in the supplementary material. 
+
+Baselines. For closed-ended tasks, we compare SSO with two categories of baselines. The first includes GT-based baselines: Human skill, Trace2Skill (Ni et al. 2026), TextGrad (Yuksekgonul et al. 2024), GEPA (Agrawal et al. 2025), EvoSkill (Alzubi et al. 2026), and SkillOpt (Yang et al. 2026a). Human skill denotes the human-expert-written skill from (Yang et al. 2026a). The second includes No skill and two GT-free prompt optimizers, SPO (Xiang et al. 2025) and PDO (Wu et al. 2026). We adapt both prompt optimizers to optimize complete skills. For open-ended tasks, we compare SSO with No skill and the adapted SPO and PDO baselines. 
+
+Metrics. We report hard accuracy for SearchQA, Of-ficeQA, DocVQA, and LiveMathematicianBench, official task accuracy for SpreadsheetBench, and task success rate for ALFWorld. All metrics are reported as percentages, with unweighted averages across benchmarks. The Codex (Ope-nAI 2025) average is computed over the five applicable Table 1: Closed-ended evaluation results (%) across six benchmarks and three target models, with an additional GPT-5.5 evaluation under the Codex harness. Entries are grouped by whether GT is used during skill construction, optimization, or selection. Results for SPO and PDO are reproduced, whereas results for other baselines are reported from (Yang et al. 2026a). The Codex average is computed over five benchmarks because ALFWorld requires a separate persistent embodied environment. 
+
+Supervision Method SearchQA Spreadsheet OfficeQA DocVQA LiveMath ALFWorld Average Target model: GPT-5.5 
+
+GT-based Human skill 81.8 72.9 66.9 90.1 38.4 91.8 73.7 Trace2Skill 82.4 49.6 65.7 90.6 52.0 87.3 71.3 TextGrad 81.4 41.1 42.0 87.2 49.2 82.8 64.0 GEPA 84.8 73.6 63.9 89.1 43.2 85.8 73.4 SkillOpt 87.3 80.7 72.1 91.2 66.9 95.5 82.3 GT-free No skill 77.7 41.8 33.1 78.8 37.6 83.6 58.8 SPO 81.8 43.9 62.2 86.4 54.0 88.1 69.4 PDO 80.1 47.9 64.0 85.8 47.6 86.6 68.7 
+
+SSO 83.9 78.9 66.9 91.7 62.1 91.8 79.2 Target model: GPT-5.4-mini 
+
+GT-based Human skill 77.2 42.9 45.9 85.0 28.8 56.7 56.1 Trace2Skill 78.6 40.7 20.9 88.5 32.8 82.8 57.4 TextGrad 77.5 38.2 30.0 84.0 27.2 70.9 54.6 GEPA 79.4 42.5 45.3 83.7 27.2 81.3 59.9 SkillOpt 80.2 47.5 48.8 90.9 32.8 85.8 64.3 GT-free No skill 75.9 36.1 22.1 71.4 14.7 73.1 48.9 SPO 78.0 40.7 45.9 85.6 29.8 79.1 59.9 PDO 76.3 39.6 48.3 83.7 34.7 80.6 60.5 
+
+SSO 78.8 55.0 49.4 89.8 37.9 82.1 65.5 Target model: Qwen3.5-4B 
+
+GT-based Human skill 66.3 16.4 22.7 87.8 18.4 28.4 40.0 Trace2Skill 68.5 19.3 16.3 88.0 27.2 64.9 47.4 TextGrad 60.7 13.9 20.9 85.6 10.6 53.7 40.9 GEPA 68.6 16.9 22.7 85.1 28.8 60.4 47.1 SkillOpt 71.2 23.9 29.7 89.0 52.0 81.3 57.9 GT-free No skill 68.1 9.3 14.5 86.9 22.4 30.6 38.6 SPO 66.8 16.1 24.4 87.7 33.1 57.5 47.6 PDO 62.8 17.9 22.1 88.0 28.2 56.7 46.0 
+
+SSO 70.2 21.8 30.8 89.6 39.5 64.9 52.8 Codex harness (target model: GPT-5.5) 
+
+GT-based Human skill 84.1 50.7 40.0 88.8 48.8 – 62.5 EvoSkill 61.4 67.5 42.4 89.3 63.2 – 64.8 SkillOpt 87.3 85.0 51.1 92.2 78.4 – 78.8 GT-free No skill 81.8 27.5 38.3 87.2 35.2 – 54.0 
+
+SSO 84.8 72.1 70.9 91.4 65.3 – 76.9 
+
+benchmarks because ALFWorld requires a separate persis-tent embodied environment. For MT-Bench-101, an LLM judge compares SSO with each baseline. We report the per-centage of comparisons in which SSO is preferred as the pairwise win rate; values above 50 indicate that the judge fa-vors SSO over the corresponding baseline overall. Details of the LLM judge are provided in the supplementary material. 
+
+Implementation Details. We evaluate three frozen target models: GPT-5.5 (OpenAI 2026a), GPT-5.4-mini (OpenAI 2026b), and Qwen3.5-4B (Qwen Team 2026). The target model instantiates fexec under the corresponding benchmark harness. All optimizer-side LLM modules ( fgen , fjudge , fbeh ,
+
+fcluster , and frender ) use GPT-5.5. We initialize S0 as the no-skill condition. SSO uses K = 3 probes, |H t| = 8 task-execution pairs for probe generation, and an update budget of U = 4 behavior units. The optimization schedule varies by dataset: T ranges from 8 to 40 , |X t| from 20 to 40 , and 
+
+|V t| from 16 to 40 . These schedules keep the optimization Table 2: Pairwise win rates (%) of SSO against GT-free base-lines on three tasks from MT-Bench-101 across three target models. CM, CR, and PI denote Context Memory, Content Rephrasing, and Proactive Interaction. Each entry reports the percentage of comparisons in which SSO is preferred; a value above 50 indicates that the judge favors SSO overall.                 
+
+> Comparison GPT-5.5 GPT-5.4-mini Qwen3.5-4B CM CR PI CM CR PI CM CR PI SSO vs. No skill 58.3 75.0 54.2 53.3 73.8 53.4 55.0 82.5 56.2
+> SSO vs. SPO 55.0 65.0 64.1 50.8 71.3 84.0 54.2 63.8 64.4
+> SSO vs. PDO 52.5 66.3 58.8 56.7 63.8 60.5 58.3 75.0 70.3
+
+Table 3: Component ablations (%) on three closed-ended benchmarks with GPT-5.4-mini as the target model.                    
+
+> Variant Spreadsheet DocVQA LiveMath
+> Direct Probe Selection 42.9 86.1 28.2 w/o Behavior Clustering 51.1 88.0 33.1 w/o Evidence Normalization 51.8 89.3 35.5 Random Behavior Selection 46.1 85.3 33.1 w/o Validation Gate 50.0 87.7 36.3
+> Full SSO 55.0 89.8 37.9
+
+scale comparable to SkillOpt while accounting for dataset size. Complete schedules, prompts for all LLM modules, and other details are provided in the supplementary material. 
+
+Performance 
+
+Closed-ended Tasks. Table 1 shows that SSO is the strongest GT-free method across all benchmark-model pairs. It improves the average over No skill by 20.4, 16.6, and 14.2 points with GPT-5.5, GPT-5.4-mini, and Qwen3.5-4B, respectively. With GPT-5.5, SSO outperforms SPO by 9.8 points and recovers 86.8% of SkillOpt’s gain without GT feedback. It also exceeds SkillOpt by 1.2 points with GPT-5.4-mini. Under the Codex harness, SSO improves over No skill by 22.9 points and trails SkillOpt by only 1.9 points. The optimized skills are provided in the supplementary material. 
+
+Open-ended Tasks. Table 2 shows that SSO achieves win rates above 50 against every baseline across all tasks and target models. Averaged over tasks and models, its win rates are 62.4% against No skill, 63.6% against SPO, and 62.5% against PDO. These results demonstrate the effectiveness of SSO in open-ended dialogue settings. GT-based methods are not included because these tasks lack GT labels or scores. 
+
+Ablation Studies 
+
+Component Ablations. We conduct component ablations on SpreadsheetBench, DocVQA, and LiveMathematician-Bench with GPT-5.4-mini as the target model. Direct probe selection replaces the behavior-level pipeline by selecting the probe with the largest training-batch score P 
+
+> i
+
+yki and apply-ing the same validation gate. Without behavior clustering, each task-local description forms a separate cluster. Without evidence normalization, SSO uses ekic = yki dkic . Random be-havior selection uniformly samples up to U nonzero clusters, 
+
+Figure 3: Average test performance with GPT-5.4-mini across Spreadsheet, DocVQA, and LiveMath when varying K,
+
+|H t|, and U . Stars indicate the default settings. 
+
+Figure 4: Test accuracy of rendered candidates and post-hoc best probes over eight steps on Spreadsheet and OfficeQA with GPT-5.4-mini. Stars mark candidates accepted by the validation gate. The post-hoc best probes are identified using test-set GT only for analysis and never affect optimization. while removing the validation gate causes every rendered candidate to be accepted. Table 3 shows that Full SSO per-forms best. Direct probe selection and random behavior se-lection cause the largest average drops of 8.5 and 6.1 points, while the other ablations also reduce performance. Addi-tional results are provided in the supplementary material. 
+
+Hyperparameter Sensitivity. We vary one hyperparame-ter at a time while fixing the other two. Figure 3 shows that the default settings achieve the best performance across all three sweeps, providing a robust configuration for SSO. 
+
+Optimization Dynamics 
+
+Figure 4 shows that rendered candidates consistently outper-form the post-hoc best probes, demonstrating that behavior aggregation and whole-skill rendering can improve beyond individual probes. Accepted updates progressively improve the retained skill, while validation rejects regressions, sup-porting iterative refinement and the validation gate. 
+
+## Conclusion 
+
+We formalized GT-free skill optimization and introduced Self-Supervised Skill Optimization (SSO), a comparative framework for learning a reusable skill from unlabeled task instances. SSO compares executions from complete skill probes with corresponding current-skill executions, extracts behavioral differences without seeing the judge’s decisions, and aggregates evidence for and against equivalent behav-iors. It renders a new complete skill from the highest-ranked behaviors and accepts it only when it wins on a validation set. Across multiple target models, SSO outperforms GT-free prompt optimizers on closed-ended and open-ended tasks, while approaching and sometimes exceeding the strongest GT-based skill optimizer on closed-ended benchmarks. References 
+
+Agrawal, L. A.; Tan, S.; Soylu, D.; Ziems, N.; Khare, R.; Opsahl-Ong, K.; Singhvi, A.; Shandilya, H.; Ryan, M. J.; Jiang, M.; et al. 2025. GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning. In First Workshop on Foundations of Reasoning in Language Models .Alzubi, S.; Provenzano, N.; Bingham, J.; Chen, W.; and Vu, T. 2026. Evoskill: Automated skill discovery for multi-agent systems. arXiv preprint arXiv:2603.02766 .Bai, G.; Liu, J.; Bu, X.; He, Y.; Liu, J.; Zhou, Z.; Lin, Z.; Su, W.; Ge, T.; Zheng, B.; et al. 2024. Mt-bench-101: A fine-grained benchmark for evaluating large language models in multi-turn dialogues. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (ACL) , 7421–7454. Dunn, M.; Sagun, L.; Higgins, M.; Guney, V. U.; Cirik, V.; and Cho, K. 2017. Searchqa: A new q&a dataset aug-mented with context from a search engine. arXiv preprint arXiv:1704.05179 .Fernando, C.; Banarse, D. S.; Michalewski, H.; Osindero, S.; and Rocktäschel, T. 2024. Promptbreeder: Self-Referential Self-Improvement via Prompt Evolution. In Proceedings of the International Conference on Machine Learning (ICML) ,13481–13544. PMLR. Gao, H.; Chen, H.; Wang, C.; Guo, S.; Pang, L.; Liu, Z.; Shen, H.; and Cheng, X. 2026. SkillAudit: Ground-Truth-Free Skill Evolution via Paired Trajectory Auditing. arXiv preprint arXiv:2606.14239 .Gautam, S.; Radhakrishna, A.; and Gulwani, S. 2026. Skil-lAxe: Sharpening LLM-Authored Agent Skills Through Evaluation-Guided Self-Refinement. arXiv preprint arXiv:2606.10546 .He, L.; Yu, Q.; Dong, H.; Liao, B.; Xu, X.; Goldblum, M.; Bian, J.; and Mesgarani, N. 2026. Livemathematicianbench: A live benchmark for mathematician-level reasoning with proof sketches. arXiv preprint arXiv:2604.01754 .Jiang, Y.; Li, D.; Deng, H.; Ma, B.; Wang, X.; Wang, Q.; and Yu, G. 2026. SoK: Agentic Skills–Beyond Tool Use in LLM Agents. arXiv preprint arXiv:2602.20867 .Kojima, T.; Gu, S. S.; Reid, M.; Matsuo, Y.; and Iwasawa, Y. 2022. Large Language Models are Zero-Shot Reason-ers. In Advances in Neural Information Processing Systems (NeurIPS) , volume 35, 22199–22213. Li, X.; Liu, Y.; Chen, W.; You, B.; Di, Z.; He, Y.; Zheng, S.; Choe, K. W.; Sun, J.; Wang, S.; et al. 2026. SkillsBench: Benchmarking how well agent skills work across diverse tasks. arXiv preprint arXiv:2602.12670 .Liu, X.; Luo, X.; Li, L.; Huang, G.; Liu, J.; and Qiao, H. 2026. Skillforge: Forging domain-specific, self-evolving agent skills in cloud technical support. arXiv preprint arXiv:2604.08618 .Ma, Y.; Huang, Y.; Bao, H.; Zhuang, H.; Shukla, S.; Galley, M.; Zhang, X.; and Feuerriegel, S. 2026. Skillgen: Ver-ified inference-time agent skill synthesis. arXiv preprint arXiv:2605.10999 .Ma, Z.; Zhang, B.; Zhang, J.; Yu, J.; Zhang, X.; Zhang, X.; Luo, S.; Wang, X.; and Tang, J. 2024. Spreadsheet-Bench: Towards Challenging Real World Spreadsheet Ma-nipulation. In Advances in Neural Information Processing Systems (NeurIPS) , volume 37, 94871–94908. Mathew, M.; Karatzas, D.; and Jawahar, C. 2021. DocVQA: A Dataset for VQA on Document Images. In Proceedings of the IEEE/CVF Winter Conference on Applications of Com-puter Vision (WACV) , 2200–2209. Nair, A.; Banerjee, A.; Mombaerts, L.; Hagen, M.; and Boro-govac, T. 2025. Tournament of Prompts: Evolving LLM In-structions Through Structured Debates and Elo Ratings. In 
+
+First International KDD Workshop on Prompt Optimization .Ni, J.; Liu, Y.; Liu, X.; Sun, Y.; Zhou, M.; Cheng, P.; Wang, D.; Zhao, E.; Jiang, X.; and Jiang, G. 2026. Trace2skill: Distill trajectory-local lessons into transferable agent skills. 
+
+arXiv preprint arXiv:2603.25158 .OpenAI. 2025. Codex: A Cloud-Based Software Engineer-ing Agent. https://openai.com/index/introducing-codex/. Accessed July 24, 2026. OpenAI. 2026a. GPT-5.5 System Card. https://openai.com/ index/gpt-5-5-system-card/. Accessed July 24, 2026. OpenAI. 2026b. Introducing GPT-5.4. https://openai.com/ index/introducing-gpt-5-4/. Accessed July 24, 2026. Opsahl-Ong, K.; Singhvi, A.; Collins, J.; Zhou, I.; Wang, C.; Baheti, A.; Oertell, O.; Portes, J.; Havens, S.; Elsen, E.; et al. 2026. Officeqa pro: An enterprise benchmark for end-to-end grounded reasoning. arXiv preprint arXiv:2603.08655 .Peng, S.; Zhao, W.; Fu, T.; Zhao, C.; Zhang, T.; Zhang, H.; Zhu, X.; Wu, M.; and Lei, Z. 2026. UPA: Unsupervised Prompt Agent via Tree-Based Search and Selection. arXiv preprint arXiv:2601.23273 .Pryzant, R.; Iter, D.; Li, J.; Lee, Y.; Zhu, C.; and Zeng, M. 2023. Automatic prompt optimization with “gradient de-scent” and beam search. In Proceedings of the 2023 Confer-ence on Empirical Methods in Natural Language Processing (EMNLP) , 7957–7968. Qiu, L.; Gao, Z.; Chen, J.; Ye, Y.; Huang, W.; Xue, X.; Qiu, W.; and Tang, S. 2026a. AutoRefine: From Trajectories to Reusable Expertise for Continual LLM Agent Refinement. 
+
+arXiv preprint arXiv:2601.22758 .Qiu, Z.; Song, K.; Tang, S.; Qiao, S.; Liang, L.; Chen, H.; and Deng, S. 2026b. Unsupervised Skill Discovery for Agentic Data Analysis. arXiv preprint arXiv:2606.06416 .Qwen Team. 2026. Qwen3.5: Towards Native Multimodal Agents. https://qwen.ai/blog?id=qwen3.5. Accessed July 24, 2026. Schick, T.; Dwivedi-Yu, J.; Dessi, R.; Raileanu, R.; Lomeli, M.; Hambro, E.; Zettlemoyer, L.; Cancedda, N.; and Scialom, T. 2023. Toolformer: Language Models Can Teach Them-selves to Use Tools. In Advances in Neural Information Processing Systems (NeurIPS) , volume 36, 68539–68551. Shang, F.; and Yang, Y. 2026. Hypothesis-Driven Skill Opti-mization for LLM Agents. arXiv preprint arXiv:2606.22330 .Shen, S.; Cheng, W.; Ma, M.; Turcan, A.; Zhang, M. J.; and Ma, J. 2026. Skillfoundry: Building self-evolving agent skill libraries from heterogeneous scientific resources. arXiv preprint arXiv:2604.03964 .Shridhar, M.; Yuan, X.; Cote, M.-A.; Bisk, Y.; Trischler, A.; and Hausknecht, M. 2021. ALFWorld: Aligning Text and Embodied Environments for Interactive Learning. In 
+
+Proceedings of the International Conference on Learning Representations (ICLR) .Si, S.; Zhao, H.; Lei, Y.; Wang, Q.; Chen, D.; Wang, Z.; Wang, Z.; Luo, K.; Wang, Z.; Chen, G.; et al. 2026. From Context to Skills: Can Language Models Learn from Context Skillfully? arXiv preprint arXiv:2604.27660 .Tian, Y.; Chen, J.; Zheng, L.; Tao, M.; Zeng, X.; Yin, Z.; Su, H.; and Sun, X. 2026. Skills-coach: A self-evolving skill optimizer via training-free grpo. arXiv preprint arXiv:2604.27488 .Wang, G.; Xie, Y.; Jiang, Y.; Mandlekar, A.; Xiao, C.; Zhu, Y.; Fan, L.; and Anandkumar, A. 2024a. Voyager: An Open-Ended Embodied Agent with Large Language Mod-els. Transactions on Machine Learning Research .Wang, X.; Li, C.; Wang, Z.; Bai, F.; Luo, H.; Zhang, J.; Jojic, N.; Xing, E.; and Hu, Z. 2024b. Promptagent: Strategic planning with language models enables expert-level prompt optimization. In Proceedings of the International Conference on Learning Representations (ICLR) , volume 2024, 23967– 24001. Wei, J.; Wang, X.; Schuurmans, D.; Bosma, M.; ichter, b.; Xia, F.; Chi, E.; Le, Q. V.; and Zhou, D. 2022. Chain-of-Thought Prompting Elicits Reasoning in Large Language Models. In Advances in Neural Information Processing Sys-tems (NeurIPS) , volume 35, 24824–24837. Wu, Y.; Verma, S.; Lee, J.; Xiong, F.; Zhang, P.; Awadelka-rim, A.; Chen, X.; Yuan, Y.; and Hill, S. 2026. Llm prompt duel optimizer: Efficient label-free prompt optimization. In 
+
+Findings of the Association for Computational Linguistics: ACL 2026 , 10066–10089. Xiang, J.; Zhang, J.; Yu, Z.; Teng, F.; Tu, J.; Liang, X.; Hong, S.; Wu, C.; and Luo, Y. 2025. Self-supervised prompt optimization. arXiv preprint arXiv:2502.06855 .Yan, Z.; Song, D.; Zhang, H.; Liang, W.; Zhang, Y.; Dai, Y.; He, L.; Yu, P. S.; Xu, R.; Li, X.; et al. 2026. OpenSkill: Open-World Self-Evolution for LLM Agents. arXiv preprint arXiv:2606.06741 .Yang, C.; Wang, X.; Lu, Y.; Liu, H.; Le, Q. V.; Zhou, D.; and Chen, X. 2024. Large language models as optimizers. In Proceedings of the International Conference on Learning Representations (ICLR) , volume 2024, 12028–12068. Yang, Y.; Gong, Z.; Huang, W.; Yang, Q.; Zhou, Z.; Huang, Z.; Li, Y.; Gao, X.; Dai, Q.; Liu, B.; et al. 2026a. Skillopt: Ex-ecutive strategy for self-evolving agent skills. arXiv preprint arXiv:2605.23904 .Yang, Y.; Li, J.; Pan, Q.; Zhan, B.; Cai, Y.; Du, L.; Zhou, J.; Chen, K.; Chen, Q.; Li, X.; et al. 2026b. Autoskill: Experience-driven lifelong learning via skill self-evolution. 
+
+arXiv preprint arXiv:2603.01145 .Yao, S.; Zhao, J.; Yu, D.; Du, N.; Shafran, I.; Narasimhan, K.; and Cao, Y. 2023. ReAct: Synergizing Reasoning and Acting in Language Models. In Proceedings of the International Conference on Learning Representations (ICLR) .Yuksekgonul, M.; Bianchi, F.; Boen, J.; Liu, S.; Huang, Z.; Guestrin, C.; and Zou, J. 2024. Textgrad: Automatic "differ-entiation" via text. arXiv preprint arXiv:2406.07496 .Zhang, H.; Fan, S.; Zou, H. P.; Chen, Y.; Wang, Z.; Zhou, J.; Li, C.; Huang, W.-C.; Yao, Y.; Zheng, K.; et al. 2026. Coevoskills: Self-evolving agent skills via co-evolutionary verification. arXiv preprint arXiv:2604.01687 .Zheng, L.; Chiang, W.-L.; Sheng, Y.; Zhuang, S.; Wu, Z.; Zhuang, Y.; Lin, Z.; Li, Z.; Li, D.; Xing, E.; Zhang, H.; Gonzalez, J.; and Stoica, I. 2023. Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. In Advances in Neu-ral Information Processing Systems (NeurIPS) , volume 36, 46595–46623. Zhou, Y.; Muresanu, A. I.; Han, Z.; Paster, K.; Pitis, S.; Chan, H.; and Ba, J. 2023. Large language models are human-level prompt engineers. In Proceedings of the International Conference on Learning Representations (ICLR) .
