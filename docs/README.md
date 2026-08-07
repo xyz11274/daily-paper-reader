@@ -44,14 +44,14 @@
       <span class="dpr-home-dashboard-kicker">2026-08-07</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 27 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
-    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>2 次</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>15</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-07 01:27:51 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-07 21:05:48 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日聚焦自主进化智能体研究，精读2篇高分论文并速读3篇相关应用。</p>
-<p>最值得关注的是“自我进化智能体技能”与“编码智能体”两大方向，均获9.0高分。</p>
-<p>普通读者可优先了解智能体如何通过多轮反馈自我改进，后续关注其在ML工程与A/B测试中的落地。</p>
+<p>今日精读27篇论文，聚焦自主编码与机器学习智能体，其中《Self-Evolving Coding Agents》获满分推荐。最值得关注的是自我进化编码智能体与自适应查询修正机制，后者对工程自动化有重要参考。建议普通读者优先从速读中的策略模型个性化与奖励塑形工作入手，理解智能体行为调优的基础思路。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">15 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Rethinking Self-Evolving Agent Skills: Feedback Dynamics over Multiple Rounds">Rethinking Self-Evolving Agent Skills: Feedback Dynamics over Multiple Rounds</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Coding Agents">Self-Evolving Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="PAST-Bench: Benchmarking the Foundations of Recursive Self-Improvement in Personal Agents">PAST-Bench: Benchmarking the Foundations of Recursive Self-Improvement in Personal Agents</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Coding Agents">Self-Evolving Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Solution-Centric Search: Adaptive Inquiry and Knowledge Revision for Autonomous ML Engineering">Beyond Solution-Centric Search: Adaptive Inquiry and Knowledge Revision for Autonomous ML Engineering</span></li><li><span class="dpr-home-dashboard-paper-title" title="Rethinking Self-Evolving Agent Skills: Feedback Dynamics over Multiple Rounds">Rethinking Self-Evolving Agent Skills: Feedback Dynamics over Multiple Rounds</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>6</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>15</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Beyond Solution-Centric Search: Adaptive Inquiry and Knowledge Revision for Autonomous ML Engineering">Beyond Solution-Centric Search: Adaptive Inquiry and Knowledge Revision for Autonomous ML Engineering</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agentic Reinforcement Learning with Self-Distilled Reward Shaping">Agentic Reinforcement Learning with Self-Distilled Reward Shaping</span></li><li><span class="dpr-home-dashboard-paper-title" title="A/B Agent: A Self-Evolving Agent for Strategy Iteration in Industrial A/B Testing">A/B Agent: A Self-Evolving Agent for Strategy Iteration in Industrial A/B Testing</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Personalizing Large Language Model Agents with Small Policy Models">Personalizing Large Language Model Agents with Small Policy Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agentic Reinforcement Learning with Self-Distilled Reward Shaping">Agentic Reinforcement Learning with Self-Distilled Reward Shaping</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Note on Reinforcement Learning to Develop Self-defined Agents&#x27; Behavior">A Note on Reinforcement Learning to Develop Self-defined Agents&#x27; Behavior</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>11</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>11</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>1</strong></span></div>
 </section>
 </div>
 
