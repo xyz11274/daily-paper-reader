@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-07</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-08</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 27 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 10 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
-    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>2 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>15</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>3</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-07 21:05:48 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-08 20:49:23 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读27篇论文，聚焦自主编码与机器学习智能体，其中《Self-Evolving Coding Agents》获满分推荐。最值得关注的是自我进化编码智能体与自适应查询修正机制，后者对工程自动化有重要参考。建议普通读者优先从速读中的策略模型个性化与奖励塑形工作入手，理解智能体行为调优的基础思路。</p>
+<p>今日聚焦LLM智能体训练与自进化安全，精读两篇高分论文并速读三篇相关研究。最值得关注State2State的环境派生中训练方法，以及自进化智能体组合经验引发的新安全隐患。建议普通读者优先了解智能体安全风险，警惕看似良性但组合后有害的行为模式。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">15 篇</strong>
+    <strong class="dpr-home-dashboard-count">3 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Coding Agents">Self-Evolving Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Solution-Centric Search: Adaptive Inquiry and Knowledge Revision for Autonomous ML Engineering">Beyond Solution-Centric Search: Adaptive Inquiry and Knowledge Revision for Autonomous ML Engineering</span></li><li><span class="dpr-home-dashboard-paper-title" title="Rethinking Self-Evolving Agent Skills: Feedback Dynamics over Multiple Rounds">Rethinking Self-Evolving Agent Skills: Feedback Dynamics over Multiple Rounds</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="State2State: Environment-Derived Mid-Training for LLM Agents">State2State: Environment-Derived Mid-Training for LLM Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Benign Alone, Harmful Together: Exploiting Experience Composition in Self-Evolving LLM Agents">Benign Alone, Harmful Together: Exploiting Experience Composition in Self-Evolving LLM Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Autoreflection: How Agentic Strange Loops Turn Human Culture into AI Infrastructure">Autoreflection: How Agentic Strange Loops Turn Human Culture into AI Infrastructure</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>15</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">12 篇</strong>
+    <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Personalizing Large Language Model Agents with Small Policy Models">Personalizing Large Language Model Agents with Small Policy Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agentic Reinforcement Learning with Self-Distilled Reward Shaping">Agentic Reinforcement Learning with Self-Distilled Reward Shaping</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Note on Reinforcement Learning to Develop Self-defined Agents&#x27; Behavior">A Note on Reinforcement Learning to Develop Self-defined Agents&#x27; Behavior</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ScrambleToolBench: Agents Search Exhaustively Even When Their Own Map Points to the Next Step">ScrambleToolBench: Agents Search Exhaustively Even When Their Own Map Points to the Next Step</span></li><li><span class="dpr-home-dashboard-paper-title" title="Quo Vadis, World Modeling?">Quo Vadis, World Modeling?</span></li><li><span class="dpr-home-dashboard-paper-title" title="Hybrid LLM-Augmented Reinforcement Learning Agents for Complex Sequential Decision Tasks">Hybrid LLM-Augmented Reinforcement Learning Agents for Complex Sequential Decision Tasks</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>11</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>7</strong></span></div>
 </section>
 </div>
 
