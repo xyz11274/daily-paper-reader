@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-08</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-09</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 10 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>3</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>4</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-08 20:49:23 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-09 19:45:03 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,10 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日聚焦LLM智能体训练与自进化安全，精读两篇高分论文并速读三篇相关研究。最值得关注State2State的环境派生中训练方法，以及自进化智能体组合经验引发的新安全隐患。建议普通读者优先了解智能体安全风险，警惕看似良性但组合后有害的行为模式。</p>
+<p>今日共生成 10 篇推荐（精读 6 篇，速读 4 篇）</p>
+<p>精读：《GDPevo: Evaluating Agent Self-Evolution on Real Business Tasks》（10.0/10）, 《DiffuseAgent-MI: Distributionally-Grounded,Tool-Integrated Self-Evolving Agents for Faithful Visual Reasoning》（9.0/10）</p>
+<p>速读：《Global Optimization and Inference-Time Region Grafting for Agentic Workflows》（7.0/10）, 《Auditing Discovery Claims: A Two-Sided Criterion for Agentic Science, with the Negative Side Decidable》（6.0/10）, 《When Memory Updates but Behavior Does Not: Repairing Implicit Stale Dependencies in Personalized Agent Responses》（6.0/10）</p>
+<p>这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +74,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="State2State: Environment-Derived Mid-Training for LLM Agents">State2State: Environment-Derived Mid-Training for LLM Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Benign Alone, Harmful Together: Exploiting Experience Composition in Self-Evolving LLM Agents">Benign Alone, Harmful Together: Exploiting Experience Composition in Self-Evolving LLM Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Autoreflection: How Agentic Strange Loops Turn Human Culture into AI Infrastructure">Autoreflection: How Agentic Strange Loops Turn Human Culture into AI Infrastructure</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="GDPevo: Evaluating Agent Self-Evolution on Real Business Tasks">GDPevo: Evaluating Agent Self-Evolution on Real Business Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="DiffuseAgent-MI: Distributionally-Grounded,Tool-Integrated Self-Evolving Agents for Faithful Visual Reasoning">DiffuseAgent-MI: Distributionally-Grounded,Tool-Integrated Self-Evolving Agents for Faithful Visual Reasoning</span></li><li><span class="dpr-home-dashboard-paper-title" title="EvoHIL: Self-Evolving Reward and Flow-Matched Policy Optimization for Robust Human-in-the-Loop Reinforcement Learning">EvoHIL: Self-Evolving Reward and Flow-Matched Policy Optimization for Robust Human-in-the-Loop Reinforcement Learning</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>6</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +87,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">4 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ScrambleToolBench: Agents Search Exhaustively Even When Their Own Map Points to the Next Step">ScrambleToolBench: Agents Search Exhaustively Even When Their Own Map Points to the Next Step</span></li><li><span class="dpr-home-dashboard-paper-title" title="Quo Vadis, World Modeling?">Quo Vadis, World Modeling?</span></li><li><span class="dpr-home-dashboard-paper-title" title="Hybrid LLM-Augmented Reinforcement Learning Agents for Complex Sequential Decision Tasks">Hybrid LLM-Augmented Reinforcement Learning Agents for Complex Sequential Decision Tasks</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Global Optimization and Inference-Time Region Grafting for Agentic Workflows">Global Optimization and Inference-Time Region Grafting for Agentic Workflows</span></li><li><span class="dpr-home-dashboard-paper-title" title="Auditing Discovery Claims: A Two-Sided Criterion for Agentic Science, with the Negative Side Decidable">Auditing Discovery Claims: A Two-Sided Criterion for Agentic Science, with the Negative Side Decidable</span></li><li><span class="dpr-home-dashboard-paper-title" title="When Memory Updates but Behavior Does Not: Repairing Implicit Stale Dependencies in Personalized Agent Responses">When Memory Updates but Behavior Does Not: Repairing Implicit Stale Dependencies in Personalized Agent Responses</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>7</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>4</strong></span></div>
 </section>
 </div>
 
