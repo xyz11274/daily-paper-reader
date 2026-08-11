@@ -1,0 +1,589 @@
+Title: SkillAligner: Treating Retrieved Skills as Adaptable Drafts at Execution Time
+
+URL Source: https://arxiv.org/pdf/2608.06880v1
+
+Published Time: Mon, 10 Aug 2026 00:33:46 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# OmniAI Group of ZJU ACES Lab 
+
+# SkillAligner: Treating Retrieved Skills as Adaptable Drafts at Execution Time 
+
+Qinfeng Li ∗, Dalin He ∗, Yuntai Bao ∗, Ying Yang , Ruoxi Chen , Xinyan Yu , Lizhou Liang , Ge Su ,
+
+Wenqi Zhang , Xuhong Zhang ‡
+
+Zhejiang University 
+
+> ∗
+
+Equal contribution , ‡Corresponding author 
+
+General-purpose skills promise reusable procedural knowledge for language agents, yet semantic relevance does not guarantee execution utility: a retrieved skill may encode assumptions that conflict with the current task, execution environment, or other retrieved skills. We formalize this problem as the skill–execution misfit . To address it, we propose SkillAligner , a training-free execution-time skill adaptation framework that treats retrieved skills as adaptable drafts rather than fixed instructions. Before execution, SkillAligner performs a one-time joint adaptation that specializes useful skill fragments to task requirements, aligns their procedural assumptions with the available execution interface, and composes the resulting guidance by resolving dependencies, conflicts, and redundancy across skills. The adapted content is consolidated into a compact execution guide and reused throughout the subsequent trajectory. Extensive experiments across diverse agent benchmarks and model backbones show that SkillAligner substantially improves task performance over existing skill-use baselines, reduces skill-induced regressions at the instance level, and lowers total inference cost. 
+
+# Email: zhangxuhong@zju.edu.cn 
+
+Date: August 2026 
+
+# 1 Introduction 
+
+Skill-augmented agents have emerged as a promising paradigm that organizes reusable procedural knowledge into structured skills (Xia et al., 2026a; Wang et al., 2025; Shi et al., 2026; Lin et al., 2026). Following this paradigm, recent work has studied how to generate, store, retrieve, and evolve such reusable skills, thereby improving the availability of procedural knowledge for downstream agent execution (Su et al., 2026; Cho et al., 2026; Zhou et al., 2026). Existing work has primarily focused on obtaining high-quality skills (Lin et al., 2026; Su et al., 2026). However, as these methods continue to develop, the bottleneck shifts from obtaining high-quality skills to ensuring their execution fitness . Specifically, retrieving a high-quality skill is not enough: it may still fail to fit the concrete execution and even degrade performance (Li et al., 2026). To verify this phenomenon, we conduct a comparison by running each task both with and without relevant skills (as detailed in Section 2.2 and Table 1). We observe clear skill-induced regressions, where some tasks are solved without skills but fail after adding relevant skills. We refer to this phenomenon as skill–execution misfit : skills may fail to improve, or even harm, execution utility. This raises a central question: why do retrieved skills sometimes hurt execution, and how can we ensure the skills actually help agent execution? arXiv:2608.06880v1 [cs.LG] 7 Aug 2026 align compose           
+
+> Inter-skill misalignment Task: Plot the sales trend from sales.csv and export it as a PDF .
+> Enviroment:
+> Spreadsheets available Microsoft excel unavailable
+> Plot in date order Rank sales low →high
+> Skill-environment misalignment
+> Skill C
+> Open CSV in Excel and export as pdf
+> Skill-task misalignment
+> Skill D
+> Create bar chart and save as PNG
+> SkillAligner (Ours)
+> Skill D Skill C Skill B Skill A
+> Microsoft excel unavailable
+> PNG ≠ PDF Aligned execution plan
+> Date order ≠ Sales rank  ️
+> ground
+> Skill A Skill B
+> 1234
+> ✓✗✗
+> ( proportion ：28.59% ) ( proportion: 26.71% ) ( proportion: 38.55% )
+
+Figure 1 Overview of the skill–execution misfit and SkillAligner. Semantically relevant skills may still be misaligned with the task, environment, or other skills; SkillAligner addresses these mismatches through task grounding, execution-environment alignment, and skill composition. 
+
+To identify the sources of skill–execution misfit , we in-spect execution trajectories from skill-induced regression cases (see Section 2.2 and Table 2) and find that the failure modes can be categorized into three forms of mis-alignment. Specifically, as shown in Figure 1, inter-skill misalignment occurs when a skill cannot be coherently combined with other skills, for example, when one skill requires preserving chronological order while another re-quires sorting the same data by value. Skill–environment misalignment occurs when a skill requires actions, re-sources, or states that are misaligned in the current execution environment. Skill–task misalignment occurs when the skill’s specific goal or constraints do not pre-cisely match the requirements of the current task. Unfortunately, existing methods remain insufficient to resolve skill–execution misfit . Their shared limitation is that skills are typically fully specified before the con-crete execution instance is known. Specifically, most methods improve the quality of individual skills (Shi et al., 2026; Su et al., 2026), but do not account for conflicts, redundancy, or dependencies that emerge only when multiple skills are used together. Structured composition methods model such inter-skill relations through dependency-aware structures, such as graphs or skill bundles, thereby reducing inter-skill misalign-ment (Liu et al., 2026a; Xia et al., 2026b). However, they primarily organize skills as fixed units and do not revise the procedural assumptions within each skill against the tools, actions, and resources available in the current execution, leaving skill–environment misalignment unresolved. Execution-grounded refinement methods revise persistent skills using past execution traces (Liu et al., 2026b; Gautam et al., 2026; Gao et al., 2026; Lin et al., 2026; Yang et al., 2026). While this improves compatibility with previously observed executions, the refined skill is still reused across future queries and therefore cannot directly specialize its procedures to instance-specific goals and constraints, leaving skill–task misalignment unresolved. Together, these limitations reveal a fundamental constraint of the prevailing paradigm: skills are typically finalized before a concrete execution instance is known. However, the user query, execution environment, and other retrieved skills may vary from one execution to another, making it difficult to determine in advance how a skill should be applied in every case. As a result, the fixed skill may not match the current task, execution environment, or other skills, leading to three misalignments described above. Accordingly, our key insight is to treat retrieved skills as adaptable drafts rather than fixed artifacts and adapt them at execution time into guidance tailored to the current execution. 
+
+Based on this insight, we propose SkillAligner , an execution-time skill adaptation framework that converts retrieved skills into guidance tailored to the current execution. Specifically, for each query, SkillAligner first extracts a task contract and decomposes the retrieved skills into fragments, retaining task-consistent content while compressing or removing irrelevant fragments. It then checks the retained procedures against the available tools, action formats, resources, and permissions, repairing supported mismatches and converting uncertain procedures into conditional checks or fallbacks. Finally, it models dependencies, conflicts, and overlap among the retained fragments and composes them into a compact guide with four fields: Primary , Checks , Avoid ,and Fallback . The resulting guide is used in place of the skills throughout the subsequent trajectory. The contributions of our work are summarized as follows: 1. We identify and formalize the skill–execution misfit in skill-augmented agents: retrieved skills can harm execution. To diagnose this gap, we introduce skill-induced regression , in which adding relevant skills turns a successful execution into a failure, and attribute these regressions to three sources of execution misalignment: inter-skill, skill–environment, and skill–task misalignment. 2. To the best of our knowledge, we present the first framework for adapting retrieved general skills at execution time. SkillAligner filters task-irrelevant content, adapts skills to the available execution, and resolves conflicts across skills to produce a coherent execution guide. 2Benchmark Qwen3-8B Qwen3-32B Gemini 2.5 Pro                                                       
+
+> ✗→✓(↑)✓→✗(↓)✗→✓(↑)✓→✗(↓)✗→✓(↑)✓→✗(↓)ALFWorld 26.87 17.91 20.90 14.93 16.42 10.45
+> WebShop 19.00 9.40 14.20 6.60 10.20 5.80
+> SearchQA 14.52 10.29 16.49 11.31 14.71 11.48
+> Overall 14.59 10.30 16.48 11.27 14.67 11.42
+> Table 1 Skill–execution misfit. We compare no-skill execution with direct top-5raw skill injection on the same task instances. Transfer ( ✗→✓) denotes instances that change from failure to success after adding skills, whereas Regressions (✓→✗) denotes instances that change from success to failure. The Overall row pools task instances.
+
+3. Extensive experiments show that SkillAligner substantially improves task performance over existing skill-use baselines, reduces skill-induced regressions at the instance level, and lowers total inference cost. 
+
+# 2 Preliminaries and Motivating Analysis 
+
+2.1 Skill-Augmented Execution 
+
+Skill-augmented agents solve tasks by conditioning on external reusable skills. A skill encodes procedural knowledge, such as action steps, reasoning patterns, constraints, or domain-specific heuristics. Given a task query, the system retrieves relevant skills from a skill library and provides them as additional guidance for planning and execution (Xia et al., 2026a; Su et al., 2026). However, even semantically relevant skills are not necessarily execution-ready. Their procedures and assumptions may conflict with the current task, execution environment, or other retrieved skills. We refer to this incompatibility as skill–execution misfit (Li et al., 2026). 
+
+2.2 Diagnosing the Skill–Execution Misfit 
+
+Instance-level regression. We examine whether skill-induced regressions persist across benchmarks and backbone capabilities. For each backbone, we compare the same task instances with and without direct raw-skill injection under otherwise identical settings (detailed setup is provided in Appendix A.2). We define transfer as an instance that fails without skills but succeeds after skill injection, and regression as an instance that succeeds without skills but fails after skill injection. Skill-induced regression is pervasive across benchmarks and backbone capabilities. As shown in Table 1, raw skills yield more transfers than regressions in all nine benchmark–backbone settings, but still induce regressions in every setting, ranging from 5.80% to 17.91%. Notably, even stronger backbone models do not substantially alleviate this issue. Specifically, at the pooled level, Gemini 2.5 Pro (11.42%) does not exhibit greater robustness to skill-induced regression than Qwen3-8B or Qwen3-32B, with regression rates of 10.30% and 11.27%, respectively. 
+
+Sources of regression. We further analyze why relevant skills cause regressions. Given the task query, execution specification, retrieved skills, and paired no-skill and raw-skill traces, a GPT-5.5-based judge identifies the primary skill-induced cause for each case (details are provided in Appendix B). We categorize the primary causes into three forms: inter-skill misalignment , where a retrieved skill cannot be coherently combined with other retrieved skills; skill–environment misalignment , where a skill requires tools or actions unsupported by the current execution interface, or objects, resources, or states unavailable in the current environment; and 
+
+skill–task misalignment , where a skill’s specific goal or constraints do not precisely match the requirements of the current task. Cases without sufficient evidence for a clear primary cause are labeled Other . As shown in Table 2, the benchmark-level macro-average attributes 38.55% of regressions to skill–task misalignment, 26.71% to skill–environment misalignment, and 28.59% to inter-skill misalignment; the remaining 6.15% fall into Other. 3Benchmark Inter-skill Environment Task Other ALFWorld 34.84 23.81 30.36 10.99 WebShop 28.60 24.64 39.30 7.46 SearchQA 22.34 31.67 46.00 0.00 Overall 28.59 26.71 38.55 6.15   
+
+> Table 2 Sources of skill-induced regressions. We report the distribution of the primary mismatch among the regression cases included in source diagnosis. The Overall row reports the macro-average across benchmarks.
+
+# 3 Method: SkillAligner 
+
+3.1 Problem Setup 
+
+Let q be a task query and S a library of reusable procedural skills. A retriever selects a candidate set 
+
+Sq = Retrieve( q, S, k ), where k is the retrieval budget; SkillAligner operates after this retrieval step and is agnostic to the choice of retriever. Before execution, SkillAligner also receives an execution specification E derived from the system context. It describes available tools, tool schemas, valid action formats, resources, and permission or interaction constraints. Unlike the step-dependent observation ot, E remains fixed throughout the task and specifies the interface against which skills are adapted. Directly injecting Sq relies mainly on semantic relevance and can fail when a skill conflicts with the task, execution interface, or another skill. SkillAligner instead performs one adaptation call: 
+
+H = SkillAligner ( q, Sq , E) . (1) The guide H retains task-relevant content, aligns it with the execution interface, and resolves ordering, redundancy, and conflicts. The backbone agent then uses the same guide throughout execution: 
+
+at ∼ M (q, o t, H), at ∈ A t, (2) where M is the agent backbone, ot is the current observation, At is the set of legal actions, and at is the next action or final response. Only H, not the raw skills, is exposed during execution. Thus, SkillAligner acts as a one-time adapter without modifying retrieval, changing the skill library, or directly executing the skills. 
+
+3.2 Overview 
+
+As shown in Figure 2, SkillAligner converts retrieved skills into execution-ready guidance through three stages: 
+
+(q, Sq , E) ground 
+
+−−−−→ S task 
+
+> q
+> align
+
+−−−→ S env 
+
+> q
+> compose
+
+−−−−−→ H . (3) 
+
+Task grounding specializes retrieved skills to the task, preserving useful content while compressing or removing irrelevant material. Execution-environment alignment checks and repairs procedural assumptions against the tools, action formats, resources, and constraints in E; each skill is retained as direct or guarded guidance, or omitted. Skill composition resolves dependencies, redundancy, and conflicts among the remaining content. The result is a compact guide containing a primary route, necessary checks, avoid constraints, and fallback strategies. These stages are performed jointly in one call rather than as separate calls; the resulting guide is generated once and remains fixed during execution. 
+
+3.3 Task Grounding 
+
+Task contract extraction. SkillAligner parses q into a compact task contract τ containing the goal, hard constraints, soft preferences, known inputs, expected outputs, and underspecified conditions. Hard constraints, 4Input 
+
+> User Query
+> Skill Library
+> Retrieved Skills Task Contract
+> Goal 、Format 、
+> Input 、Constraints...
+> BM25 Retrieval
+
+Core ：SkillAligner 
+
+1:Task Grounding 2: Execution-Environment Alignment  
+
+> 3: Skill
+
+Composition   
+
+> Task Contract Retrieved Skills
+> Binding
+> Task Elements Skill Fragments
+> Req1 Req2 Frag2 Frag3 Req3 Frag1
+> Refinement Task-grounded Skills
+> Core Weak Drop
+> Actions Resources Rules States
+> Environment
+
+CV 
+
+> match skill needs with environment support match fragments to task elements
+> Supply
+> Available tools 、
+> resources...
+
+Feasibility Check 
+
+> Demand
+> Requied tools 、
+> resources...
+> Direct
+> Guarded
+> Abstain
+> Environment-aligned Skills
+> Environment-aligned Skills
+> Environment-aligned Skills
+
+Relation Graph 
+
+> Skill 2 Skill 3 Skill 1 Dependency Conflict Overlap Skill 4
+
+Composition Decision 
+
+> Order/Resolve/Merge/Prune
+
+Execution    
+
+> Agent Action
+> Task-bound
+> User Query
+> Primary Checks Avoid Fallback
+
+Role Assignment 
+
+> Execution Guide
+
+Figure 2 Overview of SkillAligner. For a given query, retrieved skills are jointly adapted once before execution through task grounding, execution-environment alignment, and skill composition, producing a fixed, compact execution guide. 
+
+such as a required output format, override optional preferences and skill instructions. Underspecified conditions are preserved as checks for the agent rather than resolved through unsupported assumptions. 
+
+Skill decomposition and task binding. Each retrieved skill s is normalized and decomposed into atomic fragments, which may encode an operation, precondition, validation step, constraint, example, or recovery suggestion. SkillAligner compares each fragment with τ and classifies it as core , task-bound , weak , or dropped .Core fragments provide generally useful, task-consistent guidance; task-bound fragments directly support the goal, a constraint, an input, or the expected output. Weak fragments offer auxiliary context and are compressed to reduce context load. Dropped fragments are irrelevant or conflict with hard requirements and are removed, even when semantically related to the query. This decomposition lets SkillAligner preserve useful portions of a skill without injecting the complete document. Generic steps are bound to task entities only when supported by the query, and the original order among retained fragments is preserved when compatible with the task contract. The task-grounded representation is: 
+
+Ωtask (s, q ) = Assemble  score , s task (q),
+
+Summarize  sweak (q) . (4) Applying this refinement to every retrieved skill yields Stask  
+
+> q
+
+= {Ωtask (s, q ) | s ∈ S q }.
+
+3.4 Execution-Environment Alignment 
+
+Task grounding identifies content that fits the task but does not ensure that it is executable. SkillAligner therefore checks Stask  
+
+> q
+
+against E to produce environment-aligned guidance. 
+
+Execution-interface matching and repair. For each task-grounded skill, SkillAligner compares its preconditions with available tools, action formats, resources, and permissions. If a mismatch admits a local, semantics-preserving repair, the affected fragment is rewritten using a functionally equivalent supported interface or format. A mismatch is not repaired when doing so would violate a task constraint, require an interface absent from E, or alter the intended procedure. 5Method Qwen3-8B Qwen3-32B Gemini 2.5 Pro Average ALFWorld WebShop SearchQA ALFWorld WebShop SearchQA ALFWorld WebShop SearchQA                                                                                                                                                        
+
+> No Skill 52.99 20.20 23.63 67.16 28.60 27.87 73.13 38.40 36.50 40.94 Top-kRaw Skill 61.94 29.80 27.86 73.13 36.20 33.05 79.10 42.80 39.73 47.07 Graph of Skills 62.69 33.80 28.80 76.87 37.20 39.88 81.34 41.00 43.73 49.48 ReasoningBank 54.48 23.20 29.16 75.37 29.60 35.27 75.37 40.20 40.91 44.84 MemP 56.72 22.80 29.21 76.12 28.80 34.79 77.61 39.80 41.03 45.21 SkillOS frozen 64.93 30.60 23.36 67.91 35.40 28.83 82.09 41.00 36.52 45.63 GraSP 72.39 33.40 31.71 80.60 39.40 40.99 87.31 47.20 46.32 53.26 SkillRAE 60.45 34.20 29.10 73.88 38.60 35.28 78.36 44.40 42.63 48.54 SkillDAG 70.15 34.40 29.33 85.07 38.40 35.55 91.04 46.60 43.46 52.67 SkillPyramid 75.37 32.60 34.13 83.58 37.80 42.07 90.30 45.20 47.18 54.25 SkillAligner Task 66.42 34.80 32.74 76.87 39.40 39.61 87.31 47.00 46.58 52.30 SkillAligner Env 67.91 32.40 31.46 78.36 37.80 37.92 91.79 42.20 44.17 51.56 SkillAligner Skill 70.90 33.60 29.41 80.60 38.60 34.88 90.30 46.20 40.94 51.71 SkillAligner Plain 56.72 22.40 28.73 74.63 32.60 35.62 82.09 38.40 42.76 45.99
+> SkillAligner (Ours) 80.60 37.60 37.37 88.06 42.80 44.36 94.03 49.60 49.12 58.17
+
+Table 3 Main results across benchmarks and model backbones. We compare SkillAligner with no-skill execution and representative skill-based baselines. SkillAligner Plain generates the execution guide from only the task query and execution specification, without retrieved skills. SkillAligner Task , SkillAligner Env , and SkillAligner Skill retain only task grounding, execution-environment alignment, and skill composition, respectively. Bold values indicate the best performance in each column. 
+
+Usage-mode assignment. After matching and repair, each skill is assigned a usage mode: 
+
+μ(s) = Mode(Ω task (s, q ), E) ,μ(s) ∈ { Direct , Guarded , Abstain }. (5) Based on this mode, SkillAligner produces environment-aligned representation Ωenv (s, q, E). A Direct skill is supported or safely repaired and can guide execution. A Guarded skill is conditionally useful but cannot be verified until runtime, so it is retained as conditional guidance, a check, warning, or fallback for the agent to evaluate from later observations. A skill is marked Abstain and discarded when a core assumption conflicts with E and cannot be repaired without changing task intent. The remaining skills form Senv  
+
+> q
+
+.
+
+3.5 Skill Composition 
+
+Although individually aligned with the task and interface, skills in Senv  
+
+> q
+
+may still conflict, overlap, or require a specific order when used together. SkillAligner therefore considers three relations directly: a dependency means that one procedure must precede another, a conflict means that procedures, assumptions, or constraints are incompatible, and an overlap means that guidance for the same subgoal is redundant. Dependencies determine execution order, and overlapping guidance is merged or deduplicated. Conflicts are resolved in favor of guidance that better satisfies the task contract and execution specification; a rejected alternative is removed or converted into an explicit avoid rule when useful. Lower-priority content is pruned when it increases context load without improving task coverage. The resulting guide H has four fields: Primary for the main execution route and supporting procedures, 
+
+Checks for preconditions and validation, Avoid for unsupported assumptions or invalid actions, and Fallback 
+
+for alternatives when the primary route is blocked. Only this compact guide is returned to the backbone agent. 
+
+# 4 Experiments 
+
+4.1 Experimental Setup 
+
+Models and benchmarks. We evaluate SkillAligner with Qwen3-8B, Qwen3-32B (Yang et al., 2025), and Gemini 2.5 Pro (Comanici et al., 2025) on ALFWorld (Shridhar et al., 2021), WebShop (Yao et al., 2022), and search-augmented QA ( SearchQA ) (Xia et al., 2026a); see Appendix A.2. We report SR on ALFWorld/WebShop and EM on SearchQA. 
+
+Skill library and retrieval. All skill-based methods use the same independently constructed library of reusable procedural skills covering embodied interaction, web-based task execution, and knowledge-intensive question 6Shared input 
+
+Query ： Top-5 retrieved skills 
+
+Get me a sixteen pack of apple cinnamon freeze dried banana chips, and price lower than 50.00 dollars 
+
+Skill1:Query Interpreter — parse user need Skilll2:Initial Search — form search query Skill3:Search Executor — run / repeat search Skill4:Product Selector — choose candidate product Skill5:Variant Chooser — bind flavor / pack 
+
+Raw Skill 
+
+1. 2. 3. 
+
+SkillAligner 
+
+Inject directly Align once before execution 
+
+Trajectory ：Skill3 Search Executor:Search"sixteen pack apple cinnamon freeze dried banana chips" →Skill4 Product Selector:Select B003 →Reason:"Apple & Cinnamon" matches query →Observe : Fruit Crisps, Pack of 2 →Skill3:Retry search →Skill4: Select B003 again ×6
+
+Inter-skill mismatch 
+
+Search Executor returns to search after B003 is rejected but Product Selector reselects B003 as the closest title match, causing the agent to be trapped in a six-round loop. Search →Candidate validation →Reject invalid match →Retry search 
+
+→ Select another valid candidate   
+
+> Search →Evaluate B003 ：Flavor ✓；Product type ✗；Pack ✗
+> →Reject once →Inspect B092 →Keep it and open the detail page
+
+Trajectory ：
+
+Fix ：Skill composition 
+
+SkillAligner identifies the conflict, then inserts candidate evaluation before retry to avoid repeated invalid choices. Skill5:Variant Chooser(Raw) ：Select one product option → Finish configuration (Assumption: One option selection completes configuration)     
+
+> Open B092 →Product detail page exposes: Flavor group + Pack group
+> →Select 16-pack(flavor unset) →Finish configuration
+
+Trajectory ：
+
+Skill transformation(Aligned) ：Detect option groups → bind each required attribute 
+
+Environment mismatch 
+
+Environment: WebShop requires both Flavor and Pack selections, but Skill assumption: the raw Variant Chooser supports only one option selection      
+
+> Open B092 →Find two product options (flavor and pack)
+> →Select apple cinnamon →Select 16-pack
+
+Trajectory ：
+
+SkillAligner aligns the skill5 with the interface, rewriting it to complete all required selections before purchase. 
+
+Fix ：Environment alignment 
+
+Skill4:Product Selector(Raw) ：Choose candidate with highest query relevance. (Price constraint is not part of selection)    
+
+> →Click Buy →FAIL
+
+Completion state: Product type ✓, Pack ✓, Price ✗above budget 
+
+Skill transformation(Aligned) ：Select candidates satisfying: 
+
+✓ Product type, ✓ Flavor , ✓ Pack , ✓ Price 
+
+Verify budget constraint: Price ✓ checked 
+
+→ All requirements satisfied → Enable Buy Now → SUCCESS 
+
+Product Selector finds a relevant product but fails to check the $50 budget, causing an over-budget purchase. 
+
+Task mismatch Fix ：Task grounding 
+
+SkillAligner grounds Product Selector with task constraints: candidate selection considers Product type, Flavor, Pack, and Price constraints. 
+
+• Pack 
+
+• Flavor 
+
+• Product type 
+
+• Price Skill behavior 
+
+> Skill3:Search Executor : Execute search and retry after failure Skill4:Product Selector : Select candidate with highest query relevance
+
+×1×6
+
+1. 2. 3. 
+
+Raw Outcome 
+
+Repeated invalid selection → Incomplete configuration 
+
+→ Over-budget purchase 
+
+FAILURE 
+
+Aligned Outcome 
+
+Product type →Flavor →16-pack →price →Buy SUCCESS 
+
+> have Potential conflict
+
+Skill reorganization ：Figure 3 Case study of WebShop skill alignment. Given the same query and five retrieved skills, raw skill exhibits inter-skill, skill–environment, and skill–task misalignment, while SkillAligner resolves these misalignments. 
+
+answering. Given a task query, we rank the library using BM25 (Robertson and Zaragoza, 2009) and retrieve the top five ( k = 5 ) candidates. 
+
+Baselines. We compare SkillAligner with No Skill , Top-k Raw Skill , and representative skill-use methods, including Graph of Skills (Liu et al., 2026a), ReasoningBank (Ouyang et al., 2026b), MemP (Fang et al., 2026), SkillOS (Ouyang et al., 2026a), GraSP (Xia et al., 2026b), SkillRAE (Meng et al., 2026), SkillDAG (Bai et al., 2026), and SkillPyramid (Xiong et al., 2026). No Skill evaluates the backbone without external procedural guidance, while Top-k Raw Skill serves as the primary controlled baseline for direct skill injection. For ablation, we further include three single-stage variants: SkillAligner Task , SkillAligner Env , and SkillAligner Skill ,which retain only task grounding, execution-environment alignment, and skill composition, respectively. We additionally include SkillAligner Plain , which removes retrieved skills from the adaptation input while retaining the remaining adaptation and execution protocol. 
+
+Implementation details. All model parameters remain frozen. Unless otherwise specified, the same backbone performs both the one-time skill adaptation and downstream execution. Full evaluation protocols, decoding settings, prompts, and implementation details are provided in Appendix A. 
+
+4.2 Main Results 
+
+Overall performance. We focus on comparing SkillAligner with representative skill-based baselines. Table 3 reports the main results across ALFWorld, WebShop, and the search-augmented QA suite. SkillAligner achieves the best performance in all nine benchmark–backbone settings. Averaged across these settings, SkillAligner reaches 58.17, outperforming the strongest baseline, SkillPyramid, by 3.92 points and Top-k Raw Skill by 11.10 points. These results demonstrate that execution-time adaptation is more effective than directly reusing or organizing retrieved skills. 
+
+Instance-level transfer and regression. We assess instance-level reliability using Transfer (failure to success) and Regression (success to failure) relative to no-skill execution. SkillAligner consistently reduces regressions while maintaining or improving transfer across benchmarks and backbones. For example, as shown in 7Method Qwen3-8B Qwen3-32B Gemini 2.5 Pro ALFWorld WebShop SearchQA ALFWorld WebShop SearchQA ALFWorld WebShop SearchQA Trans. ↑ Reg. ↓ Trans. ↑ Reg. ↓ Trans. ↑ Reg. ↓ Trans. ↑ Reg. ↓ Trans. ↑ Reg. ↓ Trans. ↑ Reg. ↓ Trans. ↑ Reg. ↓ Trans. ↑ Reg. ↓ Trans. ↑ Reg. ↓                                                                                                                                                                                                                                           
+
+> Top-kRaw Skill 26.87 17.91 19.00 9.40 14.52 10.29 20.90 14.93 14.20 6.60 16.49 11.31 16.42 10.45 10.20 5.80 14.71 11.48 Graph of Skills 17.91 8.21 19.60 6.00 16.28 11.11 23.13 13.43 14.00 5.40 15.97 3.96 16.42 8.21 7.80 5.20 11.11 3.88 ReasoningBank 20.90 19.40 12.20 9.20 11.99 6.46 20.90 12.69 11.80 10.80 13.57 6.17 10.45 8.21 9.20 7.40 10.48 6.07 MemP 21.64 17.91 11.20 8.60 12.04 6.46 20.90 11.94 8.60 8.40 13.56 6.64 12.69 8.21 9.20 7.80 10.72 6.19 SkillOS 20.15 8.21 16.00 5.60 12.81 13.08 10.45 9.70 16.20 9.40 14.47 13.51 17.91 8.96 10.20 7.60 10.56 10.54 GraSP 27.61 8.21 18.40 5.20 14.17 6.09 19.40 5.97 15.40 4.60 17.88 4.76 18.66 4.48 13.00 4.20 13.70 3.88 SkillRAE 23.88 16.42 20.80 6.80 12.51 7.04 22.39 15.67 16.00 6.00 14.03 6.62 13.43 8.21 10.80 4.80 10.93 4.80 SkillDAG 23.88 6.72 19.00 4.80 12.62 6.92 22.39 4.48 14.20 4.40 14.13 6.45 21.64 3.73 10.80 2.60 10.15 3.19 SkillPyramid 29.85 7.46 16.60 4.20 15.99 5.49 23.13 6.72 13.60 4.40 18.54 4.34 20.15 2.99 10.20 3.40 13.92 3.24 SkillAligner Task 19.40 5.97 18.20 3.60 14.41 5.30 14.93 5.22 14.20 3.40 15.74 4.00 17.91 3.73 11.80 3.20 13.68 3.60 SkillAligner Env 20.15 5.22 16.60 4.40 13.36 5.53 15.67 4.48 13.20 4.00 15.19 5.14 21.64 2.99 6.60 2.80 10.95 3.28 SkillAligner Skill 22.39 4.48 17.60 4.20 10.46 4.68 17.16 3.73 13.60 3.60 10.91 3.90 20.15 2.99 11.20 3.40 7.72 3.28
+> SkillAligner (Ours) 29.85 2.24 20.20 2.80 17.31 3.57 23.13 2.24 16.40 2.20 19.00 2.51 23.13 2.24 13.00 1.80 14.94 2.32
+
+Table 4 Instance-level transfer and regression analysis. We measure outcome changes relative to no-skill execution. 
+
+Transfer denotes failure-to-success changes, while regression denotes success-to-failure changes. 
+
+Table 4, compared with Top-k Raw Skill on Qwen3-8B, SkillAligner reduces regression from 17.91/9.40/10.29 to 2.24/2.80/3.57 on ALFWorld, WebShop, and search-augmented QA, respectively, while increasing transfer from 26.87/19.00/14.52 to 29.85/20.20/17.31 across the same three benchmarks. 
+
+Case study. Figure 3 compares direct raw-skill injection with SkillAligner on the same WebShop task. The case shows that individually useful skills may still fail when reused without adaptation in a specific execution. 
+
+First, the Search Executor and Product Selector conflict after a failed candidate. Specifically, the former directs the agent back to the search results, whereas the latter reselects the same literal match and sends the agent into its detail page , trapping execution in a six-round loop. During guide construction, SkillAligner composes the two skills into a coherent procedure that validates candidates before retrying and switches candidates after rejection. Next, the raw Variant Chooser encodes a single-option procedure that treats configuration as complete after one selection, whereas WebShop needs multi-attribute configuration. Direct injection therefore selects the 16-pack but leaves the apple-cinnamon flavor unset. Before execution, SkillAligner aligns the skill with the interface, rewriting it to complete all required selections before purchase. Finally, the raw Product Selector chooses the candidate with the highest query relevance but ignores the task-specific hard constraint that the price must be below $50 , causing the agent to purchase an over-budget product. Through task grounding, SkillAligner recognizes the $50 budget as a hard constraint of the task and replaces similarity-only selection with guidance that requires all hard constraints to be satisfied. Additional cases are provided in Appendix D. 
+
+4.3 Efficiency 
+
+We measure inference cost as the total number of input and output tokens consumed across all LLM calls per task instance (detailed in Appendix A). SkillAligner introduces modest adaptation overhead but yields substantial net cost savings. As shown in Table 5, adaptation adds 8.33% overhead on average across benchmarks, while reducing downstream execution cost by 46.59%, saving 38.26% of the original cost on average. These results show that better-aligned guidance reduces unnecessary reasoning and failed execution attempts, more than offsetting the cost of adaptation. 
+
+4.4 Further Analysis 
+
+Stage ablation. Tables 3 and 4 isolate the contributions of the three adaptation stages. Each stage indepen-dently improves skill use, while their joint application yields substantially stronger performance than any single stage. Averaged across all settings, SkillAligner Task , SkillAligner Env , and SkillAligner Skill achieve 52.30, 51.56, and 51.71, respectively, all outperforming Top-k Raw Skill at 47.07. Their comparable performance suggests that no single stage dominates across settings. The complete SkillAligner reaches 58.17, exceeding the strongest single-stage variant by 5.87 points and raw skill injection by 11.10 points, confirming the benefit of jointly resolving all three forms of misalignment. 8Benchmark Original Execution Cost Skill Adaptation Overhead Execution Cost with SkillAligner Total Saved Cost                                        
+
+> Corig Cadapt ↓Overhead Ratio ↓CSA exec ↓∆Cexec ↑Saved Ratio ↑∆Ctotal ↑Saved Ratio ↑
+> ALFWorld 133803.67 2225.56 1.66 96341.90 37461.77 27.99 35236.21 26.33 WebShop 26380.26 2284.57 8.66 17320.41 9059.84 34.34 6775.27 25.68 SearchQA 5015.37 736.02 14.68 1131.10 3884.27 77.45 3148.25 62.77 Average 55066.43 1748.72 8.33 38264.47 16801.96 46.59 15053.24 38.26
+
+Table 5 Adaptation overhead and execution-cost savings. For each benchmark, we report the mean cost per evaluated task instance. The Average row reports the column-wise macro-average across the three benchmarks. Corig denotes the original execution cost without skill adaptation ( top-k raw skill ), Cadapt denotes the execution-time skill adaptation overhead, and CSA exec denotes the execution cost after using SkillAligner. ∆Cexec = Corig − CSA exec denotes the execution cost saved by SkillAligner, while ∆Ctotal = Corig − CSA exec − Cadapt denotes the total saved cost after accounting for adaptation overhead. 
+
+Contribution of retrieved skills. We examine whether SkillAligner gains from adapting retrieved skills or from structured guide generation alone. To isolate this effect, SkillAligner Plain generates the same execution guide using only the task query and execution specification, without seeing any retrieved skills; all other adaptation and execution settings remain unchanged. Retrieved skills provide the primary improvement. 
+
+Averaged across all nine settings, SkillAligner Plain improves over No Skill from 40.94 to 45.99, confirming the independent benefit of task- and environment-conditioned guide generation; however, the complete SkillAligner reaches 58.17, exceeding it by 12.18 points and showing that the larger gains come from converting retrieved procedural knowledge into execution-ready guidance. 
+
+# 5 Related Work 
+
+Skill learning and retrieval. Prior work studies how adaptable agent skills are generated, stored, retrieved, and evolved (Xia et al., 2026a; Wang et al., 2025; Shi et al., 2026; Su et al., 2026; Cho et al., 2026; Zhou et al., 2026). These efforts improve skill acquisition and access, but generally treat retrieved skills as fixed inputs during execution. 
+
+Structured skill composition. Structured composition methods organize multiple skills into graphs, dependency-aware bundles, or executable structures (Liu et al., 2026a; Xia et al., 2026b). By modeling dependencies, conflicts, redundancy, and execution order, they directly reduce inter-skill misalignment . Their primary focus is how skills should be selected and connected, rather than how the procedural assumptions within each skill should be specialized to the current task and execution environment. 
+
+Execution-grounded skill refinement. Execution-grounded skill refinement methods revise reusable skills using execution traces, tests, or rollout outcomes (Liu et al., 2026b; Gautam et al., 2026; Gao et al., 2026; Lin et al., 2026; Yang et al., 2026). Their unit of refinement is the persistent skill itself: the revised artifact is optimized from past executions and reused across future tasks. This improves compatibility with previously observed execution environments, but cannot directly account for goals and constraints revealed only by the current query. 
+
+# 6 Discussion and Future Work 
+
+From query-level to closed-loop alignment. SkillAligner performs one-time query-level alignment before execution, without observing intermediate states or revising the guide during execution. This design helps alleviate the overhead of repeated online adaptation and KV-cache invalidation and recomputation, but cannot resolve misfits revealed only by intermediate states. Future work can selectively revise affected guidance while preserving update stability and minimizing additional KV-cache invalidation and recomputation cost. 
+
+Scaling to stronger backbone models. As backbone capabilities improve, a natural concern is whether SkillAligner remains necessary. Stronger models may recover from some execution errors on their own, but they do not necessarily recognize when a retrieved skill is mismatched. Their better instruction following can even make them adhere more closely to such misaligned skills. SkillAligner therefore remains beneficial as models scale, as reflected in the consistent gains observed across Qwen3-8B/32B and Gemini 2.5 Pro. 97 Conclusion 
+
+This paper identifies and formalizes skill–execution misfit , revealing that semantic relevance alone does not guarantee execution utility: even relevant skills may harm execution when their assumptions conflict with the current task, execution environment, or other retrieved skills. We propose SkillAligner, a training-free execution-time framework that transforms retrieved skills into coherent, compact execution-ready guidance through task grounding, execution-environment alignment, and skill composition. Extensive experiments show that SkillAligner consistently improves performance, reduces skill-induced regressions, and lowers inference cost. 
+
+# References 
+
+Tong Bai, Zhenglin Wan, Pengfei Zhou, Xingrui Yu, Yang You, and Ivor W. Tsang. Skilldag: Self-evolving typed skill graphs for llm skill selection at scale. arXiv preprint arXiv:2606.03056 , 2026. Hongcheol Cho, Ryangkyung Kang, and Youngeun Kim. Skillret: A large-scale benchmark for skill retrieval in llm agents. arXiv preprint arXiv:2605.05726 , 2026. Gheorghe Comanici et al. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 , 2025. Runnan Fang, Yuan Liang, Xiaobin Wang, Jialong Wu, Shuofei Qiao, Pengjun Xie, Fei Huang, Huajun Chen, and Ningyu Zhang. Memp: Exploring agent procedural memory. In Findings of the Association for Computational Linguistics: ACL 2026 , pages 17490–17502, 2026. doi: 10.18653/v1/2026.findings-acl.866. https://aclanthology. org/2026.findings-acl.866/ .Haowen Gao, Haoran Chen, Can Wang, Shasha Guo, Liang Pang, Zhaoyang Liu, Huawei Shen, and Xueqi Cheng. Skillaudit: Ground-truth-free skill evolution via paired trajectory auditing. arXiv preprint arXiv:2606.14239 , 2026. Srishti Gautam, Arjun Radhakrishna, and Sumit Gulwani. Skillaxe: Sharpening llm-authored agent skills through evaluation-guided self-refinement. arXiv preprint arXiv:2606.10546 , 2026. Xiangyi Li, Yimin Liu, Wenbo Chen, Bingran You, Zonglin Di, Yifeng He, Shenghan Zheng, et al. Skillsbench: Benchmarking how well agent skills work across diverse tasks. arXiv preprint arXiv:2602.12670 , 2026. doi: 10.48550/arXiv.2602.12670. https://arxiv.org/abs/2602.12670 .Huawei Lin, Peng Li, Jie Song, Fuxin Jiang, and Tieying Zhang. Muse-autoskill: Self-evolving agents via skill creation, memory, management, and evaluation. arXiv preprint arXiv:2605.27366 , 2026. Dawei Liu, Zongxia Li, Hongyang Du, Xiyang Wu, Shihang Gui, Yongbei Kuang, and Lichao Sun. Graph-of-skills: Dependency-aware structural retrieval for massive agent skills. arXiv preprint arXiv:2604.05333 , 2026a. Yuxuan Liu, Zhaochen Su, Lingyun Xie, Yuhao Zhang, Qing Zong, Jiahe Guo, Zhongwei Xie, Yiyan Ji, Yauwai Yim, Hongyu Luo, Xiyu Ren, Chenyu Ruan, Haoran Li, and Yangqiu Song. Skillrevise: Improving llm-authored agent skills via trace-conditioned skill revision. arXiv preprint arXiv:2606.01139 , 2026b. Xiangcheng Meng, Shu Wang, and Yixiang Fang. Skillrae: Agent skill-based context compilation for retrieval-augmented execution. arXiv preprint arXiv:2605.10114 , 2026. Siru Ouyang, Jun Yan, Yanfei Chen, Rujun Han, Zifeng Wang, Bhavana Dalvi Mishra, Rui Meng, Chun-Liang Li, Yizhu Jiao, Kaiwen Zha, Maohao Shen, Vishy Tirumalashetty, George Lee, Jiawei Han, Tomas Pfister, and Chen-Yu Lee. SkillOS: Learning skill curation for self-evolving agents. arXiv preprint arXiv:2605.06614 , 2026a. doi: 10.48550/arXiv.2605.06614. https://arxiv.org/abs/2605.06614 .Siru Ouyang, Jun Yan, I-Hung Hsu, Yanfei Chen, Ke Jiang, Zifeng Wang, Rujun Han, Long T. Le, Samira Daruki, Xiangru Tang, Vishy Tirumalashetty, George Lee, Mahsan Rofouei, Hangfei Lin, Jiawei Han, Chen-Yu Lee, and Tomas Pfister. ReasoningBank: Scaling agent self-evolving with reasoning memory. In The Fourteenth International Conference on Learning Representations , 2026b. https://openreview.net/forum?id=jL7fwchScm .Stephen Robertson and Hugo Zaragoza. The probabilistic relevance framework: BM25 and beyond. Foundations and Trends in Information Retrieval , 3(4):333–389, 2009. doi: 10.1561/1500000019. Yaorui Shi, Yuxin Chen, Zhengxi Lu, Yuchun Miao, Shugui Liu, Qi Gu, Xunliang Cai, Xiang Wang, and An Zhang. Skill1: Unified evolution of skill-augmented agents via reinforcement learning. arXiv preprint arXiv:2605.06130 ,2026. 
+
+10 Mohit Shridhar, Xingdi Yuan, Marc-Alexandre Côté, Yonatan Bisk, Adam Trischler, and Matthew Hausknecht. Alfworld: Aligning text and embodied environments for interactive learning. In International Conference on Learning Representations , 2021. Weihang Su, Jianming Long, Qingyao Ai, Qiaozhi He, Yichen Tang, Changyue Wang, Yiteng Tu, Yingbo Wang, and Yiqun Liu. Skill retrieval augmentation for agentic ai. arXiv preprint arXiv:2604.24594 , 2026. Jiongxiao Wang, Qiaojing Yan, Yawei Wang, Yijun Tian, Soumya Smruti Mishra, Zhichao Xu, Megha Gandhi, Panpan Xu, and Lin Lee Cheong. Reinforcement learning for self-improving agent with skill library. arXiv preprint arXiv:2512.17102 , 2025. Peng Xia, Jianwen Chen, Hanyang Wang, Jiaqi Liu, Kaide Zeng, Yu Wang, Siwei Han, Yiyang Zhou, Xujiang Zhao, Haifeng Chen, Zeyu Zheng, Cihang Xie, and Huaxiu Yao. Skillrl: Evolving agents via recursive skill-augmented reinforcement learning. arXiv preprint arXiv:2602.08234 , 2026a. Tianle Xia, Lingxiang Hu, Yiding Sun, Ming Xu, Lan Xu, Siying Wang, Wei Xu, and Jie Jiang. Grasp: Graph-structured skill compositions for llm agents. arXiv preprint arXiv:2604.17870 , 2026b. Yuan Xiong, Ziqi Miao, Qian Chen, Lijun Li, Yequan Wang, Shizhu He, Jun Zhao, and Kang Liu. SkillPyramid: A hierarchical skill consolidation framework for self-evolving agents. arXiv preprint arXiv:2606.03692 , 2026. An Yang et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. Yifan Yang, Ziyang Gong, Weiquan Huang, Qihao Yang, Ziwei Zhou, Zisu Huang, Yan Li, Xuemei Gao, Qi Dai, Bei Liu, Kai Qiu, Yuqing Yang, Dongdong Chen, Xue Yang, and Chong Luo. Skillopt: Executive strategy for self-evolving agent skills. arXiv preprint arXiv:2605.23904 , 2026. Shunyu Yao, Howard Chen, John Yang, and Karthik Narasimhan. Webshop: Towards scalable real-world web interaction with grounded language agents. In Advances in Neural Information Processing Systems , volume 35, pages 20744–20757, 2022. doi: 10.52202/068431-1508. Yifan Zhou, Zhentao Zhang, Ziming Cheng, Shuo Zhang, Qizhen Lan, Zhangquan Chen, Zhi Yang, Qianyu Xu, Ronghao Chen, Huacan Wang, and Sen Hu. Skillgenbench: Benchmarking skill generation pipelines for llm agents. arXiv preprint arXiv:2605.18693 , 2026. 
+
+11 Symbol Meaning             
+
+> qTask query.
+> SPersistent skill library.
+> SqSkills retrieved for query q.
+> EExecution specification describing the available interface and constraints.
+> τTask contract derived from the current query.
+> HCompact execution guide returned by SkillAligner.
+> otObservation available to the execution agent at step t.
+> AtSet of possible actions at step t.
+> Table 6 Summary of notations.
+
+# A Additional Experiment Details 
+
+A.1 Common Evaluation Protocol 
+
+All methods are implemented in a unified evaluation harness with the same benchmark instances, backbone models, decoding settings, action budgets, and fixed skill library. The evaluated system is training-free: model parameters remain frozen, SkillAligner is invoked only at inference time, and the underlying skill library is never modified. To maintain this setting, all reported SkillOS results use a frozen, inference-only configuration (denoted SkillOS frozen in Table 3). All SkillOS model parameters, including the skill curator, remain fixed; no model training, gradient update, or online parameter optimization is performed during evaluation. For a task query q, the SkillAligner execution pipeline is 
+
+Sq = Retrieve( q, S, k ),
+
+H = SkillAligner( q, Sq , E),at ∼ M (q, o t, H),
+
+(6) where S is the fixed skill library, Sq is the retrieved candidate set, E is the execution specification, H is the aligned execution guide, M is the frozen execution backbone, and ot is the step-dependent observation. SkillAligner is called once before execution and directly returns H with four fields: Primary , Checks , Avoid ,and Fallback . Task grounding, execution-environment alignment, and skill composition are logical decisions performed jointly within this call rather than separate model invocations or separately materialized intermediate outputs. The same guide is reused throughout the subsequent execution trajectory. The current observation 
+
+ot, recent public action history, and currently legal actions are provided to the execution agent at each step but are not inputs to the one-time adaptation call. Raw retrieved skills are not separately injected after adaptation. Structured outputs are validated for syntactic well-formedness before execution. This validation does not add, remove, or semantically revise the generated guidance. The current task observation and execution specification take precedence over skill guidance. No gold answer, hidden reward, evaluator feedback, verifier output, or future observation is exposed to either SkillAligner or the execution agent. The same benchmark protocol and prompt templates are used across model sizes. We do not introduce model-specific retrieval rules, prompt wording, action budgets, repair policies, or stopping criteria. Each run records the execution model, the adaptation model when a separate endpoint is used, the protocol version, the skill-library identity, the retrieved skill identifiers, the generated execution guide, and the benchmark-specific outputs. 
+
+A.2 Benchmarks and Metrics 
+
+ALFWorld. We use the official ALFWorld eval_out_of_distribution split. The environment covers six household task families: pick-and-place, pick-two, clean-and-place, heat-and-place, cool-and-place, and examine-with-light. An episode is successful only when the official environment reports task completion. We allow at most 30 environment actions and report aggregate success rate. The agent is restricted to the action vocabulary exposed by ALFWorld, and object and receptacle names must retain the numeric suffixes shown in the current observation. 12 WebShop. We evaluate on the official test set of 500 shopping goals using the full product index. The agent interacts through visible search[query] and click[label] actions for at most 30 steps. Each click must copy an exact visible product, option, navigation, or purchase label. The agent may purchase only after checking the public product constraints, visible price, and all required options, such as size, color, count, or pack. We report success rate: an episode counts as successful only when the final purchase satisfies the shopping goal under the benchmark evaluator, and partial rewards do not count as success. 
+
+Search-augmented QA. Following SkillRL (Xia et al., 2026a), we evaluate seven search-augmented QA tasks: Natural Questions test (3,610), TriviaQA test (11,313), PopQA test (14,267), HotpotQA development (7,405), 2WikiMultiHopQA development (12,576), MuSiQue development (2,417), and Bamboogle test (125), for 51,713 questions in total. The model receives the public question and the public retrieval evidence available to the runner. It must return the shortest supported answer phrase; yes/no answers are canonicalized to yes 
+
+or no . We report exact match (EM) using the runner’s benchmark normalization and the same suite-level aggregation used in the main evaluation. 
+
+Instance-level transfer and regression. For the paired relevance–utility analysis, the no-skill and skill-conditioned settings use the same task instances, backbone model, decoding configuration, action budget, and stopping criteria. A transfer is an instance that fails without skills but succeeds under the evaluated skill-use method. A regression is an instance that succeeds without skills but fails after applying that method. The motivating analysis uses direct raw-skill injection as the skill-conditioned setting. 
+
+A.3 Models and Decoding 
+
+We evaluate Qwen3-8B and Qwen3-32B as the primary open-weight backbones and Gemini 2.5 Pro as the API-based backbone reported in the main table. All backbone parameters remain frozen. Unless a separate adaptation endpoint is explicitly specified, the named backbone is used for both the one-time SkillAligner call and downstream execution. Adaptation and execution endpoints are logged independently when they differ. For ALFWorld, execution uses greedy decoding with temperature 0, top _p = 1 , seed 0, and at most 256 generated tokens per turn. WebShop execution also uses temperature 0 and at most 256 output tokens. An invalid WebShop action receives at most one format-only repair call with temperature 0 and at most 64 output tokens. Thinking output is disabled when the serving interface exposes this option. The one-time SkillAligner call uses temperature 1 and top _p = 1 . Its output must satisfy the four-field JSON schema before it can be supplied to the execution agent. 
+
+A.4 Inference-Cost Measurement 
+
+We measure inference cost by token consumption rather than wall-clock latency or provider-specific monetary price. For each evaluated task instance, we sum the input and output tokens consumed by every LLM call. For Top-k Raw Skill, Corig includes all calls made during task execution. For SkillAligner, Cadapt counts the one-time adaptation call, while CSA exec includes all subsequent execution calls, including a format-only repair call when triggered. We compute these statistics separately for Qwen3-8B, Qwen3-32B, and Gemini 2.5 Pro. Each benchmark entry in Table 5 reports the arithmetic mean of the corresponding statistic across the three backbones, and the Average row then macro-averages across benchmarks. 
+
+A.5 Skill Library and Retrieval 
+
+All skill-based methods use the same independently constructed library of reusable procedural skills covering embodied interaction, web-based task execution, and knowledge-intensive question answering. The library is assembled primarily from the community-curated ComposioHQ/awesome-claude-skills repository and Anthropic’s official anthropics/skills repository, with additional skills adapted from SkillsBench (Li et al., 2026). Each package, typically centered on a SKILL.md specification with optional scripts and auxiliary resources, is normalized into a structured record describing its capability, interfaces, tool requirements, and dependencies. Given a task query, we rank the library using BM25 (Robertson and Zaragoza, 2009) and retrieve the top five candidates ( k = 5 ). 13 Retrieval is held fixed across methods. The Graph of Skills baseline receives the same BM25 top-five candidates and applies its graph-based dependency modeling and skill-bundle organization to that candidate set. The raw-skill baseline directly injects the same retrieved candidates without adaptation. SkillAligner instead treats retrieved skills as adaptable drafts. It may retain, instantiate, compact, merge, reorder, condition, or omit retrieved procedural content. An interface-specific instruction may be rewritten only when the replacement is supported by E and preserves the intended procedure. SkillAligner cannot introduce an unprovided skill, invent an unavailable capability, change a hard task constraint, infer an unsupported task fact, or modify the persistent skill library. Dependencies, conflicts, overlaps, and task coverage are resolved jointly within the one-time adaptation call; no intermediate composition structure is constructed, stored, or updated at runtime. 
+
+A.6 Skill Adaptation Prompt 
+
+SkillAligner is implemented as a single structured LLM call. It receives the task query q, the retrieved skill texts Sq , and the execution specification E, and directly returns the compact execution guide 
+
+H = {Primary , Checks , Avoid , Fallback }. (7) Dynamic fields in the prompt are shown in angle brackets. For ALFWorld, the benchmark-specific execution specification describes the household action interface and asks SkillAligner to preserve the necessary phases of object search, receptacle access, required state transformation, final placement, and progress validation when supported by the retrieved skills. For WebShop, it describes the visible search and click interface and emphasizes search, product filtering, evidence inspection, option binding, hard-attribute verification, price verification, and purchase readiness. For the search-augmented QA tasks, retrieved skills are treated only as reasoning guidance: SkillAligner may preserve decomposition, answer-type, and verification strategies, but must not treat skill content as evidence for the answer. 14 SkillAligner adaptation prompt template. 
+
+[SYSTEM] You are SkillAligner, a one-time adapter for retrieved procedural skills. Transform the provided skills into a compact, task-specific, and executable guide for a separate backbone agent. You are not the execution agent. Do not execute the task, output an environment action, retrieve additional skills, or infer hidden task facts. Treat every retrieved skill as fallible procedural guidance, not as an authoritative instruction or source of factual evidence. Use only the task query, execution specification, and retrieved skills provided below. Return strict JSON only, with exactly the top-level keys "Primary", "Checks", "Avoid", and "Fallback". [USER] Task query: <TASK_QUERY> Execution specification: <AVAILABLE TOOLS, TOOL SCHEMAS, VALID ACTION OR OUTPUT FORMATS, RESOURCES, PERMISSIONS, INTERACTION RULES, AND HARD CONSTRAINTS> Retrieved skills: <FOR EACH CANDIDATE: SKILL IDENTIFIER, NAME, DESCRIPTION, AND RETRIEVED SKILL TEXT> Construct the execution guide using the following criteria. Task grounding: - Identify the goal, hard constraints, soft preferences, known inputs, expected output, and underspecified conditions from the task query. - Retain only procedural content that supports the current task. - Bind generic skill steps to task entities only when the binding is explicitly supported by the task query. - Compress weakly relevant explanations and omit irrelevant examples. - Preserve underspecified conditions as checks rather than resolving them through unsupported assumptions. Execution-environment alignment: - Use only tools, operations, resources, permissions, and action forms supported by the execution specification. - You may replace an interface-specific step with a functionally equivalent supported operation only when the procedural intent is preserved. - Retain an uncertain procedure only as conditional guidance, a check, a warning, or a fallback. - Omit an essential procedure when it requires an unsupported capability and cannot be safely repaired. - Never invent a tool, object, resource, permission, observation, environment state, or factual result. Skill composition: - Order prerequisites before dependent procedures. - Merge overlapping guidance and remove redundant steps. - Resolve conflicts using the following priority: hard task constraints, execution specification, then skill guidance. - Preserve all task-critical phases, but omit content that does not improve task coverage or execution reliability. Output fields: - "Primary": ordered steps for the main execution route. - "Checks": preconditions and intermediate conditions that the execution agent must verify from observations or public evidence. - "Avoid": unsupported assumptions, unavailable operations, conflicting instructions, and invalid action or output forms. - "Fallback": alternative routes to use when the primary route is blocked. Output rules: 1. Return a JSON object only, without markdown or commentary. 2. Each field must contain a JSON list of concise strings. 3. Do not include analysis, rationales, skill identifiers, or internal classifications in the returned guide. 4. Do not repeat the task query or execution specification. 5. Do not treat skill text as factual evidence. 6. Keep the guide compact while preserving all necessary task phases. 7. Empty lists are allowed when a field has no applicable content. Return exactly: {"Primary": [ "..." ], "Checks": [ "..." ], "Avoid": [ "..." ], "Fallback": [ "..." ]}
+
+Figure 4 Prompt template for the one-time SkillAligner adaptation call. 
+
+15 B Regression Source Evaluation 
+
+We use a GPT-5.5-based LLM judge to identify the primary source of each regression included in the diagnostic analysis. The diagnostic set underlying Table 2 consists of all paired instances in which No Skill succeeds but Top-k Raw Skill fails. For every such instance, the judge receives the task query, execution specification, retrieved skills, and paired execution traces. It assigns the regression to one of four mutually exclusive categories: inter-skill misalignment, skill–environment misalignment, skill–task misalignment, or other. The judge is used only for post-hoc error analysis and does not affect skill retrieval, adaptation, execution, or benchmark scoring. Figure 5 presents the complete classification prompt. 
+
+# C Additional Results 
+
+C.1 Sensitivity to Skill-Library Scale 
+
+We examine whether SkillAligner is sensitive to the scale of the underlying skill library, since practical skill libraries may vary substantially in size as procedural knowledge accumulates. For this analysis, we construct 200-, 500-, 1,000-, and 2,000-skill variants using the same sources, normalization format, and filtering protocol described in Appendix A.5; the 1,000-skill variant is the primary setting used elsewhere. Table 7 reports the results. Performance varies non-monotonically with library size, and the best scale depends on both the benchmark and backbone. The 2,000-skill library performs best on Qwen3-8B ALFWorld and WebShop and Qwen3-32B WebShop, whereas smaller libraries are best in the remaining settings. No scale uniformly dominates the others. Overall, SkillAligner remains effective across the evaluated library sizes and does not rely on a specific scale. 
+
+C.2 Detailed Module Ablation 
+
+Table 8 expands the main ablation in Table 3 to all 23 combinations of task grounding, execution-environment alignment, and skill composition. The all-empty row corresponds to Top-k Raw Skill, while the single-stage and complete rows reproduce the corresponding results in Table 3. The pairwise rows expose how the stages complement one another rather than evaluating each stage only in isolation. 
+
+Progressive gains from combining stages. Each individual stage improves over raw skill injection in all six benchmark–backbone settings, and the complete system outperforms every single-stage variant. Among all 23 configurations, the complete system is best in all six settings. Relative to the strongest pair for each benchmark, it gains 2.99 /0.40 /1.51 points on ALFWorld, WebShop, and search-augmented QA, respectively, with Qwen3-8B and 2.24 /1.00 /0.64 points with Qwen3-32B. This consistent advantage shows that the three stages provide complementary benefits and are most effective when applied jointly. 
+
+Different benchmarks favor different module pairs. The strongest pair is the same across both backbones but differs by benchmark. Environment alignment plus skill composition performs best on ALFWorld, where execution depends on state-aware action procedures. Task grounding plus skill composition is strongest on WebShop, where the agent must preserve product constraints while organizing search and variant-selection skills. Task grounding plus environment alignment is strongest on search-augmented QA, where query intent and interface-compatible evidence collection are central. This pattern explains why the single-stage winner also varies in Table 3 and why combining all three stages is more reliable than choosing one fixed adaptation strategy. Consistent with Table 4, the complete system improves transfer and reduces regression relative to raw skill injection across all Qwen settings. 16 # Skills Qwen3-8B Qwen3-32B ALFWorld WebShop SearchQA ALFWorld WebShop SearchQA 
+
+200 79.85 37.40 37.21 87.31 42.40 44.53 
+
+500 79.10 38.60 36.98 89.55 41.20 44.41 1,000 80.60 37.60 37.37 88.06 42.80 44.36 2,000 82.84 39.40 37.25 87.31 43.20 44.47 
+
+Table 7 Effect of skill-library size. We evaluate SkillAligner with libraries containing 200, 500, 1,000, and 2,000 skills using Qwen3-8B and Qwen3-32B across ALFWorld, WebShop, and the search-augmented QA suite. Bold values indicate the best result in each column.                                                                     
+
+> Enabled Modules Qwen3-8B Ground Align Compose ALFWorld WebShop SearchQA 61.94 29.80 27.86
+> ✓66.42 34.80 32.74
+> ✓67.91 32.40 31.46
+> ✓70.90 33.60 29.41
+> ✓✓72.39 37.00 35.86
+> ✓✓76.12 37.20 34.47
+> ✓✓77.61 36.60 33.58
+> ✓✓✓80.60 37.60 37.37
+> Enabled Modules Qwen3-32B Ground Align Compose ALFWorld WebShop SearchQA 73.13 36.20 33.05
+> ✓76.87 39.40 39.61
+> ✓78.36 37.80 37.92
+> ✓80.60 38.60 34.88
+> ✓✓82.09 41.00 43.72
+> ✓✓84.33 41.80 42.06
+> ✓✓85.82 40.60 40.91
+> ✓✓✓88.06 42.80 44.36
+
+Table 8 Detailed module ablation of SkillAligner. A checkmark indicates an enabled module; an empty cell indicates removal. ALFWorld and WebShop report success rate; the search-augmented QA tasks report exact match. 
+
+17 Regression-source classification prompt template. 
+
+[SYSTEM] You are evaluating the primary source of a skill-induced regression in a skill-augmented agent. A skill-induced regression is an instance in which the agent succeeds without skills but fails after directly injecting retrieved skills. Identify the primary causal mismatch introduced by the retrieved skills. Base the classification only on the provided task, execution specification, retrieved skills, and paired execution traces. Classify the regression into exactly one category: Inter-skill: The failure is primarily caused by an interaction among multiple retrieved skills, such as conflicting procedures, incompatible assumptions, duplicated or competing subgoals, or an inconsistent execution order. Environment: A retrieved skill relies on an action, tool, resource, object, permission, state, or interface that is unavailable or unsupported by the execution specification. Task: A retrieved skill is semantically related to the task but conflicts with the specific goal, input, hard constraint, expected output, or success condition. Other: The evidence is insufficient to attribute the failure to one of the three mismatch types, or the failure is better explained by an unrelated reasoning or execution error. Evaluation rules: 1. Compare the successful no-skill trace with the failed raw-skill trace and identify how skill injection changed the execution. 2. Do not classify a generic reasoning or action error as a skill mismatch unless it can be linked to retrieved skill content. 3. When several mismatches are present, select the one that most directly caused the final failure. 4. Prefer an upstream causal mismatch when it clearly triggered later errors. 5. Classify the violated relation rather than only the surface error. 6. Use Other when no single category is sufficiently supported. 7. Keep the reason and evidence concise and concrete. 8. Return strict JSON only, without markdown or additional commentary. [USER] Task query: <TASK_QUERY> Execution specification: <AVAILABLE_TOOLS_ACTIONS_RESOURCES_AND_CONSTRAINTS> Retrieved skills: <RETRIEVED_SKILL_TEXTS> Successful execution trace without skills: <NO_SKILL_TRACE> Failed execution trace with raw skill injection: <RAW_SKILL_TRACE> Return exactly: {"primary_source": "Inter-skill", "reason": "One concise sentence describing the primary causal mismatch.", "evidence": "The relevant skill instruction or paired-trace difference.", "confidence": "High" }The value of "primary_source" must be exactly one of: "Inter-skill", "Environment", "Task", or "Other". The value of "confidence" must be exactly one of: "High", "Medium", or "Low". 
+
+Figure 5 Prompt used by the LLM judge to classify the primary source of each skill-induced regression. 
+
+18 D Detailed Case Studies 
+
+This section expands the main-paper example and adds two complementary WebShop cases. All cases use Qwen3-32B. For each task, No Skill and Top-k Raw Skill use the exact same shopping instruction and evaluation protocol; Raw Skill receives the retrieved top-five skills directly, while SkillAligner adapts the same five skills once before execution. The three cases isolate different failure modes: incomplete option binding ,
+
+negative transfer from an over-general skill , and repetition without a recovery strategy . WebShop returns a score in [0 , 1] , but its success condition is exact: score 1 is success; every score below 1 is failure . We show sub-unit scores only as diagnostic evidence of partially satisfied constraints.               
+
+> Case No Skill Raw Skill SkillAligner
+> Banana chips Fail (.25) Fail (.75) Success (1)
+> Sound column Success (1) Fail (.50) Success (1)
+> Sea-salt shaker Fail (0) Fail (0) Success (1) Table 9 Outcomes of the detailed WebShop cases. Scores below 1 are failures under the success criterion.
+
+D.1 Main Case: Configuring a Hidden Product Variant 
+
+What makes the task hard. The user requests freeze-dried banana chips with apple cinnamon flavor, a 
+
+16-pack , and a price below $50. The search page, however, shows only a default configuration. The correct parent product B092JLLYK6 is titled as generic banana crisps in a 6-pack; only after opening its detail page does the agent see two separate controls for flavor and pack size. This is analogous to a shoe listing that displays one default color and size even though other variants are selectable. The search title is therefore not the final SKU: the agent must open the parent product and explicitly satisfy both option groups. No Skill: constraints are not tracked. The No-Skill agent enters a different fruit-crisp family, selects goofy strawberry banana and pack of 24 , and buys it:      
+
+> wrong fruit crisps →strawberry banana
+> →pack of 24 →Buy Now .
+
+The score is 0.25, hence failure. The agent clearly knows how to search and click an option. Its problem is simpler and more specific: it does not treat flavor and pack size as two requirements that must both remain satisfied before purchase .
+
+Raw Skill: three mismatches accumulate. The retrieved skills cover query parsing, packaging-aware search, search recovery, candidate selection, and variant choice, but direct injection leaves three failures unresolved. 
+
+Inter-skill mismatch: after a candidate is rejected, the Search Executor returns to the results while the Product Selector chooses the same literal match again, producing a six-round loop instead of switching candidates. 
+
+Environment mismatch: the Variant Chooser treats one option click as a complete configuration; it selects the 16-pack but leaves the independent apple-cinnamon flavor unset. Task mismatch: the Product Selector prioritizes query relevance without enforcing the price-below-$50 requirement, so the final purchase is over budget. The skills are individually useful, but direct injection supplies neither a coherent recovery handoff nor a purchase gate covering every hard constraint. The resulting score is 0.75 and therefore counts as a failure. 
+
+SkillAligner: track four hard slots until purchase. Ground rewrites the request as four independent slots: banana chips, apple cinnamon, 16-pack, and price below $50. Align records that search results display default variants and that flavor and pack become verifiable only through separate detail-page clicks. Compose merges the overlapping search instructions, forbids revisiting an already rejected literal match, orders the two option clicks, and allows purchase only when all four slots pass. The resulting route is          
+
+> search →configurable parent →apple cinnamon
+> →pack of 16 →price check →Buy Now ,
+
+which receives a score of 1. 
+
+What this case isolates. Raw Skill already proves that the model can form a useful query, reject a bad product, inspect candidate details, and click a legal variant. The missing capability is not search or tool use; 
+
+19 it is turning several locally useful skills into one complete, state-aware shopping procedure. SkillAligner supplies the missing handoff: reject once, change candidate, bind flavor, bind pack, check price, then buy. 
+
+D.2 Supplementary Case I: Preventing Negative Transfer 
+
+What makes the task diagnostic. The user requests a high-power sound column subwoofer with Bluetooth and 3D surround sound for less than $660. Here, “sound column” names the requested product type; it is not an optional descriptive word. The retrieved skills cover search formulation, result filtering, product inspection, and purchase. This case is especially clean because the backbone succeeds without skills but fails after Raw Skill is injected .
+
+No Skill: product type preserved. Without skills, the agent keeps the full category phrase in its query: 
+
+> high power sound column subwoofer bluetooth 3d surround
+
+The result list contains B09R1DKTS6, whose visible title states sound column, high power, Bluetooth, and 3D surround, at $625.85. The agent opens it and purchases it in three valid actions, receiving a score of 1. 
+
+Raw Skill: task-defining term dropped. The search-formulation skill recommends using only a few distin-guishing attributes. Applied without task grounding, this generic rule removes sound column :
+
+> high power subwoofer bluetooth 3d surround sound
+
+This shortening changes which products appear. The agent selects B093V43SQM, an ordinary TV soundbar/-subwoofer, and immediately purchases it. Every action is legal, but the product type is wrong, so the score is 0.5 and the run fails. The skill does not fail because query shortening is always harmful; it fails because it treats the task-defining category as removable. SkillAligner: protect the category before shortening the query. Ground marks sound column as non-droppable and keeps high power, Bluetooth, 3D surround, and budget as separate checks. Align removes an unavailable selector-script call and retains the comparison rule in a form executable through visible search and click actions. Compose gives query formulation one owner and requires product-type verification before purchase. The aligned query therefore preserves sound column , recovers B09R1DKTS6, and receives a score of 1. 
+
+What this case isolates. SkillAligner prevents negative transfer rather than merely helping an otherwise incapable agent. The paired No-Skill success shows that search, product selection, and purchase are already within the backbone’s ability; the only damaging change is the Raw-Skill rewrite that drops the hard category. 
+
+D.3 Supplementary Case II: Escaping a Literal-Match Loop 
+
+What makes the task hard. The user requests a one-pound, pack-of-one organic sea-salt shaker in the triple blend flakes flavor for less than $30. The first result page contains two competing candidates. B01GGWDB8S looks best by title because it explicitly says “Triple Blend Flakes,” but it is a one-ounce two-pack priced at $100. B0007SMLUM has the less literal title “Sea Seasoning Shakers—Organic” and costs $6.89; opening it reveals the requested flavor and one-pound pack-of-one options. The agent must reject the best lexical match and inspect the less literal parent product. No Skill: rejected candidate repeated. The agent opens B01GGWDB8S, sees the incompatible size, pack, and $100 price, returns to the result page, and opens the same product again. This cycle consumes the full 30-step interaction budget:        
+
+> search →$100 literal match →reject
+> →same search →same product .
+
+The score is 0. The failure is not detecting that the product is invalid; it is failing to change strategy after that detection. Raw Skill: no recovery handoff. The top-five bundle contains a query parser, result filter, search executor, variant chooser, and purchase gate. In isolation, these skills cover the full solution: extract each constraint, reject invalid products, open a parent product, select flavor and size, then buy. Nevertheless, Raw Skill issues the same query eight times and repeatedly reopens the same $100 listing. The filter rejects the product, but 20 the search executor is not told to exclude it or choose a different candidate; therefore the variant chooser never receives a usable parent page. Retrieving the complete set of local procedures is insufficient when no procedure owns the handoff after rejection. SkillAligner: reject once, inspect another candidate. Ground stores product form, flavor, one-pound size, pack count, and budget as independent checks, so a title match cannot hide three visible violations. Align 
+
+activates the variant chooser only on a detail page with option controls and drops an unavailable parser-script call. Compose turns rejection into an explicit next step: after rejecting B01GGWDB8S once, the fallback must inspect another candidate, B0007SMLUM, rather than repeat the same pair. It then orders      
+
+> B0007SMLUM →triple blend flakes
+> →1 pound (pack of 1) →Buy Now .
+
+The public product, option, and price checks pass, and the run receives a score of 1. Organic or certification claims remain public-page checks; the causal comparison does not rely on hidden evidence, because the rejected literal listing already violates size, pack, and budget. 
+
+What this case isolates. The bottleneck is executable organization, not missing knowledge. Raw Skill already contains every major step, but SkillAligner is needed to connect rejection to a new candidate and to activate variant selection only after the correct parent page is open. 
+
+D.4 Cross-Case Interpretation 
+
+The cases expose three gaps: (i) incomplete state —the banana-chip agent buys after one option; (ii) harmful rewriting —query shortening drops the sound-column product type; and (iii) stalled recovery —the sea-salt agent revisits a rejected SKU. Accordingly, Ground protects hard constraints , Align binds procedures to visible state , and Compose assigns the next owner, purchase gate, and fallback —the links missing from Raw Skill. 21
