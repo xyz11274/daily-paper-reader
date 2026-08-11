@@ -29,6 +29,8 @@ DEFAULT_FILTER_MODEL = (
 DEFAULT_DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("SUMMARY_BASE_URL") or "https://api.deepseek.com"
 DEFAULT_FILTER_CONCURRENCY = 4
 MAX_FILTER_RETRIES = 3
+# 单次 filter 请求的输出上限；模型规格上限（384k）不等于单批该申请的额度。
+FILTER_MAX_OUTPUT_TOKENS = 16384
 
 
 class FilterOutputTruncatedError(ValueError):
@@ -643,7 +645,14 @@ def recover_filter_results(
 
 def _make_filter_client(api_key: str, model: str, max_output_tokens: int) -> DeepSeekClient:
     client = DeepSeekClient(api_key=api_key, model=model, base_url=DEFAULT_DEEPSEEK_BASE_URL)
-    client.kwargs.update({"temperature": 0.1, "max_tokens": max_output_tokens})
+    client.kwargs.update({
+        "temperature": 0.1,
+        "max_tokens": max_output_tokens,
+        # JSON 需要反复重复字段名，重复惩罚会推动模型改写/省略字段。
+        "frequency_penalty": 0,
+        # 思考与正文共享同一输出预算，打分+摘要类任务无需长链推理。
+        "thinking": {"type": "disabled"},
+    })
     return client
 
 
@@ -973,7 +982,7 @@ def main() -> None:
     parser.add_argument(
         "--max-output-tokens",
         type=int,
-        default=resolve_max_output_tokens(),
+        default=resolve_max_output_tokens(FILTER_MAX_OUTPUT_TOKENS),
         help="max tokens for model output.",
     )
     parser.add_argument(

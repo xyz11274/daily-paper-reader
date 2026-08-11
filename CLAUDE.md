@@ -115,7 +115,7 @@
 ### 6. LLM 客户端封装 `src/llm.py`
 
 - **OpenAI 兼容**：`LLMClient` / `DeepSeekClient`
-- **结构化输出三级回退**：`json_schema → json_object → prompt_only`
+- **结构化输出两级回退**：`json_schema → json_object`（`prompt_only` 仅在 `DPR_LLM_STRUCTURED_FORMAT` 显式指定时启用）
 - **JSON 截断自动修复**：`_repair_json_suffix` 处理 max_tokens 截断
 - **多 base_url 重试**：`_iter_retry_bases` 遍历候选端点
 - **注意**：每篇论文独立 client 实例，避免多线程下 `client.kwargs` 竞争

@@ -302,10 +302,13 @@ class LLMClient:
         """
         按主请求端点选择结构化输出格式。
 
-        DeepSeek 官方 JSON Output 稳定入口是 json_object，因此默认不发送 json_schema。
+        默认优先发送 json_schema，让 schema 成为模型端的硬约束（而不是只做本地校验），
+        被端点拒绝时再回退 json_object。prompt_only 不再作为自动回退级：它与 json_object
+        发出的 messages 完全一致（仅少 response_format），不具备纠错能力。
         可用 DPR_LLM_STRUCTURED_FORMAT/LLM_STRUCTURED_FORMAT 覆盖：
         - json_schema: 强制 json_schema，允许时再回退 json_object
-        - json_object: 强制 json_object
+        - json_object: 仅使用 json_object
+        - prompt_only: 仅使用 prompt_only（逃生开关）
         - auto: 使用默认判断
         """
         if not allow_json_object_fallback:
@@ -319,11 +322,11 @@ class LLMClient:
         if override in ("prompt_only", "prompt", "none", "text"):
             return ["prompt_only"]
         if override in ("json_object", "object", "json"):
-            return ["json_object", "prompt_only"]
+            return ["json_object"]
         if override in ("json_schema", "schema", "structured"):
-            return ["json_schema", "json_object", "prompt_only"]
+            return ["json_schema", "json_object"]
 
-        return ["json_object", "prompt_only"]
+        return ["json_schema", "json_object"]
 
     @staticmethod
     def _messages_contain_json_instruction(messages: List[Dict[str, str]]) -> bool:
@@ -518,6 +521,7 @@ class LLMClient:
             'presence_penalty', 'frequency_penalty', 'stop', 'logprobs',
             'tools', 'tool_choice', 'logit_bias',
             'response_format',
+            'thinking', 'reasoning_effort',
         }
         if isinstance(self.kwargs, dict):
             for k, v in self.kwargs.items():
