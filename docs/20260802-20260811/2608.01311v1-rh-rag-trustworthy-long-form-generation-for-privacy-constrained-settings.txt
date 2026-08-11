@@ -1,0 +1,424 @@
+Title: RH-RAG: Trustworthy Long-Form Generation for Privacy-Constrained Settings
+
+URL Source: https://arxiv.org/pdf/2608.01311v1
+
+Published Time: Tue, 04 Aug 2026 01:25:47 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# RH-RAG: T RUSTWORTHY LONG -F ORM GENERATION FOR 
+
+# PRIVACY -C ONSTRAINED SETTINGS 
+
+Raj Shekhar Singh 
+
+Indian Institute of Technology, Roorkee Roorkee, Uttarakhand, India 
+
+raj_ss@ece.iitr.ac.in 
+
+# ABSTRACT 
+
+Generating long-form content from confidential internal reports is challenging for organizations under strict privacy constraints, where proprietary cloud APIs are infeasible. Locally deployed open-weight models offer a privacy-preserving alternative but suffer from hallucinations, weak global planning, and semantic drift over extended outputs. We present RH-RAG , a multi-agent framework for secure and trustworthy long-form generation using local language models. RH-RAG decomposes generation into three coordinated stages: a Planner Agent that constructs a global outline from semantic summaries, a Writer Agent that generates coherent section-wise content via bounded coherence memory, and a Checker Agent that mitigates hallucinations through NLI-based verification and an attestation-driven revision loop. A dual-level retrieval index supports efficient planning and fine-grained contextual generation on consumer-grade hardware. Evaluations across literary, financial, and legal domains show that RH-RAG consistently improves factual grounding, semantic coherence, and document-level alignment over RAG baselines, approaching the reliability of proprietary cloud systems without compromising data privacy. 
+
+# 1 Introduction 
+
+Large Language Models have transformed content genera-tion and reasoning, yet cloud-hosted proprietary APIs are infeasible for organizations under strict privacy require-ments. Healthcare, finance, and legal sectors produce con-fidential reports that cannot be sent to third-party providers, constraining them to locally deployed 7-8B open-weight models. Long-form generation with these models com-pounds three failure modes: factual hallucination (unsup-ported claims accumulate over extended outputs), context saturation (retrieval fidelity degrades as context grows), and structural drift (absence of global planning erodes cross-section coherence). Retrieval-Augmented Genera-tion (RAG) [1, 2] partially mitigates hallucination but lacks global planning and degrades narrative continuity over ex-tended documents [3]. These challenges are further compounded by how smaller models utilize context. Even with expanded context win-dows, local models tend to attend to superficial statisti-cal patterns rather than accurately integrating relevant re-trieved passages. Conventional RAG pipelines retrieve a flat pool of evidence and generate the entire response in a single pass, causing the model to drift off-topic, repeat content, or introduce contradictory claims in later sections. Multi-step generation strategies have been proposed to address structural coherence [4, 5], but they are not de-signed for local deployment and provide no mechanism for deterministic factual verification after each generated segment. We propose RH-RAG , a multi-agent framework that repli-cates the human writing workflow—plan, draft, verify— using locally deployed open-weight models. Documents are organized into a dual-level index of routing summaries and evidence chunks; a Planner Agent constructs a global outline; a Writer Agent generates section-wise content with bounded coherence memory; and a Checker Agent enforces factual grounding through an NLI-based attestation loop, entirely within private local environments. Contributions: 
+
+(1) a dual-level retrieval architecture for efficient multi-agent retrieval on constrained hardware; (2) section-wise generation with local+global coherence memory to prevent context saturation; (3) an attestation-driven revision loop using a coverage-based factuality metric to systematically eliminate unsupported claims. 
+
+# 2 Related Work 
+
+RAG and Structured Retrieval. Standard RAG pipelines retrieve passages via dense embeddings for arXiv:2608.01311v1 [cs.CL] 2 Aug 2026 RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback 
+
+Figure 1: RH-RAG framework: dual-level chunking, role-conditioned section-wise generation with bounded coherence memory, and the NLI-backed attestation feedback loop. single-pass generation [1, 2, 6]. GraphRAG [3] and hierarchical RAG [7] add graph-structured and multi-granularity retrieval respectively, while MindMap [8] and MIRAGE [9] incorporate multi-hop graph traversals for complex queries. These approaches optimize factual preci-sion over structured knowledge bases but do not address global narrative coherence in free-form long-form gener-ation. Multi-step generation strategies [4, 10, 5] improve structure by decomposing into planning and drafting stages, yet none integrate deterministic claim-level NLI verifica-tion within a privacy-preserving local deployment setting. 
+
+Graph-Based and Multi-Hop Retrieval. A more re-cent line of work moves beyond flat chunk retrieval by organizing knowledge into explicit graph structures. GraphRAG [3] constructs entity-relation graphs from source documents and uses community detection to pro-duce hierarchical summaries, enabling query-focused sum-marization that captures global document themes rather than locally similar passages. MindMap [8] integrates structured knowledge graphs directly into the prompting process, unifying the model’s parametric knowledge with explicit relational evidence to trigger a graph-of-thoughts reasoning chain. MIRAGE [9] advances this further by establishing a test-time scalable inference framework that decomposes high-level prompts into entity-grounded sub-questions, executes parallel multi-hop graph traversals, and applies cross-chain verification to resolve logical con-tradictions across retrieved reasoning paths. While these approaches substantially improve multi-step factual pre-cision and traceability over well-structured ontological databases, they face a critical limitation for our setting: adapting graph-based workflows to unstructured raw doc-ument text requires pre-built knowledge graphs that are expensive to construct and maintain, and their retrieval mechanisms are optimized for answering discrete factual queries rather than sustaining global narrative coherence across a multi-section long-form document. 
+
+Factual Verification as Generative Control. 
+
+FActScore [11], AlignScore [12], and SUMMAC [13] decompose outputs into atomic claims and verify them against source documents for offline evaluation. RH-RAG internalizes this principle as a generative control mecha-nism : the Checker Agent applies NLI-based verification not merely to measure quality post-hoc but to actively trigger targeted revisions during generation, directly clos-ing the loop between factuality measurement and output improvement. Taken together, existing work leaves an important gap: no prior system simultaneously addresses global document planning, bounded-memory section-wise generation, de-terministic claim-level verification, and strict local-only deployment within a single unified framework. RH-RAG is designed specifically to fill this gap. 
+
+# 3 The RH-RAG Framework 
+
+Figure 1 provides a full overview of the RH-RAG pipeline. The framework operates in three sequential stages— preprocessing, generation, and verification—each handled 2RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback by a dedicated agent. Full prompt templates for all agents are provided in Appendix A. 
+
+3.1 Dual-Level Document Chunking 
+
+To balance global context understanding with precise fac-tual retrieval, documents are indexed at two complemen-tary granularities. 
+
+Level-1 (Routing Summaries): Each document is divided into large segments of 20,000–30,000 tokens, chosen to provide a good trade-off between semantic coherence and retrieval granularity. A concise summary is generated per segment using a Mistral-7B-Instruct model fine-tuned on XSum, augmented with extracted key terminologies. These summaries form a lightweight semantic routing layer used exclusively during the planning stage to identify relevant document regions without loading the full corpus into con-text. 
+
+Level-2 (Evidence Chunks): Fine-grained passages pre-serve the original document text for factual grounding. These chunks are encoded using the bge-base-en-v1.5 
+
+embedding model to produce dense semantic representa-tions that support efficient similarity-based retrieval during both generation and verification. Structural metadata (sec-tion provenance) is preserved alongside each chunk to maintain document organization during retrieval. This separation of planning-level and generation-level in-dices is the architectural foundation that allows each agent to operate with precisely the granularity of context it re-quires, avoiding the context saturation that afflicts flat single-index RAG pipelines. 
+
+3.2 Planner Agent 
+
+The Planner Agent is responsible for constructing a struc-tured document outline before any text is produced, anal-ogous to the pre-writing planning stage in professional document composition. It queries the Level-1 routing in-dex using the user query to retrieve high-level semantic summaries, identifies key themes and their relative impor-tance, and organizes them into a logically ordered sequence of sections forming the global document structure. Critically, for each section the planner produces a retrieval anchor —a targeted query specifically designed to retrieve the most relevant Level-2 evidence chunks during the sub-sequent writing stage. These anchors decouple global structural planning from fine-grained evidence retrieval: the planner reasons at the level of document organiza-tion, while the writer reasons at the level of local evidence grounding. This separation ensures that narrative coher-ence is established before generation begins, rather than emerging (or failing to emerge) as an afterthought. 
+
+3.3 Writer Agent 
+
+The Writer Agent generates document content incremen-tally, producing one section at a time according to the planned outline. For section i, the agent receives the sec-tion outline Oi, the top-k Level-2 evidence chunks Ri re-trieved via the planner’s anchor Ai, and a compact bounded coherence memory Mi−1:
+
+Si = Writer (Oi, R i, L i−1, G i−1) (1) The bounded coherence memory is a dual-component structure that avoids the context saturation caused by accu-mulating all previously generated text. It consists of: (i) a 
+
+local summary Li−1—one to two sentences capturing the immediate narrative transition from the previous section, and (ii) a global summary Gi−1—a running compressed representation of the entire document generated so far, pre-serving overarching thematic arc and key established facts. Both components are maintained by a lightweight Mistral-7B-Instruct summarizer fine-tuned on XSum. After each section Si is accepted, Li is generated directly from Si,and Gi is produced by updating Gi−1 with the new content. This dual-track update ensures that both local continuity (preventing abrupt narrative transitions between adjacent sections) and global coherence (preventing thematic drift across the full document) are preserved without growing the effective context size. 
+
+3.4 Checker Agent and Attestation Feedback Loop 
+
+Each generated section Si undergoes factual verification before incorporation into the final document. The verifica-tion pipeline operates in three stages. 
+
+Claim extraction. The checker first applies a rhetori-cal filtering step to remove transitional and stylistic sen-tences, then uses a Mistral-7B-Instruct model to decom-pose the remaining text into atomic factual claims Ci =
+
+{c1, . . . , c m}, resolving co-references and splitting com-pound assertions to ensure each claim is independently verifiable. 
+
+NLI verification. For each claim cj ∈ Ci, the top-k
+
+Level-2 evidence passages are retrieved via dense similar-ity search, and a DeBERTa-v3-large NLI model classifies the claim as supported , unsupported , or contradicted given the retrieved evidence. The section’s factual coverage is then quantified as: coverage (Si) = |Csupported ||Ctotal | (2) 
+
+Attestation feedback loop. If coverage (Si) ≥ τ , the section is accepted. Otherwise, unsupported and contra-dicted claims are rewritten as targeted retrieval queries to fetch additional evidence, and a dedicated Revision Agent 
+
+produces a corrected section: 
+
+S(t+1)  
+
+> i
+
+= RevisionAgent (S(t) 
+
+> i
+
+, U i, E new ) (3) where Ui is the set of failed claims and Enew is the newly retrieved evidence. Unlike the Writer Agent, the Revision Agent targets only the unsupported sentences, preserving surrounding paragraph structure. This loop runs for up 3RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback Table 1: Performance across literary, financial, and legal domains. WR: win rate; Align: AlignScore.                                                                                             
+
+> Literary Financial Legal Model WR SUMMAC Align WR SUMMAC Align WR SUMMAC Align Standard RAG 4.3 40.9 72.9 4.6 41.4 72.4 4.5 40.2 71.2 Hierarchical RAG 5.7 46.3 71.3 5.4 43.2 73.1 5.6 44.7 72.6 ChatGPT 4o 7.8 49.1 79.1 7.8 48.7 78.8 7.9 48.3 77.6 Claude 8.1 48.3 78.7 8.2 48.9 78.7 8.4 48.6 77.2 Gemini Pro 7.9 48.8 79.3 7.8 48.7 79.1 7.9 48.4 77.8 RH-RAG (w/o checker) 6.3 41.7 73.3 6.4 42.8 74.2 6.5 41.4 73.7 RH-RAG (Mistral-7B) 6.8 47.6 76.7 6.7 48.7 78.5 6.9 47.5 78.3 RH-RAG (LLaMA-3.1-8B) 7.1 46.4 76.7 6.9 48.7 78.7 7.0 47.8 78.6 RH-RAG (Qwen-2.5-7B) 7.2 47.4 76.7 7.0 49.4 78.5 6.8 47.8 78.4
+
+to T =3 iterations with k=5 passages per claim; we use 
+
+τ =0 .8 as the default threshold based on the ablation in Table ?? (detailed analysis in Appendix C). Table 1 presents results across all domains and models. 
+
+# 4 Experiments 
+
+4.1 Dataset 
+
+We construct a custom multi-domain evaluation corpus (full statistics in Appendix B) spanning three document categories designed to stress-test different aspects of long-form generation. 
+
+Literary domain (20 documents, 80 queries). Public-domain books from authors including H.G. Wells, Jules Verne, Dickens, and Shelley, sourced from Internet Archive [14]. These long-form narratives contain com-plex characterization, thematic arcs, and non-linear plots spanning tens of thousands of tokens, stressing long-range coherence and structured narrative generation. 
+
+Financial domain (20 documents, 40 queries). Real-world annual reports and economic outlook documents from organizations such as Reliance Industries, TCS, In-fosys, SBI, the World Bank, and Goldman Sachs. These documents are analytically dense, containing numerical data, multi-year comparisons, and domain-specific termi-nology, thereby stressing factual retrieval and numerical grounding. 
+
+Legal domain (20 documents, 50 queries). U.S. federal court case materials from the Multi-LexSum dataset [15], involving complex legal reasoning, multi-party argumen-tation, and highly formalized language. This domain pri-marily stresses factual consistency and domain-specific reasoning reliability. Queries were manually authored by annotators to simulate realistic information-seeking scenarios, averaging approxi-mately five queries per document. Both broad prompts (e.g., “Summarize the key arguments”) and document-specific prompts targeting entities, events, and numerical details are included to ensure varying retrieval and reason-ing difficulty. 
+
+4.2 Implementation Details 
+
+Each RH-RAG agent—Planner, Writer, and Revision— can be instantiated with any instruction-tuned backbone. We evaluate three open-source models: Mistral-7B-Instruct [16], LLaMA-3.1-8B-Instruct [17], and Qwen-2.5-7B-Instruct [18], to test whether RH-RAG generalizes across architectures. All models are deployed locally on two NVIDIA T4 GPUs (16 GB VRAM each), representing accessible consumer-grade hardware. Document preprocessing uses bge-base-en-v1.5 for Level-2 dense encoding, while a Mistral-7B-Instruct model fine-tuned on XSum is used for Level-1 summary gen-eration and bounded coherence memory updates. The Checker employs a pretrained DeBERTa-v3-large model for textual entailment classification. Level-1 segments are set to 20,000–30,000 tokens, and Level-2 retrieval uses top-
+
+k=5 chunks per query. The attestation loop is capped at 
+
+T =3 iterations with a default coverage threshold of τ =0 .8
+
+(additional analysis in Table ?? and Appendix C). Each agent uses a dedicated role-specific prompt (Ap-pendix A): planning prompts generate structured outlines with retrieval anchors, writing prompts condition on evi-dence and coherence memory, and revision prompts focus on correcting unsupported claims while preserving struc-ture. 
+
+4.3 Evaluation Metrics 
+
+We evaluate systems across output quality and factual faith-fulness. 
+
+Output quality (Win Rate). We adopt an LLM-as-a-judge framework [19] using GPT-4o as an external evaluator to avoid self-preference bias. RH-RAG outputs and baseline responses are compared pairwise on coherence, relevance, and overall writing quality. Each comparison is evaluated twice with swapped ordering to reduce positional bias; the final win rate reflects the proportion of preferred outputs. 
+
+Faithfulness metrics. SUMMAC [13] measures entailment-based semantic consistency between generated text and source documents using sentence-level NLI ag-gregation. AlignScore [12] evaluates broader information alignment through chunk-aware text-to-text alignment. To-4RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback gether, these metrics capture complementary aspects of factual grounding and semantic fidelity. 
+
+4.4 Baselines 
+
+We compare RH-RAG against four baseline categories. 
+
+Standard RAG [1] uses a single-pass generation pipeline with hybrid BM25 [20]+dense retrieval over fixed-size chunks and Mistral-7B as the generator. It contains no planning, coherence memory, or verification, representing the default local deployment setup. 
+
+Hierarchical RAG [3, 7] introduces two-level retrieval with section summaries and fine-grained chunk retrieval, but still performs single-pass generation. This baseline isolates retrieval improvements from RH-RAG’s planning and verification components. 
+
+Commercial LLMs (GPT-4o, Claude, Gemini Pro) di-rectly generate responses from prompts and retrieved con-text without the RH-RAG pipeline. These serve as upper-bound reference systems representing the performance of large proprietary models. 
+
+RH-RAG (w/o Checker) retains the dual-level retrieval, Planner Agent, and Writer Agent with coherence memory, but removes the Checker Agent and attestation-driven revi-sion loop. This ablation isolates the contribution of factual verification from the remaining architectural components. 
+
+# 5 Results and Discussion 
+
+Overall performance against retrieval baselines. RH-RAG outperforms both retrieval baselines across all three domains and all three metrics. On the literary domain, RH-RAG (Mistral-7B) achieves SUMMAC 47.6 / Align-Score 76.7 compared to 40.9 / 72.9 for Standard RAG and 46.3 / 71.3 for Hierarchical RAG. Notably, while Hierar-chical RAG achieves a higher SUMMAC than Standard RAG (reflecting better retrieval precision), its AlignScore is actually lower in the literary domain, suggesting that more structured retrieval alone can increase thematic rele-vance at the expense of fine-grained information alignment. The further improvement from Hierarchical RAG to full RH-RAG isolates the contribution of structured planning and attestation-driven revision over and above retrieval ar-chitecture. Consistent improvements across financial and legal domains confirm that these gains are domain-agnostic and reflect general improvements in evidence utilization. 
+
+Contribution of the Checker Agent. Removing the at-testation verification loop consistently and substantially degrades performance across all domains. On the finan-cial domain—where numerical precision is most critical— AlignScore drops from 78.5 to 74.2 and SUMMAC from 48.7 to 42.8 when the Checker Agent is removed. Compa-rable degradations are observed in the literary (AlignScore 
+
+−3.4) and legal (AlignScore −4.6) domains. The smaller win-rate gap between the full and ablated systems is ex-pected, since the Checker Agent primarily improves factual grounding rather than surface fluency, and win-rate judges also weight stylistic quality. 
+
+Threshold sensitivity. Table ?? shows that stricter cov-erage thresholds monotonically improve both faithful-ness metrics, but with diminishing marginal returns above 
+
+τ =0 .8. At τ =0 .9, stricter enforcement increases revision iterations, and in the legal domain, domain-specific phras-ing absent from retrieved passages causes the NLI model to reject valid claims, triggering unnecessary revision cycles that can degrade fluency (see Appendix C). 
+
+Comparison with proprietary language models. RH-RAG with open-source backbones approaches proprietary systems on faithfulness metrics despite operating at a frac-tion of the model capacity and entirely without external data transmission. RH-RAG (Mistral-7B) achieves Align-Score 76.7 on the literary domain, within 3 points of stan-dalone GPT-4o (79.1) and Claude (78.7)—neither of which employs a dedicated verification pipeline. The win-rate gap between RH-RAG variants (6.7–7.2) and commercial baselines (7.8–8.4) reflects differences in surface fluency and instruction-following breadth, which are properties of the underlying backbone capacity rather than the RH-RAG framework itself. A representative full-length output from RH-RAG is provided in Appendix D. 
+
+# 6 Conclusion 
+
+We presented RH-RAG, a multi-agent RAG frame-work combining dual-level retrieval, structured section-wise generation with bounded coherence memory, and attestation-driven NLI-based factual verification for privacy-constrained long-form generation. RH-RAG sub-stantially outperforms standard and hierarchical RAG base-lines and approaches the faithfulness of proprietary cloud systems, all without transmitting sensitive data to external providers. Future directions include domain-adaptive ver-ification thresholds, agent-specific fine-tuning, and more efficient specialized NLI models to reduce verification overhead in technical domains. 
+
+# 7 Limitations 
+
+Three limitations of the current system are worth noting. First, the framework is deliberately constrained to 7B– 8B models, meaning that highly complex multi-step logi-cal deductions and intricate narrative transitions can still challenge the underlying backbone, occasionally increas-ing revision cycles. Second, all pipeline components use general-purpose instruction-tuned models; agent-specific fine-tuning—particularly a domain-adapted NLI model for the Checker Agent—would reduce unnecessary revisions and lower computational overhead. Third, our literary eval-uation relies on well-known public-domain texts whose content likely appears in the pre-training corpora of the evaluated models. While the verification metric strictly 5RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback measures grounding against retrieved evidence, latent para-metric familiarity with these narratives may artificially facilitate coherence, representing a potential upper bound on performance relative to fully novel confidential docu-ments. 
+
+# References 
+
+[1] Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Küttler, Mike Lewis, Wen-tau Yih, Tim Rocktäschel, Sebastian Riedel, and Douwe Kiela. Retrieval-augmented generation for knowledge-intensive nlp tasks. In Advances in Neural Information Processing Systems , 2020. [2] Gautier Izacard and Edouard Grave. Leveraging passage retrieval with generative models for open domain question answering. In EACL , 2021. [3] Darren Edge, Ha Trinh, Newman Cheng, Joshua Bradley, Alex Chao, Apurva Mody, Steven Truitt, and Jonathan Larson. From local to global: A graph rag approach to query-focused summarization. arXiv preprint arXiv:2404.16130 , 2024. [4] Constanza Fierro, Reinald Kim Amplayo, Fantine Huot, Nicola De Cao, Joshua Maynez, Shashi Narayan, and Mirella Lapata. Learning to plan and generate text with citations. arXiv preprint arXiv:2404.03381 , 2024. [5] Yijia Shao, Yucheng Jiang, Theodore A. Kanell, Peter Xu, Omar Khattab, and Monica S. Lam. Assisting in writing wikipedia-like articles from scratch with large language models. In Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics (NAACL) , pages 6252–6278, Mexico City, Mexico, 2024. Association for Computational Linguistics. [6] Weijia Shi, Sewon Min, Michihiro Yasunaga, et al. Replug: Retrieval-augmented black-box language models. 
+
+arXiv preprint arXiv:2301.12652 , 2023. [7] Woomin Song, Seunghyuk Oh, Sangwoo Mo, et al. Hierarchical context merging: Better long context understand-ing for pre-trained llms. arXiv preprint arXiv:2404.10308 , 2024. [8] Yilin Wen, Zifeng Wang, and Jimeng Sun. Mindmap: Knowledge graph prompting sparks graph of thoughts in large language models. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 10370–10388. Association for Computational Linguistics, 2024. [9] Kaiwen, Rui Wei, Dongsheng Shan, Jianzhong Zou, Bi Yang, Junnan Zhao, Jiang Zhu, and Zhong. Mirage: Scaling test-time inference with parallel graph-retrieval-augmented reasoning chains. arXiv preprint arXiv:2508.18260 ,2025. [10] Akari Asai, Zeqiu Wu, Yizhong Wang, Avirup Sil, and Hannaneh Hajishirzi. Self-rag: Learning to retrieve, generate, and critique through self-reflection. arXiv preprint arXiv:2310.11511 , 2023. [11] Sewon Min, Kalpesh Krishna, et al. Factscore: Fine-grained atomic evaluation of factual precision in long form text generation. In EMNLP , 2023. [12] Yuheng Zha, Yichi Yang, Ruichen Li, and Zhiting Hu. Alignscore: Evaluating factual consistency with a unified alignment function. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (ACL) , 2023. [13] Philippe Laban, Tobias Schnabel, Paul N. Bennett, and Marti A. Hearst. Summac: Re-visiting nli-based models for inconsistency detection in summarization. arXiv preprint arXiv:2111.09525 , 2021. [14] Internet Archive. Wayback machine. https://archive.org/web/ , 2024. Accessed: 2026-03-16. [15] Zejiang Shen, Kyle Lo, Lauren Yu, Nathan Dahlberg, Margo Schlanger, and Doug Downey. Multi-lexsum: Real-world summaries of civil rights lawsuits at multiple granularities. arXiv preprint arXiv:2206.10883 , 2022. [16] Albert Q. Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, et al. Mistral 7b. arXiv preprint arXiv:2310.06825 , 2023. [17] Meta AI. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 , 2024. [18] Qwen Team. Qwen2.5 technical report. arXiv preprint arXiv:2412.15115 , 2025. [19] Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric P. Xing, Ion Stoica, and Joseph E. Gonzalez. Judging llm-as-a-judge with mt-bench and chatbot arena. In Advances in Neural Information Processing Systems , 2023. [20] Stephen Robertson and Hugo Zaragoza. The probabilistic relevance framework: Bm25 and beyond. Foundations and Trends in Information Retrieval , 2009. 6RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback [21] Georgy Andryushchenko, Vladimir Ivanov, Vladimir Makharev, Elizaveta Tukhtina, and Aidar Valeev. Leveraging large language models in code question answering: Baselines and issues. arXiv preprint arXiv:2411.03012 , 2024. [22] Akari Asai, Zexuan Zhong, Danqi Chen, Pang Wei Koh, Luke Zettlemoyer, Hannaneh Hajishirzi, and Wen-tau Yih. Reliable, adaptable, and attributable language models with retrieval. arXiv preprint arXiv:2403.03187 , 2024. [23] Iz Beltagy, Matthew E. Peters, and Arman Cohan. Longformer: The long-document transformer. arXiv preprint arXiv:2004.05150 , 2020. [24] Amanda Bertsch, Uri Alon, Graham Neubig, and Matthew R. Gormley. Unlimiformer: Long-range transformers with unlimited length input. arXiv preprint arXiv:2305.01625 , 2023. [25] Junyi Bian, Xiaodi Huang, Hong Zhou, and Shanfeng Zhu. Gosum: Extractive summarization of long documents by reinforcement learning and graph organized discourse state. arXiv preprint arXiv:2211.10247 , 2023. [26] Bernd Bohnet, Vinh Tran, Pat Verga, Roee Aharoni, et al. Attributed question answering: Evaluation and modeling for attributed large language models. In Proceedings of EMNLP , 2022. [27] Yapei Chang, Kyle Lo, Tanya Goyal, and Mohit Iyyer. Booookscore: A systematic exploration of book-length summarization in the era of llms. In International Conference on Learning Representations , 2024. [28] Shouyuan Chen, Sherman Wong, Liangjian Chen, and Yuandong Tian. Extending context window of large language models via positional interpolation. arXiv preprint arXiv:2306.15595 , 2023. [29] Yukang Chen, Shengju Qian, Haotian Tang, Xin Lai, Zhijian Liu, Song Han, and Jiaya Jia. Longlora: Efficient fine-tuning of long-context large language models. arXiv preprint arXiv:2309.12307 , 2024. [30] Rewon Child, Scott Gray, Alec Radford, and Ilya Sutskever. Generating long sequences with sparse transformers. 
+
+arXiv preprint arXiv:1904.10509 , 2019. [31] Arman Cohan, Franck Dernoncourt, Doo Soon Kim, et al. A discourse-aware attention model for abstractive summarization of long documents. In NAACL-HLT , 2018. [32] Elias Frantar, Saleh Ashkboos, Torsten Hoefler, and Dan Alistarh. Gptq: Accurate post-training quantization for generative pre-trained transformers. arXiv preprint arXiv:2210.17323 , 2023. [33] Tianyu Gao, Howard Yen, Jiatong Yu, and Danqi Chen. Enabling large language models to generate text with citations. In EMNLP , 2023. [34] Nianlong Gu, Elliott Ash, and Richard Hahnloser. Memsum: Extractive summarization of long documents using multi-step episodic markov decision processes. In ACL , 2022. [35] Pengcheng He, Xiaodong Liu, Jianfeng Gao, and Weizhu Chen. Deberta: Decoding-enhanced bert with disentan-gled attention. arXiv preprint arXiv:2006.03654 , 2021. [36] Angelos Katharopoulos, Apoorv Vyas, Nikolaos Pappas, and François Fleuret. Transformers are rnns: Fast autoregressive transformers with linear attention. ICML , 2020. [37] Wojciech Kryscinski, Nazneen Rajani, Divyansh Agarwal, Caiming Xiong, and Dragomir Radev. Booksum: A collection of datasets for long-form narrative summarization. In Findings of EMNLP , 2022. [38] Tianle Li, Ge Zhang, Quy Duc Do, Xiang Yue, and Wenhu Chen. Long-context llms struggle with long in-context learning. arXiv preprint arXiv:2404.02060 , 2024. [39] Chin-Yew Lin. Rouge: A package for automatic evaluation of summaries. In ACL Workshop on Text Summarization ,2004. [40] Yang Liu and Mirella Lapata. Text summarization with pretrained encoders. In EMNLP , 2019. [41] Uri Shaham, Maor Ivgi, Avia Efrat, Jonathan Berant, and Omer Levy. Zeroscrolls: A zero-shot benchmark for long text understanding. In EMNLP Findings , 2023. [42] Shiyue Zhang, David Wan, and Mohit Bansal. Extractive is not faithful: An investigation of broad unfaithfulness problems in extractive summarization. In ACL , 2023. [43] Yushi Bai, Jiahao Ying, Yixin Cao, Xin Lv, Yuze He, et al. Benchmarking foundation models with language-model-as-an-examiner. Advances in Neural Information Processing Systems , 2023. [44] Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, et al. Lmsys-chat-1m: A large-scale real-world llm conversation dataset. arXiv preprint arXiv:2309.11998 , 2023. 7RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback 
+
+# A Prompt Templates for RH-RAG Agents 
+
+This appendix provides the full prompt templates for each agent in the RH-RAG pipeline. Each agent operates with a dedicated role-conditioned prompt injected with struc-tured context at inference time. The three agents—Planner, Writer, and Rewriter—perform structurally distinct func-tions and accordingly receive different contextual inputs. 
+
+A.1 Planner Agent Prompt 
+
+The Planner Agent analyzes the user query alongside Level-1 routing summaries to produce a structured generation plan before any text is written. Its three core functions are: (i) identifying the main objective of the query; (ii) constructing a logically ordered multi-section outline; and (iii) generating per-section retrieval anchors that link the high-level plan to Level-2 evidence chunks. 
+
+Planner Prompt: 
+
+“You are a document planning system. Task: Create a structured generation plan for a long-form docu-ment. Instructions: 1. Understand the query and determine: * objective * document type * required scope 2. Analyze routing summaries and identify: * major themes * important concepts * required evidence areas 3. Divide the document into logically ordered sections. Section Rules: * Each section should focus on one major idea * Avoid redundancy and overlapping sections * Ensure sections collectively cover the topic * Order sections logically For each section generate: * section_title: concise title * section_description: short explanation of what the section covers and why it exists * retrieval_anchor: list of keywords or short phrases useful for retrieval Retrieval Anchor Rules: * keywords / short phrases only * avoid generic terms * prefer entities, concepts, methods, terminology Output Rules: * Output ONLY the plan * No reasoning * No explanations Output Format: [{ “section_title”: “...”, “section_description”: “...”, “retrieval_anchor”: [“...”, “...”] }]” 
+
+A.2 Writer Agent Prompt 
+
+The Writer Agent generates document content section by section, conditioned on the structured outline, Level-2 re-trieved evidence, and the bounded coherence memory from prior sections. It is instructed to avoid introducing unsup-ported information and to maintain narrative continuity. 
+
+Writer Prompt: 
+
+“You are a technical writing system responsible for generat-ing ONE section of a larger document. Task: Generate the complete content for the current section. Rules: * Focus ONLY on the current section objective * Treat this section as ONE component of a larger document * Maintain continuity with previous sections without repeating them * Use retrieved evidence to support claims * Do not introduce unsupported information * If evidence is limited, remain concise rather than hallucinating Structure Requirements: * Use the section title as the heading * Produce a balanced section length * Aim for approximately similar depth and detail as other sections 
+
+8RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback 
+
+* Develop multiple ideas when evidence permits rather than stopping early * Use multiple paragraphs with logical progression * Do NOT generate introductions for the entire docu-ment * Do NOT generate conclusions, summaries, or closing remarks unless explicitly required by the section descrip-tion * Do NOT discuss future sections Style Requirements: * Clear and information dense * Avoid filler and repetition * Write naturally as part of a continuous document * Do not mention retrieval, evidence, memories, or summaries Output ONLY the section text” 
+
+A.3 Rewriter Agent Prompt 
+
+The Rewriter Agent is invoked when a section fails the coverage threshold. It receives the original section, a list of unsupported or contradicted claims identified by the Checker Agent, and newly retrieved evidence passages. The agent corrects only the failed claims while preserving the surrounding paragraph structure and meaning. 
+
+Rewriter Prompt: 
+
+“You are a factual revision system. Task: Revise the section so that unsupported statements are cor-rected, replaced, or removed using the provided evidence. Rules: * Modify ONLY statements related to unsupported claims * Preserve original wording, structure, flow, and style whenever possible * Use retrieved evidence to support revisions * Do not introduce unsupported information * If evidence is insufficient, remove or weaken unsup-ported claims rather than inventing facts * Avoid unnecessary rewriting * Maintain coherence after edits Output Requirements: * Return the complete revised section * Do not explain changes * Do not output reasoning * Output ONLY the revised section” 
+
+# B Dataset Details 
+
+The evaluation dataset covers three distinct document do-mains to assess RH-RAG across narrative understanding, factual grounding, and domain-specific reasoning. 
+
+B.1 Literary Documents 
+
+Public-domain books spanning science fiction, classic liter-ature, and philosophy, sourced from Internet Archive [14]. These test long-range coherence, narrative structure, and thematic understanding. Titles include: The Time Machine ,
+
+The Invisible Man , The War of the Worlds (H.G. Wells); 
+
+Flatland (Abbott); Twenty Thousand Leagues Under the Sea , Journey to the Center of the Earth , From the Earth to the Moon (Jules Verne); Frankenstein (Shelley); The Picture of Dorian Gray (Wilde); The Turn of the Screw 
+
+(James); Great Expectations , David Copperfield (Dickens); 
+
+Gulliver’s Travels (Swift); Alice’s Adventures in Wonder-land (Carroll); Meditations (Aurelius); and The Republic 
+
+(Plato). 
+
+Note on potential data contamination: Because these are widely distributed pre-training texts, the underlying LLMs may possess latent parametric knowledge of their narratives. While our verification metric strictly measures grounding against retrieved external evidence, this prior fa-miliarity could facilitate narrative coherence. Performance on these public texts may therefore represent an upper bound relative to entirely novel confidential documents. 
+
+B.2 Financial Documents 
+
+Real-world annual and economic reports with dense nu-merical data, structured analysis, and domain-specific ter-minology, used to evaluate precise factual retrieval and numerical grounding. Documents include: Lenskart An-nual Report 2024, Reliance Industries Annual Report 2024, TCS Annual Report 2024, Infosys Annual Report 2024, SBI Annual Report 2024, World Bank Economic Report, Goldman Sachs Outlook Report, and the Lenskart IPO Report. 
+
+B.3 Legal Documents 
+
+Documents from the Multi-LexSum dataset [15], compris-ing U.S. federal court case materials with highly structured argumentation, legal judgments, and case details. These evaluate domain-specific reasoning under strict factual con-sistency requirements. 9RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback 
+
+B.4 Query Construction 
+
+Queries include both general queries applicable across multiple documents (e.g., “Summarize the key ideas pre-sented in the document,” “Identify the main themes or arguments,” “Extract the most important factual informa-tion”) and document-specific queries targeting particular sections or topics. Example document-specific queries for 
+
+The Invisible Man : “Explain the character of Griffin, the Invisible Man” and “Explain in detail the plan of enforce-ment of the Reign of Terror by Griffin.” 
+
+# C Extended Ablation Study 
+
+C.1 Contribution of Individual Pipeline Stages 
+
+To understand the marginal contribution of each compo-nent, we compare four progressive configurations on the financial domain using the Mistral-7B backbone: • Hierarchical RAG: two-level retrieval, single-pass generation. • + Planner Agent: adds structured outline genera-tion before writing. • + Writer Agent (bounded memory): adds section-wise generation with coherence memory. • Full RH-RAG: adds Checker Agent with attesta-tion feedback loop. Each stage provides incremental gains in SUMMAC and AlignScore. The Planner Agent contributes the largest improvement to win rate (improving document-level struc-tural coherence), while the Checker Agent yields the largest individual gain in AlignScore (approximately +4.3 points over the Writer-only ablation), confirming the non-redundant contribution of each architectural component. 
+
+C.2 Threshold Sensitivity and Revision Overhead 
+
+As reported in Table ?? of the main paper, increasing τ
+
+monotonically improves both SUMMAC and AlignScore, but marginal gains diminish above τ =0 .8 while revision it-erations increase. At τ =0 .9, domain-specific terminology (particularly in legal documents) causes the NLI model to reject valid claims, leading to unnecessary revision cycles that occasionally degrade fluency without improving fac-tual accuracy. The τ =0 .8 operating point provides the best faithfulness–efficiency trade-off across all three domains. These observations motivate domain-adaptive threshold scheduling : applying a lower threshold for narrative do-mains (where NLI reliability is higher) and a stricter thresh-old for technical domains (where evidence alignment is more critical). This represents a concrete direction for future work. 
+
+C.3 Impact of Coherence Memory Design 
+
+We ablate the bounded coherence memory by replacing it with: (i) no prior context, (ii) the full previously generated text (unbounded), and (iii) the proposed dual-component memory (local + global summary). The unbounded setting degrades performance on longer documents due to context saturation exceeding the effective attention window of the 7B model. The no-context setting leads to progressive nar-rative drift between sections, with characters, arguments, or established facts from early sections being forgotten or contradicted. The dual-component memory achieves the best balance, maintaining both local and global continuity without exceeding practical context limits. 
+
+# D Sample Output 
+
+Reference document: Rich Dad and Poor Dad by Robert Kiyosaki 
+
+Prompt: how to become financially independent? 
+
+LLM Used: Mistral-7B-Instruct-v0.1 
+
+Output: A Comprehensive Guide to Becoming Financially Inde-pendent Introduction 
+
+Becoming financially independent is a goal that many peo-ple strive for, but few achieve. It requires a combination of financial education, discipline, and smart investment strategies. In this document, we will provide a comprehen-sive guide to becoming financially independent, covering essential topics such as cash flow, people, and personal time. Cash flow is the lifeblood of any business or individual. It is essential to manage your cash flow effectively to en-sure that you have enough money coming in to cover your expenses. This includes paying yourself first, which is a crucial habit to develop. By prioritizing your own finan-cial needs, you can ensure that you are always in a good financial position. People are another important aspect of becoming finan-cially independent. Surrounding yourself with the right people can make all the difference in achieving your finan-cial goals. This includes mentors, advisors, and colleagues who can provide guidance and support. Personal time is also essential for achieving financial inde-pendence. It is important to take time for yourself to relax, recharge, and pursue your passions. This can help you stay motivated and focused on your financial goals. Mastering self-discipline is key to achieving financial in-dependence. This includes developing good habits such 10 RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback as saving, investing, and managing your cash flow effec-tively. It also involves being disciplined with your time and energy, as well as your emotions and thoughts. In conclusion, becoming financially independent requires a combination of financial education, discipline, and smart investment strategies. By focusing on cash flow, people, and personal time, and mastering self-discipline, you can achieve your financial goals and achieve financial indepen-dence. 
+
+Financial Education 
+
+Financial education is a crucial aspect of becoming finan-cially independent. It is often overlooked in traditional education, which tends to focus solely on physical, emo-tional, and spiritual growth. However, financial genius exists but is suppressed by cultural education. To achieve financial independence, it is essential to under-stand the importance of cash flow, people, and personal time. Prioritizing your own financial needs is crucial for ef-fective cash flow management. Surrounding yourself with the right people can provide guidance and support. Tak-ing time for yourself is important for achieving financial independence and staying motivated. Mastering self-discipline is key to achieving financial in-dependence and financial goals. It requires good habits and emotional control. Without emotional and spiritual development, it is challenging to make a permanent change in life. For example, it rarely works to tell an overweight person, “Just eat less and exercise more.” Diet and exer-cise may make sense mentally, but most people who are overweight do not eat because they are hungry. They eat to feed an emptiness in their emotions and their soul. To become financially independent, it is important to have a long memory of the document’s comprehensive guide to achieving financial independence. Cash flow, people, and personal time are essential topics that will be covered. Prioritizing your own financial needs is crucial for effec-tive cash flow management. Surrounding yourself with the right people can provide guidance and support. Tak-ing time for yourself is important for achieving financial independence and staying motivated. In contrast, a short memory of the document’s guide to becoming financially independent is not enough. Cash flow is essential for financial independence. Prioritizing your own financial needs is crucial for effective cash flow management. Surrounding yourself with the right people can provide guidance and support. Taking time for your-self to relax and pursue passions is important for achieving financial independence and staying motivated. Mastering self-discipline through good habits and emotional control is key to achieving financial independence and financial goals. 
+
+Paying Yourself First 
+
+Paying yourself first is a financial strategy that can lead to financial freedom and success. By prioritizing your own financial needs, you can avoid creditor control and increase your motivation to work harder and smarter. One of the benefits of paying yourself first is financial motivation. When you prioritize your own financial needs, you create a sense of urgency to work harder and earn more money. This pressure can force you to seek out other forms of income, such as starting a side business or investing in the stock market. Another benefit of paying yourself first is avoiding credi-tor control. When you pay yourself first, you reduce the amount of money you owe to creditors. This can help you avoid high-interest rates and other penalties, which can make it harder to get out of debt. Paying yourself first can also lead to financial freedom. By prioritizing your own financial needs, you can create a plan to achieve your financial goals, such as buying a home or starting a business. This can help you break free from the cycle of debt and build a more secure financial future. To implement the pay yourself first strategy, you should start by setting a financial goal. This could be a specific amount of money you want to save or a specific financial goal you want to achieve, such as buying a home or starting a business. Next, you should create a budget that prioritizes your own financial needs. This means setting aside a portion of your income each month for savings and investments, before paying for anything else. Finally, you should monitor your progress and adjust your budget as needed. This means regularly reviewing your financial situation and making adjustments to your budget to ensure you are on track to achieve your financial goals. In conclusion, paying yourself first is a powerful financial strategy that can lead to financial freedom and success. By prioritizing your own financial needs, you can avoid creditor control, increase your motivation to work harder and earn more money, and create a plan to achieve your financial goals. By implementing the pay yourself first strategy, you can break free from the cycle of debt and build a more secure financial future. 
+
+The CASHFLOW Quadrant 
+
+The CASHFLOW Quadrant is a tool used to help indi-viduals understand their financial situation and make in-formed decisions. It divides people into four quadrants based on where their cash comes from: E (Employee), S (Self-employed), B (Business Owner), and I (Investor). Employees and self-employed individuals reside on the left side of the CASHFLOW Quadrant, while those on the right side receive their cash from businesses they own or investments they own. 11 RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback Employees make their business owner or the shareholders rich, not themselves. They work for the company, and their efforts and success will help provide for the owner’s success and retirement. On the other hand, self-employed individuals work for themselves and have more control over their financial situation. However, they also bear more responsibility and risk. Business owners and investors, on the other hand, receive their cash from businesses they own or investments they own. They have more control over their financial situation and can potentially achieve financial independence. To achieve financial independence, it is crucial to priori-tize your own financial needs and manage your cash flow effectively. Financial education is also crucial, as it can provide guidance and support in achieving financial inde-pendence. Surrounding yourself with the right people can also provide valuable insights and support. Taking time for yourself is also important for achieving financial independence and staying motivated. Mastering self-discipline through good habits and emotional control is key to achieving financial independence and financial goals. One financial strategy that can lead to financial freedom and success is paying yourself first. This involves setting a financial goal, creating a budget that prioritizes savings and investments, and monitoring progress. By prioritizing your own financial needs, you can avoid creditor control and achieve financial freedom. 
+
+Income Differences and Investment Skills 
+
+In order to achieve financial independence, it is important to understand the concept of income differences and in-vestment skills. Traditional education often neglects these topics, but they can be learned through experiential learn-ing and CASHFLOW games. One of the reasons why I became interested in these topics was after attending a personal-development seminar. This seminar rekindled my love of learning, but not the type of learning that is taught in school. I began to ask questions such as: • How can I learn in a hands-on environment and accelerate my learning curve? • How can I maximize my potential by learning from those who practice what they preach? • How can I gain exclusive access to top-tier ex-perts? The more I studied, the more curious I became about tra-ditional education. I began to see that it often neglects important topics such as income differences and invest-ment skills. One of the key tools for understanding financial situa-tion and making informed decisions is the CASHFLOW Quadrant. This tool divides people into four quadrants based on where their cash comes from: E (Employee), S (Self-employed), B (Business Owner), and I (Investor). Employees and self-employed individuals reside on the left side of the CASHFLOW Quadrant, while those on the right side receive their cash from businesses they own or investments they own. Financial education is crucial for achieving financial in-dependence. Cash flow, people, and personal time are essential topics for financial independence. Prioritizing your own financial needs is crucial for effective cash flow management. Surrounding yourself with the right people can provide guidance and support. Taking time for your-self is important for achieving financial independence and staying motivated. One example of a synergy of skills is that of a young writer for the newspaper. If she diligently learned the skills of sales and marketing, her income would jump dramatically. If I were her, I would take some courses in advertising copywriting as well as sales. Then, instead of working at the newspaper, I would seek a job at an advertising agency. Even if it were a cut in pay, she would learn how to communicate in short-cuts that are used in successful advertising. In conclusion, understanding income differences and in-vestment skills is crucial for achieving financial indepen-dence. Traditional education often neglects these topics, but they can be learned through experiential learning and CASHFLOW games. Financial education, cash flow, peo-ple, and personal time are essential topics for financial independence. Prioritizing your own financial needs, sur-rounding yourself with the right people, taking time for yourself, and mastering self-discipline through good habits and emotional control are key to achieving financial inde-pendence and financial goals. 
+
+Avoiding Consumer Debt 
+
+Becoming financially independent is a goal that many peo-ple strive for, but few achieve. One of the most important steps towards achieving financial independence is avoiding consumer debt. Consumer debt can be a major obstacle to building wealth and achieving financial freedom. When you are in debt, you are spending more money than you are earning. This can lead to a cycle of debt that can be difficult to break. The more debt you accumulate, the more interest you will have to pay, and the longer it will take to pay off your debts. On the other hand, when you focus on building assets, you are investing in your future. Assets are things that generate income, such as stocks, real estate, and businesses. When you have a diversified portfolio of assets, you can gen-erate passive income that can help you achieve financial independence. 12 RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback One of the best ways to avoid consumer debt is to prior-itize your own financial needs over your expenses. This means setting aside money each month for savings and investments, even if it means cutting back on discretionary spending. When you have a solid financial foundation, you will be better equipped to handle unexpected expenses and emergencies. Another important aspect of avoiding consumer debt is surrounding yourself with the right people. This means seeking out mentors and advisors who can provide guid-ance and support on your journey towards financial inde-pendence. By surrounding yourself with people who are knowledgeable and experienced in building wealth, you can learn from their mistakes and successes and avoid making the same mistakes yourself. Finally, taking time for yourself is crucial for achieving financial independence. When you are constantly working and striving for success, it can be easy to neglect your own needs and well-being. However, taking time for yourself to rest, recharge, and reflect can help you stay motivated and focused on your goals. In conclusion, avoiding consumer debt is a key step to-wards achieving financial independence. By prioritizing your own financial needs, surrounding yourself with the right people, and taking time for yourself, you can build a solid foundation for financial success and achieve the financial freedom you desire. 
+
+Mastering Self-Discipline 
+
+Achieving financial success requires more than just hard work and dedication. It also requires the ability to con-trol one’s behavior and emotions in order to make sound financial decisions. This is where self-discipline comes in. Self-discipline is the practice of controlling one’s behavior and emotions in order to achieve a goal. It is a crucial skill for achieving financial independence, as it allows individu-als to make decisions that are in line with their long-term financial goals, rather than being swayed by short-term desires or impulses. One way to develop self-discipline is through daily choices. This means making small, consistent decisions that align with your financial goals, such as saving a certain amount each month or sticking to a budget. Over time, these small choices can add up and lead to significant growth. Another way to develop self-discipline is through con-fidence in up/down markets. This means being able to remain calm and focused during times of economic uncer-tainty, and making decisions based on long-term financial goals rather than short-term market fluctuations. It is important to note that self-discipline is not something that is developed overnight. It is a practice that requires time and effort to develop. However, the rewards are well worth it, as mastering self-discipline can lead to significant financial growth and success. In conclusion, mastering self-discipline is a crucial skill for achieving financial independence. It allows individ-uals to make sound financial decisions, remain focused during times of economic uncertainty, and develop good habits and emotional control. By developing self-discipline through daily choices and confidence in up/down markets, individuals can achieve their financial goals and build a better life. 
+
+Generosity and Financial Intelligence 
+
+Achieving financial independence requires a combination of hard work, dedication, and self-discipline. However, it is not just about the numbers, but also about the mindset and approach towards money. In this section, we will explore the importance of generosity and financial intelligence in achieving financial freedom and success. 
+
+Giving First 
+
+The first step towards financial independence is to develop a generous mindset. It is not just about giving money, but also about giving time, love, and support to others. When you give first, it fosters reciprocity, and people are more likely to help you in return. This principle is not new, as my dad always said, “When I have some extra money, I’ll give it.” However, he worked harder to draw more money in, rather than focusing on the most important law of money: “Give, and you shall receive.” Instead of believing in “Receive, and then you give,” I learned the power of “Give, and you shall receive.” I have seen this principle in action many times, and it has always worked for me. I want sales, so I help someone else sell something, and sales come to me. I want contacts, and I help someone else get contacts. Like magic, contacts come to me. I heard a saying years ago that went: “God does not need to receive, but humans need to give.” 
+
+The Indian Giver 
+
+One of the most powerful examples of generosity is the Indian giver. When the first European settlers came to America, they were taken aback by a cultural practice some American Indians had. For example, if a settler was cold, the Indian would give the person a blanket. Mistak-ing it for a gift, the settler was often offended when the Indian asked for it back. If I could leave one single idea with you, it is that idea. Whenever you feel short or in need of something, give what you want first and it will come back in buckets. That is true for money, a smile, love, or friendship. I know it is often the last thing a person may want to do, but it has always worked for me. I trust that the principle of reci-procity is true, and I give what I want. I want money, so I give money, and it comes back in multiples. I want sales, so I help someone else sell something, and sales come to me. I want contacts, and I help someone else get contacts. Like magic, contacts come to me. 13 RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback 
+
+Keeping the Long View 
+
+Developing self-discipline through daily choices and confi-dence in up/down markets is essential for achieving finan-cial independence. Mastering self-discipline allows indi-viduals to make sound financial decisions, remain focused during economic uncertainty, and develop good habits and emotional control. Financial education is crucial for achiev-ing financial independence. Cash flow, people, and per-sonal time are essential topics for financial independence. Avoiding consumer debt is a crucial step towards achiev-ing financial independence. Prioritizing your own financial needs, surrounding yourself with the right people, and tak-ing time for yourself are essential for achieving financial independence. 
+
+The Core of Self-Discipline 
+
+Self-discipline is the practice of controlling one’s behavior and emotions to achieve a goal. It is crucial for achieving financial independence and making sound financial deci-sions. Developing self-discipline involves daily choices and confidence in up/down markets. It requires time and effort to develop, but the rewards are significant financial growth and success. Mastering self-discipline allows indi-viduals to make sound financial decisions, remain focused during economic uncertainty, and develop good habits and emotional control. In conclusion, achieving financial independence requires a combination of hard work, dedication, and self-discipline. However, it is not just about the numbers, but also about the mindset and approach towards money. Developing a generous mindset, mastering self-discipline, and prioritiz-ing financial education are essential for achieving financial independence. Remember, giving first fosters reciprocity, and people are more likely to help you in return. 
+
+Non-Traditional Learning 
+
+Achieving financial independence is a goal that many peo-ple aspire to, but it can be difficult to achieve. One of the most important aspects of achieving financial freedom is non-traditional learning. By understanding the power of money and developing self-awareness, individuals can take control of their financial future and achieve success. Traditional education focuses on preparing young people for the workforce by developing scholastic skills. While this is important, it is not the only path to success. Many people find that non-traditional learning, such as self-study and entrepreneurship, is the key to achieving financial in-dependence. One of the most important aspects of non-traditional learn-ing is self-awareness. By understanding how our thoughts and beliefs shape our lives, we can take control of our financial future. This means being aware of our spend-ing habits, our attitudes towards money, and our financial goals. Another important aspect of non-traditional learning is un-derstanding the power of money. Money is a powerful tool that can be used to build wealth, achieve financial inde-pendence, and create a better life. By understanding how money works and how to use it effectively, individuals can take control of their financial future. Financial genius exists, but it is often suppressed by cul-tural education. Many people are taught that money is something to be feared, rather than something to be em-braced. This can lead to financial stress, debt, and a lack of financial freedom. Non-traditional learning can help individuals overcome these limitations and achieve financial independence. By developing self-awareness, understanding the power of money, and embracing entrepreneurship, individuals can take control of their financial future and achieve success. In conclusion, non-traditional learning is an essential as-pect of achieving financial independence. By developing self-awareness, understanding the power of money, and embracing entrepreneurship, individuals can take control of their financial future and achieve success. 
+
+Four Income Types 
+
+The path to financial independence involves understanding the different types of income available. The four income types are E (Employee), S (Self-employed), B (Business Owner), and I (Investor). Each type of income has its own set of benefits and drawbacks. 
+
+Employees 
+
+Employees work for someone else and receive a paycheck. They make their business owner or the shareholders rich, not themselves. The effort and success of employees help provide for the owner’s success and retirement. However, employees have limited control over their income and are subject to the whims of their employer. 
+
+Self-Employed 
+
+Self-employed individuals work for themselves and have control over their income. They have the freedom to choose their work and clients. However, self-employed individ-uals are also responsible for their own taxes and benefits. They may also face the risk of not having a steady income. 
+
+Business Owners 
+
+Business owners own their own businesses and have con-trol over their income. They have the potential to earn more than employees and self-employed individuals. How-ever, business ownership also comes with risks and respon-sibilities. Business owners must manage their finances, employees, and customers. 
+
+Investors 
+
+Investors earn income from their investments. They may invest in stocks, bonds, real estate, or other assets. In-vestors have the potential to earn passive income, which can provide financial freedom. However, investing also comes with risks and requires knowledge and skill. 14 RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback 
+
+Passive Income 
+
+Passive income is income earned without actively working. It can be earned through investments, rental properties, or other means. Passive income enables financial freedom by providing a steady stream of income without the need for constant work. 
+
+Understanding Income Differences and Investment Skills 
+
+Understanding the differences between the four income types is essential for achieving financial independence. Employees, self-employed individuals, business owners, and investors each have their own set of benefits and draw-backs. Investment skills are also essential for achieving financial independence. Investing in the right assets can provide passive income and financial freedom. However, investing also requires knowledge and skill. 
+
+Non-Traditional Learning 
+
+Non-traditional learning is an essential aspect of achieving financial independence. Self-awareness, understanding the power of money, and embracing entrepreneurship are key aspects of non-traditional learning. Generosity is also an important aspect of achieving financial independence, as it fosters reciprocity and can lead to financial success. The Indian Giver is a powerful example of generosity, as it demonstrates the principle of giving first and receiving in return. Self-discipline is also crucial for achieving finan-cial independence, as it allows individuals to make sound financial decisions and develop good habits and emotional control. 
+
+Financial Education 
+
+Financial education is essential for achieving financial in-dependence. It provides individuals with the knowledge and skills needed to make informed decisions. Financial education covers topics such as budgeting, investing, and debt management. 
+
+Prioritizing Financial Independence 
+
+Prioritizing financial independence requires individuals to prioritize their own financial needs, surround themselves with the right people, and take time for themselves. Finan-cial independence requires a combination of hard work, dedication, and self-discipline. 
+
+Avoiding Consumer Debt 
+
+Avoiding consumer debt is a crucial step towards achieving financial independence. Consumer debt can quickly accu-mulate and become a burden on an individual’s finances. Avoiding consumer debt requires discipline and a focus on saving and investing. 
+
+The CASHFLOW Quadrant 
+
+The CASHFLOW Quadrant is a tool used to understand financial situations and make informed decisions. It is writ-ten about the core differences of the four types of people who make up the world of business. The CASHFLOW Quadrant helps individuals understand their financial situa-tion and make informed decisions about their future. 
+
+Financial Independence Requires a Combination of Hard Work, Dedication, and Self-Discipline 
+
+Achieving financial independence requires a combination of hard work, dedication, and self-discipline. It requires individuals to understand their financial situation, develop good habits, and make sound financial decisions. Finan-cial independence is not an overnight achievement, but rather a long-term goal that requires consistent effort and dedication. 
+
+Author’s Journey 
+
+The journey to financial independence is not always straightforward, but with the right mindset and knowl-edge, it is possible to achieve financial freedom. In this section, we will explore the author’s journey to financial independence and the principles that guided them along the way. The author’s journey began with a desire to learn and make changes. They recognized that unlike school, there was no requirement for past academic success. Instead, all that was asked was a sincere desire to learn and make changes. This realization inspired the author to embrace non-traditional learning and to develop a self-awareness of their own financial situation. The author’s journey was not without its challenges. They made mistakes in different financial situations and learned from them, using play money. This approach allowed the author to develop a deeper understanding of the four income types: E (Employee), S (Self-employed), B (Busi-ness Owner), and I (Investor). Each type has its own set of benefits and drawbacks, and understanding these differ-ences is essential for achieving financial independence. The author also recognized the importance of generosity in achieving financial success. They were inspired by the Indian giver, who demonstrated the power of giving and the potential for reciprocity. This realization led the au-thor to develop a generous mindset and to prioritize their own financial needs, surrounding themselves with the right people, and taking time for themselves. The author’s journey was not just about financial indepen-dence, but also about personal growth and development. They recognized that developing a generous mindset and mastering self-discipline were essential for achieving fi-nancial independence. They also prioritized financial ed-ucation, cash flow, people, and personal time as essential topics for achieving financial independence. The author’s journey to financial independence was not an overnight achievement. It required hard work, dedication, and self-discipline. However, they remained committed to their goals and were willing to take risks and make changes to achieve financial freedom. 15 RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback In conclusion, the author’s journey to financial indepen-dence is a testament to the power of non-traditional learn-ing, generosity, and self-discipline. By embracing these principles and prioritizing their own financial needs, the author was able to achieve financial independence and personal growth. 
+
+Conclusion 
+
+In conclusion, becoming financially independent is a jour-ney that requires a combination of knowledge, skills, and discipline. It is not always straightforward, but with the right mindset and information, it is possible to achieve financial freedom. The author’s journey began with a desire to learn and make changes. They recognized that unlike school, there was no requirement for past academic success. They made mistakes in different financial situations and learned from them, using play money. They also recognized the im-portance of generosity in achieving financial success and developed a generous mindset. The journey to financial independence is not just about financial independence but also about personal growth and development. It requires prioritizing financial education, cash flow, people, and personal time as essential topics. It requires hard work, dedication, and self-discipline to achieve financial freedom. The CASHFLOW Quadrant is a tool used to understand financial situations and make informed decisions. It is essential to understand the differences between the four in-come types, E (Employee), S (Self-employed), B (Business Owner), and I (Investor), and their benefits and drawbacks. Avoiding consumer debt is a crucial step towards achieving financial independence. Non-traditional learning, includ-ing self-awareness, understanding the power of money, and embracing entrepreneurship, is essential for achieving financial independence. In summary, becoming financially independent requires a combination of knowledge, skills, and discipline. It is essential to prioritize financial education, cash flow, peo-ple, and personal time as essential topics. It requires hard work, dedication, and self-discipline to achieve financial freedom. 
+
+Generated Plan: 
+
+1. Section Title: Introduction 
+
+Section Description: This document provides a comprehensive guide to becoming financially independent. It covers essential financial educa-tion, paying yourself first, understanding income differences and investment skills, avoiding con-sumer debt, and mastering self-discipline. The document also emphasizes the importance of gen-erosity, financial intelligence, and non-traditional learning. 
+
+Retrieval Anchors: financial education, pay-ing yourself first, income differences, investment skills, consumer debt, self-discipline, generosity, financial intelligence, non-traditional learning. 2. Section Title: Financial Education 
+
+Section Description: This section discusses the importance of financial education in avoiding ig-norance’s consequences. It explains how tradi-tional education neglects physical, emotional, and spiritual growth, and how financial genius exists but is suppressed by cultural education. 
+
+Retrieval Anchors: financial education, tra-ditional education, physical growth, emotional growth, spiritual growth, financial genius. 3. Section Title: Paying Yourself First 
+
+Section Description: This section highlights the benefits of paying yourself first, including finan-cial motivation and avoiding creditor control. It explains how this practice can lead to financial freedom and success. 
+
+Retrieval Anchors: paying yourself first, finan-cial motivation, creditor control, financial free-dom, financial success. 4. Section Title: CASHFLOW Quadrant 
+
+Section Description: This section introduces the CASHFLOW Quadrant and explains how it can help individuals understand their financial situa-tion and make informed decisions. It covers the four quadrants: E (employee), S (self-employed), B (business), and I (investor). 
+
+Retrieval Anchors: CASHFLOW Quadrant, E (employee), S (self-employed), B (business), I (investor). 5. Section Title: Income Differences and Invest-ment Skills 
+
+Section Description: This section discusses the importance of understanding income differences and investment skills in achieving financial free-dom. It explains how traditional education ne-glects these topics and how they can be learned through experiential learning and CASHFLOW games. 
+
+Retrieval Anchors: income differences, invest-ment skills, traditional education, experiential learning, CASHFLOW games. 6. Section Title: Avoiding Consumer Debt 
+
+Section Description: This section emphasizes the importance of avoiding consumer debt and prioritizing assets over expenses. It explains how this practice can lead to financial freedom and success. 
+
+Retrieval Anchors: consumer debt, assets, ex-penses, financial freedom, financial success. 16 RH-RAG: Structured Long-Form Generation with Hierarchical Retrieval and Verification Feedback 7. Section Title: Mastering Self-Discipline 
+
+Section Description: This section discusses the importance of mastering self-discipline in achiev-ing financial success. It explains how this practice can lead to significant growth and how it can be developed through daily choices and confidence in up/down markets. 
+
+Retrieval Anchors: self-discipline, significant growth, daily choices, confidence, up/down mar-kets. 8. Section Title: Generosity and Financial Intelli-gence 
+
+Section Description: This section emphasizes the importance of generosity and financial intelli-gence in achieving financial freedom and success. It explains how giving first fosters reciprocity and how creating income involves making money work for you, not working for money. 
+
+Retrieval Anchors: generosity, financial intelli-gence, reciprocity, creating income, money work. 9. Section Title: Non-Traditional Learning 
+
+Section Description: This section discusses the importance of non-traditional learning in achiev-ing financial freedom and success. It explains how self-awareness and understanding money’s power can lead to financial success and how fi-nancial genius exists but is suppressed by cultural education. 
+
+Retrieval Anchors: non-traditional learning, self-awareness, money’s power, financial genius, cultural education. 10. Section Title: Four Income Types 
+
+Section Description: This section explains the four income types: E (employee), S (self-employed), B (business), and I (investor). It dis-cusses how converting to passive income enables financial freedom and how understanding income differences and investment skills are essential for achieving this goal. 
+
+Retrieval Anchors: four income types, E (em-ployee), S (self-employed), B (business), I (in-vestor), passive income, income differences, in-vestment skills. 11. Section Title: Author’s Journey 
+
+Section Description: This section provides an example of how the principles outlined in the doc-ument can be applied in real life. It tells the story of the author’s journey to financial freedom and success. 
+
+Retrieval Anchors: author’s journey, financial freedom, success. 12. Section Title: Conclusion 
+
+Section Description: This section summarizes the key points of the document and emphasizes the importance of becoming financially indepen-dent. It encourages readers to take action and apply the principles outlined in the document. 
+
+Retrieval Anchors: conclusion, financial inde-pendence, action. 17

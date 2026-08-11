@@ -1,0 +1,581 @@
+Title: HPFA: Hypergraph-Based Paired Failure Attribution for LLM Reasoning
+
+URL Source: https://arxiv.org/pdf/2608.02026v1
+
+Published Time: Tue, 04 Aug 2026 02:48:31 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+Published as a conference paper at COLM 2026 
+
+# HPFA: Hypergraph-Based Paired Failure Attribution for LLM Reasoning 
+
+Runchuan Zhu 1* , Hongbin Lai 2* , Bowen Jiang 2, Junrui Zhang 1,Zhangheng Li 3, Ostap Kilbasovych 4, Junyuan Hong 1† 
+
+> 1
+
+National University of Singapore, 2Peking University, 3University of Texas at Austin, 
+
+> 4
+
+Univ. Bretagne Sud; Univ. of Luxembourg; EMJM in Cybersecurity (CYBERUS) 
+
+> *
+
+Equal contribution. †Corresponding author. 
+
+# zhurunchuan0828@gmail.com; jyhong@nus.edu.sg 
+
+ Code: https://github.com/costa-nus/COLM26_HPFA 
+
+# Abstract 
+
+Reflection is a powerful mechanism for LLM reasoning, yet its effectiveness hinges on accurately attributing failures to specific reasoning steps, a capa-bility that current models notably lack. Existing failure attribution methods either require expensive step-by-step counterfactual testing that scales poorly with trajectory length, or treat reasoning traces as flat sequences that ignore the inherent non-linear logical dependencies. We propose a hypergraph-based paired failure attribution (HPFA) framework that at-tributes the failure root cause by comparing the hyperedges of the targeted failure reasoning path against a reference successful path. By reducing the search space, our method efficiently localizes root causes and enables scalable synthesis of attribution data for training a lightweight attributor model via supervised fine-tuning and reinforcement learning. Experiments on mathematical reasoning and agentic coding tasks demonstrate that HPFA can dramatically increase attribution accuracy and efficiency, and the trained attributor consistently improves reasoning accuracy at test time, outperforming baselines that lack graph structure or paired analysis. 
+
+# 1 Introduction 
+
+Large language models (LLMs) have demonstrated remarkable capabilities in complex rea-soning tasks, from mathematical problem solving to multi-step agent decision-making (Wei et al., 2022; OpenAI, 2024). A key enabler of these advances is reflective reasoning : given execution outcomes, an LLM revisits the reasoning trace, identifies potential mistakes, and iteratively refines its output (Shinn et al., 2023; Madaan et al., 2023; Yin & Wang, 2025a; Ding et al., 2026). The capability is fundamental to optimize LLM systems (Yuksekgonul et al., 2025; Yin & Wang, 2025b), build complex compound agentic systems (Agrawal et al., 2026), or optimize formal programs for robots (Yang et al., 2026). However, effective reflective reasoning critically depends on failure attribution : localizing the intermediate step that is the root cause of downstream failures . Recent evidence shows that LLMs are surprisingly poor at locating their own reasoning errors, even though they can correct mistakes once the error location is provided (Tyen et al., 2024). This limitation makes failed reasoning hard to explain and debug, especially in high-stakes settings where understanding the failure cause is essential for trust and safety (Qu & Färber, 2026; Braitsch et al., 2026). Zhang et al. (2025b) defined failure attribution in multi-agent systems to identify the failure cause without relying on the model’s own introspective judgment. They also introduced the Who&When benchmark, showing that existing LLMs have limited ability to localize failure points. A growing body of work has attempted to tackle this problem. One line uses taxonomy-guided prompting to analyze a failed trajectory, identify a critical step, and generate correc-1arXiv:2608.02026v1 [cs.AI] 3 Aug 2026 Published as a conference paper at COLM 2026 Root Cause Localization    
+
+> Stage 1: Paired Trajectory Collection
+> Model
+> Success Traj. Failure Traj.
+> Stage 2: Dependency Hypergraph Construction
+> 21233...
+> 1...
+> Success Traj.
+> Semantic Alignment Atomic decomposition Step Sets Dependency Hypergraph
+> Stage 3: Iteratively Root Cause Localization
+> Possible Root Cause
+
+Attributor        
+
+> Attributor Training
+> Data Source MATH GSM8k Kodcode MBPP
+> Model Attributor SFT GRPO
+> Test-Time Reasoning with Attributor
+> > Threshold?
+> Failure Traj.
+> Confidence
+> Query
+> Query
+> Yes No
+> Trainset Root Cause Localization
+> Input: <Query>, <Failed Traj.> Output:
+> ·Error Step: xxx
+> ·Error Type: xxx
+> ·Error Content: xxx
+> Re-Rollout
+> Stop at success New Traj. Attributor
+
+Figure 1: Through paired reasoning trajectory generation and hypergraph construction, HPFA localizes root causes in failure trajectories. Attributed trajectories are used to train attributor models, which can improve reflecive reasoning. tive feedback (Zhu et al., 2025). Another constructs attribution data through counterfactual replay and programmed fault injection, then trains a dedicated attributor to predict the decisive error step directly from the failed trajectory (Zhang et al., 2025a). Training a dedi-cated attributor is particularly promising because, once trained, it can localize errors directly from a failed trajectory without repeated replay at inference time. We therefore focus on constructing scalable attribution data for training such an attributor. However, reliably attributing complex, long-chain trajectories remains challenging for two reasons. (1) Expensive data synthesis. Step-by-step counterfactual labeling repairs each candidate step and re-executes the downstream trajectory, so its cost scales quickly with trajectory length (Zhang et al., 2025a). Tasks such as mathematical proofs and agent planning containing dozens of steps could suffer from expensive large-scale synthesis. (2) Non-linear dependencies. Prior methods represent trajectories as linear sequences, overlooking non-local and higher-order dependencies across steps. For example, in a multi-hop proof, a later conclusion may depend jointly on several earlier parallel math derivations that are far apart in the reasoning trace. This obscures how early errors propagate and makes upstream root causes difficult to identify. We address the challenges by the Hypergraph-based Paired Failure Attribution (HPFA in Fig. 1) framework that accelerates synthesis of attributed reasoning trajectories by two major steps. 
+
+(1) Paired trajectories for counterfactual search. For each query, a successful trajectory provides a valid reference for the failed trajectory, which reduces search to divergences instead of probing every step. (2) Dependency hypergraphs capture non-linear error propagation. We represent atomic reasoning steps as nodes and their higher-order depen-dencies as hyperedges, allowing attribution to follow non-linear dependency paths back to upstream root causes. Our key contributions are as follows: • Efficient Attribution-Data Synthesis. We introduce HPFA, a paired-trajectory and dependency-hypergraph pipeline that synthesizes root-cause supervision while reducing counterfactual search. Across mathematical reasoning, agentic coding, and privacy tasks, HPFA achieves a better localization cost–success trade-off than existing baselines. • Better Attribution Model. We train a stronger attribution model on HPFA generated data to attribute failure for reasoning path. We validate its effectiveness in reflection scenarios on mathematical reasoning and agentic coding tasks. 2Published as a conference paper at COLM 2026 
+
+# 2 Related Work 
+
+Failure Attribution in LLM Reasoning. Failure attribution plays an important role in reflective reasoning. It identifies the root cause in a failed reasoning trajectory and provides feedback signals for reflection or RL training (Lightman et al., 2023; Wang et al., 2024). Self reflection comprises error detection, error localization, and reasoning revision, with localization connecting failure recognition to targeted revision (Samanta et al., 2026). As LLMs struggle to locate logical mistakes, providing failure causes can improve revision accuracy (Tyen et al., 2024; Li et al., 2024). (1) Methods for acquiring this capability span three paradigms. Prompting methods elicit self-rethinking, error type analysis, or first error localization, but remain limited by the model’s own verification ability (Tong et al., 2024; Li et al., 2024; Samanta et al., 2026). (2) Supervised fine-tuning (SFT) methods use erroneous traces and mistake annotations to train reasoners that learn from mistakes, while dedicated mistake locators can be trained from step labels (Tong et al., 2024; Tyen et al., 2024). (3) In reinforcement learning, process reward models (PRMs) play a similar role. PRMs provide stepwise critics that localize the first error (Zha et al., 2025; Zhang et al., 2026), which can assign credit to correct prefixes and erroneous suffixes (Liu et al., 2026). 
+
+Failure Attribution in Agentic Systems. Different from LLMs, agentic systems are com-pound systems where failures can stem from reasoning, memory, tool execution and agent communication (Ji et al., 2024; Ning et al., 2024; Zhu et al., 2025; Cemri et al., 2025), as upstream errors can propagate across components and subsequent decisions, thereby sepa-rating observed failures from their responsible components and originating steps (Zhu et al., 2025; Zhang et al., 2025a;b). Early approaches frame agent failure analysis as specification-based verification. For example, PDoctor checks plans against constraints and test oracles (Ji et al., 2024), whereas VeriLA verifies outputs against human-defined criteria (Sung et al., 2025). These methods can detect known failure patterns but cannot determine which com-ponent caused an end-to-end failure or at which step the failure first occurred. Who&When marks the shift from specification-based verification to automated failure attribution (Zhang et al., 2025b). Following this shift, AgentDebug uses a taxonomy to retrospectively diagnose full trajectories and generate corrective feedback (Zhu et al., 2025), whereas AgenTracer trains a lightweight attributor for agent- and step-level localization using labels derived from counterfactual replay and fault injection (Zhang et al., 2025a).and critical step (Zhang et al., 2025a). Despite the success of the aforementioned methods in reasoning or agentic systems, there are two remaining challenges: (1) Such a labeling method is costly with repeated interventions and executions. (2) Existing methods do not explicitly model complex dependencies among agents, steps, and environmental factors. Our work aims to address the two challenges in failure attribution for LLM reasoning and agentic systems. 
+
+# 3 Methodology 
+
+Problem Formulation. Our goal is to pinpoint a root cause in the trajectory of a failed rollout: a step that is chiefly responsible for the error, in the sense that replacing it could yield a successful outcome. We formalize this as follows. Given a problem instance (e.g., a query), a reasoning trajectory is T = ( s1, . . . , sn, y), which includes intermediate steps s i
+
+(e.g., propositions, subgoals, or tool outputs) and final prediction y. Let 1(T ) ∈ { 0, 1 }
+
+indicate whether T is correct (e.g., final answer vs. ground-truth y⋆). For a failed rollout with 1(Tfail ) = 0, Root-cause attribution looks for the earliest step whose correction can recover the final outcome. For an index k and a same-granularity replacement s′ 
+
+> k
+
+of step sk,define R (T , k, s′
+
+> k
+
+) as the new trajectory obtained by keeping the prefix (s1, . . . , sk−1) fixed, substituting sk ← s′
+
+> k
+
+, and then re-sampling all downstream steps (sk+1, . . . , sn, y) under a fixed rollout protocol until completion. We call sk a root cause if 
+
+k = min 
+
+n
+
+j : ∃s′ 
+
+> j
+
+s.t. 1 R(Tfail , j, s′
+
+> j
+
+) = 1
+
+o
+
+.3Published as a conference paper at COLM 2026 This earliest-recoverable-step convention handles cases where several downstream steps could be repaired: they are treated as consequences of the first recoverable divergence (root cause) rather than separate primary causes. 
+
+3.1 Failure Localization via Hypergraph-based Paired Failure Attribution (HPFA) 
+
+A direct way to localize root cause is to probe every step of a failed trace with counterfactual rollouts R, which scales poorly with trace length and perturbation budget, especially on long-horizon reasoning or agentic tasks where each probe is expensive. To address the challenge, we propose Hypergraph-based Paired Failure Attribution (HPFA) in Algorithm 1, which reduces the search space by providing a successful reasoning reference, and guiding the search in non-linear dependency via a hypergraph. 
+
+Step 1: Paired-trajectory generation. To narrow down the search space of failure causes, we directly sample additional reasoning trajectories from the same model and find a successful one as a reference. Prior work on test-time scaling has shown that repeatedly sampling from the same model can surface at least one correct solution far more effectively (Snell et al., 2024; Chen et al., 2021; Cobbe et al., 2021). As a result, the search complexity is proportional to 1/ p instead of reasoning steps, where p is the probability of getting the successful trace in one shot. In HPFA, we introduce trajectory pairing : once a successful rollout T + emerges on a query, comparing it to a failure T − supplies a reference of valid intermediate structure and narrows root-cause search to genuine divergences instead of probing every possible step in the trace. For each query Q, we roll out the target LLM or agent under a fixed protocol until both outcomes appear or we exhaust a per-query budget of K attempts. If only one outcome appears, we drop Q. We keep one success-failure pair (T +, T −) with 
+
+1(T +) = 1 and 1(T −) = 0. When several qualify, we keep the pair with the closest length. Trajectory-sampling prompt templates (coding) are listed in Section D. 
+
+Step 2: Dependency hypergraph construction. Even with reference, it is still challenging to find the failure location by comparison, because the step-to-step dependencies in reasoning could be non-linear, complicating the search. For example, later content relies on earlier and non-consecutive propositions, tool observations, or subgoals. Rather than treating the trace as a flat sequence, we summarize these dependencies in a structured graph-like object G = ( V, Eh) over aligned abstract steps, so that we can walk backward from the final prediction toward regions where a root cause is plausible. We instantiate G as a hypergraph .Given (T +, T −), we segment each trace into atomic steps (s+ 
+
+> 1
+
+, . . . , s+ 
+
+> n+
+
+) and (s− 
+
+> 1
+
+, . . . , s− 
+
+> n−
+
+)
+
+(e.g., one arithmetic move, tool call, or subgoal). Semantic similarity and clustering induce an equivalence ∼ on the union of atomic steps. We write [s]∼ for the class of s, so that 
+
+s ∼ s′ ⇐⇒ [s]∼ = [ s′]∼,
+
+V =  [s]∼ : s ∈ { s+ 
+
+> 1
+
+, . . . , s+ 
+
+> n+
+
+, s− 
+
+> 1
+
+, . . . , s− 
+
+> n−
+
+} .The elements of V are the abstract steps used as hypergraph vertices. We merge two steps only when both traces explicitly express the same reasoning operation or code intent; otherwise, they remain distinct. For each trajectory we estimate prerequisites {si}i∈P (j) for sj and encode them as hyperedges over V, yielding G = ( V, Eh). Let v+ 
+
+> out
+
+and v− 
+
+> out
+
+denote the vertices for the final predictions on T + and T −. We construct G with an LLM using the hypergraph construction template in Section D and validate the reliability of the hypergraph in Section A. 
+
+Step 3: Iterative root-cause localization. With the constructed hypergraph, we search for the root cause of the reasoning failure. We denote the abstract vertices used by T + and T −
+
+as V + and V −. Starting from v+
+
+> out
+
+, walk backward along dependencies on T + (reverse step order; fixed tie-breaking at branches). The first vertex in this walk that lies in V + ∩ V − is the meeting vertex v⋆:
+
+v⋆ ∈ V + ∩ V −.This v⋆ need not coincide with an undirected lowest common ancestor (LCA) of v+ 
+
+> out
+
+and 
+
+v−
+
+> out
+
+, because the walk is directed along T +. On T −, successors of v⋆ not aligned to T +
+
+4Published as a conference paper at COLM 2026 
+
+Algorithm 1 Hypergraph-based Paired Failure Attribution (HPFA) 
+
+Require: Query Q, correctness oracle 1(·), rollout cap K, counterfactual protocol R 
+
+Ensure: Root step index k on T −, or F AIL  
+
+> 1:
+
+Roll out until both outcomes occur or K attempts are exhausted  
+
+> 2:
+
+if no success–failure pair then return FAIL  
+
+> 3:
+
+end if  
+
+> 4:
+
+(T +, T −) ← chosen pair; (V, G, v±
+
+> out
+
+) ← ALIGN GRAPH (T +, T −) 
+
+> 5:
+
+anchor ← v+ 
+
+> out
+> 6:
+
+while true do  
+
+> 7:
+
+v⋆ ← MEET (anchor , T +) ▷ meeting vertex along T + 
+
+> 8:
+
+C ← CANDS (v⋆, T −) ▷ candidates on T − 
+
+> 9:
+
+for v ∈ C do  
+
+> 10:
+
+˜T ← R(T −, idx (v), s′) ▷ counterfactual rollout  
+
+> 11:
+
+if 1( ˜T ) = 1 then return idx (v) 
+
+> 12:
+
+end if  
+
+> 13:
+
+end for  
+
+> 14:
+
+if v⋆ = anchor then return FAIL  
+
+> 15:
+
+end if  
+
+> 16:
+
+anchor ← v⋆ ▷ re-anchor  
+
+> 17:
+
+end while 
+
+under ∼ form the candidate set C. For each v ∈ C , map v to an index k on T −, substitute a repaired span s′, and test 1(R(T −, k, s′)) : any verifying candidate is the root cause . Otherwise re-anchor at v⋆, walk backward to a new meeting vertex and C, and repeat. The search ends when a repair succeeds, the shared prefix is exhausted, or we fall back to the earliest unresolved divergence. 
+
+3.2 Boosting Reasoning by Test-time Attributors 
+
+To boost the reasoning at test time where ground truths or references are not available, we train a lightweight attributor πϕ that maps (Q, Tfail ) to a structured diagnosis: the erroneous step, its error type, and a concise description of the mistaken content. Supervision is harvested by HPFA: each training tuple includes the failure trace T −, the verified root index k, a short rationale, and optionally the counterfactual span used when a repair rollout succeeds, i.e., 1(R(T −, k, s′)) = 1. 
+
+Training attributor. The training follows a two-stage schedule that separates imitation from on-policy refinement. (1) SFT. We fit πϕ offline with the standard causal language-modeling objective. Prompts concatenate the task instruction, Q, and the indexed failure trace; targets are templated diagnoses (step, error type, mistaken content). For math, paired and negative-only root-cause prompts (Section D) match the root_cause tag schema used by the format reward. (2) GRPO. We use the final model to initiate the Group Relative Policy Optimization (GRPO) (Shao et al., 2024) on failures rolled out on-policy from the target model. Thus, the training distribution can match deployment-time errors. For each (Q, Tfail ) we sample a group of attributions from πϕ, score each with the sequence-level reward below, normalize within-group rewards to advantages (zero mean, unit vari-ance, with a small stability constant), and update using clipped policy ratios and KL regularization to πref . Each sampled attribution oi receives a scalar reward decomposed into a format term and a rollout term: 
+
+Ri = Rfmt  
+
+> i
+
++ λ Rrollout  
+
+> i
+
+, λ > 0, Rrollout  
+
+> i
+
+= 1( ˜Ti). (1) The format reward Rfmt  
+
+> i
+
+verifies that oi parses under our diagnosis template: the reported step index is valid, required fields are present, and delimiters match the SFT target schema so downstream repair can consume oi without heuristics. The rollout reward Rrollout  
+
+> i
+
+tests 
+
+actionability : we condition the base LLM or agent on (Q, Tfail , oi) and draw a new trajectory 5Published as a conference paper at COLM 2026 
+
+Algorithm 2 Reasoning with attributor 
+
+Require: Q, π, πϕ, S, τ, B
+
+Ensure: (T , y) 
+
+> 1:
+
+(T , y) ← ROLLOUT (π, Q) 
+
+> 2:
+
+for t = 1, . . . , B do  
+
+> 3:
+
+if S(T ) ≥ τ then return (T , y) 
+
+> 4:
+
+end if  
+
+> 5:
+
+(T ′, y′) ← REPAIR 
+
+ π, Q, T , πϕ(Q, T ) 
+
+> 6:
+
+if S(T ′) ≥ τ or negligible S(T ′)−S (T ) then return (T ′, y′) 
+
+> 7:
+
+end if  
+
+> 8:
+
+(T , y) ← (T ′, y′) 
+
+> 9:
+
+end forreturn (T , y)
+
+˜Ti; success is indicated by 1( ˜Ti). Together, Ri favors diagnoses that are both well-formed and sufficient to elicit a correct re-rollout, not merely fluent text. 
+
+Reflective reasoning with attributor. In Algorithm 2, we incorporate the trained attributor to enhance the reasoning at test time. Different from failure localization, the attributor here is not aware of the ground truth or the successful path. At test time, the system sees a single backbone rollout for Q. We call πϕ on (Q, T ), without graph or T +. We design the algorithm to (1) infer the correctness of the answer and (2) attribute and correct the trajectories upon the assumed wrong answer. We use verbal confidence score S(T ) to decide whether to trigger the attribution. If S(T ) < τ, the LLM passes its reasoning trajectory to the attributor, and then regenerates the trajectory based on the output of the attribution model. The corresponding prompt is provided in Section D. 
+
+# 4 Experiments 
+
+We organize evaluation along two components: (i) failure localization with HPFA, and (ii) a trained attributor used for reflective reasoning. 
+
+4.1 Failure Localization 
+
+We evaluate HPFA in the paired-trajectory setting: for each query we contrast a successful trajectory T + with a failed one T −, build a dependency hypergraph, and use counterfactual rollouts to verify the attributed root step (Section 3.1). The subsections below specify where 
+
+we test (datasets), how we obtain pairs and baselines, what we measure, and then interpret accuracy, convergence, and cost together. 
+
+Datasets. We evaluate HPFA in three representative settings: mathematical reasoning, agentic coding, and a privacy scenario. (i) Mathematical reasoning: We study multi-step mathematical problem solving on MATH (Hendrycks et al., 2021) and GSM8K (Cobbe et al., 2021), using their official training splits. (ii) Agentic coding: We study coding agents on KodCode (Xu et al., 2025) and MBPP (Austin et al., 2021). We use the KodCode training split and a 3:1 train–evaluation split on MBPP. (iii) Privacy scenario: We study reasoning failures caused by privacy-preserving de-identification. To construct the dataset, we use PrivateAI to de-identify CoQA-based inputs (Reddy et al., 2019). More details are in Section C. 
+
+Trajectory preparation. We sample trajectories with Step 1 of HPFA ( paired-trajectory genera-tion ; Section 3.1): for each query, we roll out the target model as in Algorithm 1 until both a success and a failure are observed or the per-query budget is exhausted, and keep one pair 
+
+(T +, T −) with 1(T +) = 1 and 1(T −) = 0. Table 1 summarizes the number of trajectory pairs and successful repair traces for each dataset. The successful repair traces are used to train the attribution model described in Section 4.2. Table 1 summarizes the number of trajectory pairs and successful repair traces for each dataset. The successful repair traces will be used to train the attribution models. 6Published as a conference paper at COLM 2026 Table 1: The number of trajectories collected for training attributors.            
+
+> MATH GSM8K KodCode MBPP
+> Success–failure pairs 884 199 853 479 Repair-success traces (Trainset) 587 155 473 112
+
+Table 2: Rollout-verified success rate (%) at the final (5th) refinement step of the localization loop. A method is credited on a failure trace if and only if substituting its localized step with a repaired span flips the outcome under the shared oracle 1(·) (the same oracle used by all methods, including baselines).                              
+
+> Math Privacy Coding Method MATH500 GSM8K CoQA KodCode MBPP AgentDebug 30.9 37.6 20.4 16.8 5.8 AgenTracer 27.3 46.2 22.2 11.5 5.0 Ours w/o graph 54.9 81.4 42.6 34.8 11.9
+> Ours 64.6 76.9 53.7 53.4 23.0
+
+Baselines. We compare two failure attribution baselines using counterfactual testing and including an ablation without the hypergraph. (1) AgentDebug : introduces error taxonomy for identifying root cause (Zhu et al., 2025). (2) AgenTracer : trains a lightweight attributor to identify root cause (Zhang et al., 2025a). (3) Ours w/o graph : same paired trajectories and counterfactual verification as our full method, but without hypergraph-guided candidate extraction. 
+
+Implementation. For math and coding, we use Qwen3-8B for both trajectory generation and dependency-hypergraph construction, with temperature 0.7 and a maximum generation length of 8192 tokens. We set the per-query paired rollout budget to K = 8, and counterfac-tual repair rollouts use the same decoding temperature as trajectory sampling. For privacy, all LLM-based components use GPT-4o; complete implementation details are provided in Section C. 
+
+Main results. In Table 2, we report the rollout-verified success rate (%): the fraction of failure traces for which repairing a method’s localized step k yields a successful rollout, i.e. 
+
+1(R(T −, k, s′)) = 1. In the privacy setting, a rollout must additionally satisfy the no-leakage constraint described in Section C. (1) Versus baselines. At the fifth refinement step, Ours 
+
+outperforms both AgentDebug and AgenTracer on all five benchmarks. Relative to the stronger baseline on each dataset, HPFA achieves improvements of over 30% on MATH500, GSM8K, CoQA, and KodCode, and an improvement of over 17.2% on MBPP. (2) Versus Ours w/o graph. Compared with Ours w/o graph , the full method improves the success rate by 9.7% points on MATH500, 11.1% on CoQA, 18.6% on KodCode, and 11.1% on MBPP. Overall, paired success–failure trajectories provide broad gains, while hypergraph-guided search yields additional improvements on four of the five benchmarks. 
+
+When does the hypergraph help? Unlike the other datasets, GSM8K does not exhibit a gain from the hypergraph. To explain this exception, we relate average trajectory length to the marginal gain of Ours over Ours w/o graph across 2,415 paired failure traces from four datasets. As shown in Table 3, GSM8K has the shortest trajectories, averaging 8.2 steps, and shows a negative marginal gain, resulting in a 4.5% performance decrease. In contrast, the marginal gain becomes positive on MATH with 12.4 steps and a 9.7% performance gain, MBPP with 14.0 steps and an 11.1% performance gain, and KodCode with 18.2 steps and an 18.6% performance gain. This trend suggests that paired trajectories suffice for short traces with few candidate root steps, whereas hypergraph-guided pruning becomes more useful as trajectory length and dependency complexity increase. 
+
+Convergence Analysis. Figure 2 runs the same procedure for 16 outer rounds on the split underlying Table 2. Accuracy rises quickly in early rounds, and Ours and both baselines are 7Published as a conference paper at COLM 2026 Table 3: Trajectory length and marginal hypergraph gain. Traj. Length ± SD is the mean 
+
+± SD number of atomic nodes per trajectory; ∆ gain is Ours minus Ours w/o graph in rollout-verified success rate.                        
+
+> Metric GSM8K MATH MBPP KodCode
+> Traj. Length ±SD 8.2 ±3.2 12.4 ±5.8 14.0 ±3.2 18.2 ±5.5
+> ∆gain (%) −4.5 +9.7 +11.1 +18.6
+
+Figure 2: Convergence over iterations of attribution; Our method has a similar convergence rate, where the iteration accuracy stabilizes from iteration 5 onward. 
+
+almost converged from iteration 5 onward. As curves change little between rounds 5–16, we take the fifth refinement step as the representative operating point in Table 2. 
+
+Cost vs. accuracy. Figure 3 shows the trade-off between computation cost and success rates over five refinement iterations. At comparable runtime, Ours achieves a higher localization success rate than AgentDebug and AgenTracer at similar cost. Paired success–failure trajec-tories focus counterfactual checks on meaningful divergences, while hypergraph-guided pruning reduces candidate root steps on complex traces, together avoiding redundant rollouts and full-trajectory rereading. 
+
+4.2 Test-time inference with an attributor 
+
+Whereas the failure localization block above uses paired trajectories (T +, T −) at attribution time, here we evaluate the attributor πϕ in reflective reasoning. 
+
+Datasets. We evaluate the attributor on MATH (Hendrycks et al., 2021), GSM8K (Cobbe et al., 2021), KodCode (Xu et al., 2025), and MBPP (Austin et al., 2021). For MATH, we train on the official training split and evaluate on MATH500. For GSM8K and KodCode, we use the official training and test splits; for MBPP, we use a random 3:1 train–evaluation split. We run HPFA on each training split to synthesize attribution examples containing a failure trace T −, its root step, rationale, and, when available, counterfactual span; these examples provide SFT targets and GRPO rollouts (Table 1). For attribution analysis (Table 5), we additionally evaluate on AIME 2024 (Mathematical Association of America, 2024) and LogiQA 2.0 (Liu et al., 2023). AIME uses Pass@1 accuracy to identify failures and Pass@16 accuracy to evaluate repair, while LogiQA 2.0 tests non-mathematical logical reasoning. 
+
+Baselines. (1) Vanilla prompting : single-shot decoding without explicit failure attribution; (2) Self-reflection : the model names a faulty step and reflects using its own attribution (no hypergraph-derived supervision); (3) AgenTracer : Using the same datasets as ours, but adopting the data generation and training approach from AgenTracer (Zhang et al., 2025a); (4) Ours (SFT) : Using data generated by HPFA, but only applying the SFT stage described in Section 3.2 while Ours (SFT + GRPO) performs both SFT and GRPO. 
+
+Implementation. The base model for math and coding experiments is Qwen3-8B with temperature 0, no-think mode, and a maximum generation length of 8192 tokens unless stated otherwise. We train the attributor with supervised fine-tuning on four NVIDIA 8Published as a conference paper at COLM 2026 
+
+Figure 3: Failure-localization success rate versus cumulative wall-clock time on (a) MATH and (b) GSM8K. Markers from left to right denote refinement iterations 1–5; additional iterations increase runtime and the chance of successful localization. Our method achieves a better cost–success trade-off than AgentDebug and AgenTracer. A100 (80 GB) GPUs with batch size 16, AdamW, learning rate 5 ×10 −5, and 5 epochs, then optimize with GRPO (group size 4, 4 groups per batch, learning rate 2 ×10 −6). Table 4: Task accuracy (%) using different attribution or self-reflection methods.                         
+
+> Method MATH500 GSM8K KodCode MBPP
+> Vanilla prompting 79.4 92.6 43.9 46.5 Self-reflection 81.8 93.2 44.5 47.1 AgenTracer 82.4 93.2 44.8 48.2 Ours (SFT) 84.2 93.4 46.1 47.8
+> Ours (SFT + GRPO) 84.8 93.0 46.3 48.4
+
+Main results. In Table 4, we present the Pass@1 accuracy on MATH500, GSM8K, KodCode, and MBPP. Ours (SFT + GRPO) achieves a score of 84.8 % on MATH500, outperforming vanilla prompting, Self-reflection, and AgenTracer . Moreover, it achieves the best per-formance among all methods on the more challenging agentic tasks. Building upon the SFT stage, GRPO further improves performance on MATH500, KodCode and MBPP. On GSM8K, the baselines already have quite good performance over 92.6%. Thus, the absolute improvements by our methods are small near the ceiling. In sum, SFT on our synthetic data delivers the main gain over vanilla prompting, Self-reflection, and AgenTracer on MATH500 and coding, and SFT already captures most of it. Applying GRPO adds a modest extra bump where accuracy still has headroom. 
+
+Attribution analysis. To evaluate whether the learned attributions support targeted repair and generalize beyond the training domain, we train the attributor on math tasks and test it on Qwen3-8B failures from MATH500, GSM8K, AIME 2024, and LogiQA 2.0, with 83/84/22/441 failed items, respectively. Using HPFA’s paired-rollout labels as gold root steps, Table 5 shows the correction success rate – a higher value indicates more accurate failure attribution. We can see that Ours (SFT + GRPO) consistently outperforms Self-reflection: 19.3 % vs. 11.9% on MATH500, 14.3 % vs. 7.1% on GSM8K, 22.7 % vs. 9.1% on AIME 2024, and 6.6 % vs. 1.2% on LogiQA 2.0. These results show that hypergraph-verified attribution provides more actionable repair signals than self-reflection and transfers well from mathematical reasoning to out-of-domain logical reasoning. Table 5: Correction success rate (%) on samples failed at first shot: the fraction of problems that Qwen3-8B initially fails and then solves after one attributor-guided repair (Pass@1 by default; Pass@16 on AIME 2024).             
+
+> Method MATH500 GSM8K AIME 2024 LogiQA 2.0
+> Self-reflection 11.9 7.1 9.1 1.2
+> Ours (SFT + GRPO) 19.3 14.3 22.7 6.6
+
+9Published as a conference paper at COLM 2026 Table 6: MATH500 accuracy using different inference models. Our attributor generally outperforms baselines on different models.                     
+
+> Method Qwen3-8B Qwen3-14B Gemma3-4B Llama-3.1-8B
+> Vanilla prompting 79.4 81.0 20.4 46.8 Self-reflection 81.8 84.4 21.4 49.4 Ours (SFT) 84.2 85.0 21.0 51.2 Ours (SFT + GRPO) 84.8 84.2 21.0 52.4
+
+Consistent gains across models. Table 6 varies only the backbone models used for reflective reasoning, while using the same attributor checkpoint and prompt template. Our attributor methods improve over vanilla prompting on backbones. On Gemma3-4B, all methods performs poorly, near 20–21%. Considering the base model can only achieve 20% accuracy, which is the lowest among models, we conjectures that attribution helps only when the base model can execute the repaired reasoning. 
+
+# 5 Conclusion 
+
+In this paper, we introduced Hypergraph-based Paired Failure Attribution (HPFA), a framework that localizes the root causes of LLM reasoning failures by contrasting successful and failed trajectories and modeling their dependencies with a hypergraph. Paired trajectories narrow counterfactual verification to meaningful divergences, while hypergraph-guided search captures non-linear interactions that flat step sequences miss. Across mathematical reasoning, coding, and privacy-sensitive tasks, HPFA achieves a better localization cost– success trade-off than stepwise counterfactual and retrospective baselines, with the largest gains on long and heterogeneous traces. The verified attributions further provide scalable supervision for training a lightweight attributor, which improves reflective reasoning from a single trace on repair-capable backbones without modifying the underlying reasoning model. These results demonstrate that structured root cause feedback offers a practical path toward more reliable and scalable reflection. 
+
+# Statements 
+
+Ethical Statement. This work develops failure-attribution methods to improve the re-liability and self-correction of LLM reasoning. Such methods are dual-use and could be repurposed to refine undesirable behavior; however, our study is limited to controlled experiments on public math, coding, and privacy-preserving benchmarks and provides no guidance for harmful deployment. 
+
+Reproducibility Statement. We report the models, data construction, hardware, and evaluation protocols in the main text and appendix. Code is available at https://github. com/costa-nus/COLM26_HPFA to support verification and extension of our results. 
+
+Disclosure of LLM Use in Paper Preparation. We used LLMs for language editing and preliminary literature review. The authors checked and revised all generated content, manually verified every citation, and take full responsibility for the paper. 
+
+# Acknowledgments 
+
+We appreciate the constructive feedback from reviewers in preparing the work. This re-search/project is partially supported by the National University of Singapore under the NUS Start-Up Grants (FY2026). OK’s work was also carried out as part of the CYBERUS Erasmus Mundus Master’s programme. 10 Published as a conference paper at COLM 2026 
+
+# References 
+
+Lakshya A Agrawal, Shangyin Tan, Dilara Soylu, Noah Ziems, Rishi Khare, Krista Opsahl-Ong, Arnav Singhvi, Herumb Shandilya, Michael J Ryan, Meng Jiang, Christopher Potts, Koushik Sen, Alexandros G Dimakis, Ion Stoica, Dan Klein, Matei Zaharia, and Omar Khattab. GEPA: Reflective prompt evolution can outperform reinforcement learning. In 
+
+Proceedings of the International Conference on Learning Representations , 2026. Jacob Austin, Augustus Odena, Maxwell Nye, Maarten Bosma, Henryk Michalewski, David Dohan, Ellen Jiang, Carrie Carr, Michael Cai, Michael Terry, Quoc Le, and Charles Sutton. Program synthesis with large language models. arXiv preprint arXiv:2108.07732 , 2021. Krischan Braitsch, Laura K Schmalbrock, Theresa Weltermann, Andrew F Berdel, Isabella Miller, Kai Tran, Michael Heider, Sabrina Kraus, Florian Bassermann, Jacqueline Lammert, et al. Information-seeking failures of large language models in agentic clinical reasoning. 
+
+arXiv preprint arXiv:2607.10275 , 2026. Mert Cemri, Melissa Z. Pan, Shuyi Yang, Lakshya A. Agrawal, Bhavya Chopra, Rishabh Tiwari, Kurt Keutzer, Aditya G. Parameswaran, Dan Klein, Kannan Ram-chandran, Matei A. Zaharia, Joseph E. Gonzalez, and Ion Stoica. Why do multi-agent LLM systems fail? In Advances in Neural Information Processing Sys-tems , volume 38, 2025. URL https://papers.nips.cc/paper_files/paper/2025/hash/ b1041e52d3be19f0a9bc491657488e4a-Abstract-Datasets_and_Benchmarks_Track.html .Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela Mishkin, Brooke Chan, Scott Gray, Nick Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mohammad Bavarian, Clemens Winter, Philippe Tillet, Felipe Such, Dave Cummings, Matthias Plappert, Fotios Chantzis, Elizabeth Barnes, Ariel Herbert-Voss, William Tom Guss, Alex Nichol, Alex Paino, Nikolas Tezak, Jie Tang, Igor Babuschkin, Suchir Balaji, Shantanu Jain, William Saunders, Christopher Hesse, Andrew N Carr, Jan Leike, Josh Achiam, Vedant Misra, Evan Morikawa, Alec Radford, Matthew Knight, Miles Brundage, Mira Murati, Katie Mayer, Peter Welinder, Bob McGrew, Dario Amodei, Sam McCandlish, Ilya Sutskever, and Wojciech Zaremba. Evaluating large language models trained on code. 
+
+arXiv preprint arXiv:2107.03374 , 2021. Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jacob Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. Training verifiers to solve math word problems. Advances in Neural Information Processing Systems , 34, 2021. Zixin Ding, Junyuan Hong, Zhan Shi, Tianhao Wang, Zinan Lin, Li Yin, Meng Liu, Zhangyang Wang, and Yuxin Chen. Scaling textual gradients via sampling-based mo-mentum. In Proceedings of the ACM Conference on AI and Agentic Systems , pp. 917–952, 2026. Dan Hendrycks, Collin Burns, Saurav Kadavath, Saurav Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. Measuring mathematical problem solving with the MATH dataset. In Advances in Neural Information Processing Systems , volume 34, 2021. Zhenlan Ji, Daoyuan Wu, Pingchuan Ma, Zongjie Li, and Shuai Wang. Testing and understanding erroneous planning in LLM agents through synthesized user inputs. 
+
+arXiv preprint arXiv:2404.17833 , 2024. doi: 10.48550/arXiv.2404.17833. URL https: //arxiv.org/abs/2404.17833 .Xiaoyuan Li, Wenjie Wang, Moxin Li, Junrong Guo, Yang Zhang, and Fuli Feng. Evaluating mathematical reasoning of large language models: A focus on error identification and correction. In Findings of the Association for Computational Linguistics: ACL 2024 , pp. 11316–11360. Association for Computational Linguistics, 2024. doi: 10.18653/v1/2024. findings-acl.673. URL https://aclanthology.org/2024.findings-acl.673/ .11 Published as a conference paper at COLM 2026 Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. Let’s verify step by step. arXiv preprint arXiv:2305.20050 , 2023. doi: 10.48550/arXiv.2305.20050. URL https: //arxiv.org/abs/2305.20050 .Hanmeng Liu, Jian Liu, Leyang Cui, Zhiyang Teng, Nan Duan, Ming Zhou, and Yue Zhang. LogiQA 2.0—an improved dataset for logical reasoning in natural language understanding. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 31: 2947–2962, 2023. Haolin Liu, Dian Yu, Sidi Lu, Yujun Zhou, Rui Liu, Zhenwen Liang, Haitao Mi, Chen-Yu Wei, and Dong Yu. Save the good prefix: Precise error penalization via process-supervised RL to enhance LLM reasoning. arXiv preprint arXiv:2601.18984 , 2026. doi: 10.48550/arXiv.2601.18984. URL https://arxiv.org/abs/2601.18984 .Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegr-effe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, Shashank Gupta, Bod-hisattwa Prasad Majumder, Katherine Hermann, Sean Welleck, Amir Yazdanbakhsh, and Peter Clark. Self-refine: Iterative refinement with self-feedback. Advances in Neural Information Processing Systems , 36, 2023. Mathematical Association of America. AIME 2024: American invitational mathematics examination. https://artofproblemsolving.com/wiki/index.php/AIME_Problems_and_ Solutions , 2024. Quinn McNemar. Note on the sampling error of the difference between correlated propor-tions or percentages. Psychometrika , 12(2):153–157, 1947. doi: 10.1007/BF02295996. Kaiwen Ning, Jiachi Chen, Jingwen Zhang, Wei Li, Zexu Wang, Yuming Feng, Weizhe Zhang, and Zibin Zheng. Defining and detecting the defects of the large language model-based autonomous agents. arXiv preprint arXiv:2412.18371 , 2024. doi: 10.48550/arXiv.2412.18371. URL https://arxiv.org/abs/2412.18371 .OpenAI. Learning to reason with LLMs. OpenAI Blog , 2024. Zhan Qu and Michael Färber. Medieval: A unified medical benchmark for patient-contextual and knowledge-grounded reasoning in llms. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 16150–16164, 2026. Siva Reddy, Danqi Chen, and Christopher D. Manning. CoQA: A conversational question answering challenge. Transactions of the Association for Computational Linguistics , 7:249–266, 2019. Ankur Samanta, Akshayaa Magesh, Ayush Jain, Kavosh Asadi, Youliang Yu, Daniel Jiang, Boris Vidolov, Kaveh Hassani, Paul Sajda, Jalaj Bhandari, and Yonathan Efroni. Structure enables effective self-localization of errors in LLMs. arXiv preprint arXiv:2602.02416 , 2026. doi: 10.48550/arXiv.2602.02416. URL https://arxiv.org/abs/2602.02416 .Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. DeepSeekMath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. Reflexion: Language agents with verbal reinforcement learning. Advances in Neural Information Processing Systems , 36, 2023. Charlie Snell, Jaehoon Lee, Kelvin Xu, and Aviral Kumar. Scaling LLM test-time com-pute optimally can be more effective than scaling model parameters. arXiv preprint arXiv:2408.03314 , 2024. Yoo Yeon Sung, Hannah Kim, and Dan Zhang. VeriLA: A human-centered evaluation framework for interpretable verification of LLM agent failures. HEAL Workshop at CHI 2025 , 2025. doi: 10.48550/arXiv.2503.12651. URL https://arxiv.org/abs/2503.12651 .12 Published as a conference paper at COLM 2026 Yongqi Tong, Dawei Li, Sizhe Wang, Yujia Wang, Fei Teng, and Jingbo Shang. Can LLMs learn from previous mistakes? Investigating LLMs’ errors to boost for reasoning. In 
+
+Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 3065–3080. Association for Computational Linguistics, 2024. doi: 10.18653/v1/2024.acl-long.169. URL https://aclanthology.org/2024.acl-long.169/ .Gladys Tyen, Hassan Mansoor, Victor Carbune, Peter Chen, and Tony Mak. LLMs cannot find reasoning errors, but can correct them given the error location. In Findings of the Association for Computational Linguistics: ACL 2024 , pp. 13894–13908. Association for Computational Linguistics, 2024. doi: 10.18653/v1/2024.findings-acl.826. URL https: //aclanthology.org/2024.findings-acl.826/ .Peiyi Wang, Lei Li, Zhihong Shao, Runxin Xu, Damai Dai, Yifei Li, Deli Chen, Yu Wu, and Zhifang Sui. Math-Shepherd: Verify and reinforce LLMs step-by-step without human annotations. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 9426–9439. Association for Computational Linguis-tics, 2024. doi: 10.18653/v1/2024.acl-long.510. URL https://aclanthology.org/2024. acl-long.510/ .Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc Le, and Denny Zhou. Chain-of-thought prompting elicits reasoning in large lan-guage models. Advances in Neural Information Processing Systems , 35:24824–24837, 2022. Zhangchen Xu, Yang Liu, Yueqin Yin, Mingyuan Zhou, and Radha Poovendran. Kod-code: A diverse, challenging, and verifiable synthetic dataset for coding. arXiv preprint arXiv:2503.02951 , 2025. Yunhao Yang, Junyuan Hong, Gabriel Jacob Perin, Zhiwen Fan, Li Yin, Zhangyang Wang, and Ufuk Topcu. Lad-vf: Llm-automatic differentiation enables fine-tuning-free robot planning from formal methods feedback. ICRA , 2026. Li Yin and Zhangyang Wang. Llm-autodiff: Auto-differentiate any llm workflow. arXiv preprint arXiv:2501.16673 , 2025a. Li Yin and Zhangyang Wang. LLM-AutoDiff: Auto-differentiate any LLM workflow. arXiv preprint arXiv:2501.16673 , 2025b. Mert Yuksekgonul, Federico Bianchi, Joseph Boen, Sheng Liu, Zhi Huang, Carlos Guestrin, and James Zou. TextGrad: Automatic “differentiation” via text. Nature , 639:609–616, 2025. Kaiwen Zha, Zhengqi Gao, Maohao Shen, Zhang-Wei Hong, Duane S. Boning, and Dina Katabi. RL tango: Reinforcing generator and verifier together for language reasoning. In 
+
+Advances in Neural Information Processing Systems , 2025. doi: 10.48550/arXiv.2505.15034. URL https://arxiv.org/abs/2505.15034 .Guibin Zhang, Junhao Wang, Junjie Chen, Wangchunshu Zhou, Kun Wang, and Shuicheng Yan. AgenTracer: Who is inducing failure in the LLM agentic systems? arXiv preprint arXiv:2509.03312 , 2025a. doi: 10.48550/arXiv.2509.03312. URL https://arxiv.org/abs/ 2509.03312 .Junjie Zhang, Guozheng Ma, Shunyu Liu, Zetian Hu, Yongcheng Jing, Ting-En Lin, Yongbin Li, and Dacheng Tao. STRIDE: Learnable stepwise language feedback for LLM reasoning. 
+
+arXiv preprint arXiv:2605.18851 , 2026. doi: 10.48550/arXiv.2605.18851. URL https:// arxiv.org/abs/2605.18851 .Shaokun Zhang, Ming Yin, Jieyu Zhang, Jiale Liu, Zhiguang Han, Jingyang Zhang, Beibin Li, Chi Wang, Huazheng Wang, Yiran Chen, and Qingyun Wu. Which agent causes task failures and when? On automated failure attribution of LLM multi-agent systems. In Proceedings of the 42nd International Conference on Machine Learning , volume 267 of 
+
+Proceedings of Machine Learning Research , pp. 76583–76599. PMLR, 2025b. URL https: //proceedings.mlr.press/v267/zhang25cq.html .13 Published as a conference paper at COLM 2026 Kunlun Zhu, Zijia Liu, Bingxuan Li, Muxin Tian, Yingxuan Yang, Jiaxun Zhang, Pengrui Han, Qipeng Xie, Fuyang Cui, Weijia Zhang, Xiaoteng Ma, Xiaodong Yu, Gowtham Ramesh, Jialian Wu, Zicheng Liu, Pan Lu, James Zou, and Jiaxuan You. Where LLM agents fail and how they can learn from failures. arXiv preprint arXiv:2509.25370 , 2025. doi: 10.48550/arXiv.2509.25370. URL https://arxiv.org/abs/2509.25370 .14 Published as a conference paper at COLM 2026 
+
+# A Reliability of Hypergraph Construction 
+
+Validation targets. We separately evaluate atomic decomposition, cross-trajectory merge decisions, and hyperedge extraction, followed by an end-to-end review of the finished hypergraphs. 
+
+Cross-model agreement. On 200 problems, we compare the Qwen3-8B builder with three independent comparison models. Each model re-runs the same construction stage on the same input. An LLM alignment judge then matches units that express the same operation or dependency, allowing for wording differences. The units are atomic steps in stage 1, cross-trajectory merge decisions in stage 2, and hyperedges in stage 3. We aggregate matched units across problems and report micro-F1 agreement: 100 · 2M
+
+|builder | + |comparison | ,where M is the number of matched builder–comparison unit pairs. Table 7 reports the resulting agreement. 
+
+Human review. Cross-model agreement measures construction stability rather than cor-rectness. To complement it, two human annotators independently review 50 finished hy-pergraphs for the end-to-end reasonableness of their atomic steps, cross-trajectory merges, and dependencies. A graph passes only when both annotators judge it reasonable; 44 of 50 graphs pass under this strict criterion, yielding an 88% pass rate. 
+
+Conclusion. Agreement ranges from 76.3% to 92.2% across stages and comparison models. The semantic-equivalence stage has the lowest agreement, consistent with the ambiguity of deciding when differently worded steps should be merged. Together with the strict 88% human pass rate, these results support the stability of the construction while leaving semantic alignment as its main source of uncertainty. Table 7: Per-stage micro-F1 agreement (%) between the Qwen3-8B hypergraph builder and three independent comparison models on 200 problems.             
+
+> Stage (builder = Qwen3-8B) vs Claude Opus 4.7 vs Gemini 3.5 Flash vs GPT-5.5 Atomic decomposition 88.6 92.2 84.9 Semantic-equivalence judgment 76.3 83.1 82.0 Hyperedge extraction 89.6 85.7 84.3
+
+# B Additional Attribution Analysis 
+
+To further analyze the gains of the trained attributor over reflection in Section 4.2, we decompose the accuracy change on the same 500 MATH500 problems. Table 8 cross-tabulates each problem’s outcome before reflection (direct reasoning; rows) and after one reflection pass guided by each method (columns). The diagonal cells are problems whose outcomes remain unchanged after reflection. The upper-right cell b counts regressions from correct to incorrect, while the lower-left cell c counts recoveries from incorrect to correct. Their difference, δ = c − b, is the net number of rescued problems, corresponding to an absolute accuracy gain of 100 δ/500 percentage points over direct reasoning. To test whether recoveries and regressions are symmetric, we use the asymptotic McNemar test without continuity correction (McNemar, 1947): for b + c > 0, χ2 = ( c − b)2/(b + c) and the reported 
+
+p-value is the upper-tail probability Pr (χ21 ≥ χ2).15 Published as a conference paper at COLM 2026 Table 8: Outcome transitions from direct reasoning to one reflection pass on the same 500 MATH500 problems.                     
+
+> Direct reasoning Self-reflection Ours (SFT) Ours (SFT + GRPO)
+> Correct Incorrect Correct Incorrect Correct Incorrect Correct 370 27 360 37 355 42 Incorrect 39 64 61 42 69 34
+
+Table 9: Regressions, recoveries, net rescues, and McNemar test results derived from Table 8.                       
+
+> Method Regressions bRecoveries cδ=c−bp-value
+> Self-reflection 27 39 12 0.140 Ours (SFT) 37 61 24 0.015 Ours (SFT + GRPO) 42 69 27 0.010
+
+Results. Self-reflection yields 12 net rescues, corresponding to a 2.4-point gain over direct reasoning, but its recovery–regression asymmetry is not significant ( p = 0.140). Training the attributor increases the net rescues to 24 with SFT and 27 with SFT + GRPO, exactly matching the 4.8- and 5.4-point gains in Table 4; both asymmetries are significant ( p = 0.015 and 0.010). Relative to self-reflection, the trained attributors therefore add 12 and 15 net rescues, or 2.4 and 3.0 accuracy points. Although training also introduces more regressions, its larger increase in recoveries produces a stronger net benefit, indicating that the learned attribution signal makes reflection more effective at repairing initially failed solutions. 
+
+# C Privacy Scenario Details 
+
+This appendix details the privacy scenario introduced in Section 4.1, where failures caused by privacy-preserving de-identification must be distinguished from errors in the LLM’s reasoning. 
+
+Dataset and experimental setup. We construct the privacy slice from CoQA conversational questions (Reddy et al., 2019). We retain 108 cases in which the model fails on the de-identified input and the privacy checks below are satisfied; attribution then determines whether each failure is scrub-induced or reasoning-induced. All LLM-based components use GPT-4o, while PrivateAI is used only for de-identification. 
+
+Evaluation procedure. For each instance, we apply the following four steps: 1. De-identify. PrivateAI replaces sensitive spans in the original query q and its context with typed placeholders, producing the scrubbed view ˜ q.2. Generate paired trajectories. In controlled evaluation, we obtain a reference trajectory 
+
+T + from q and a failed privacy-constrained trajectory T − from ˜ q; only ˜ q represents the input available in deployment. 3. Localize and verify. HPFA aligns the two trajectories, constructs their dependency hypergraph, and counterfactually verifies the earliest divergent step. 4. Attribute the cause. We classify the verified step using the taxonomy below. Scrub-induced failures motivate changes to redaction or placeholder policies, whereas reasoning failures motivate changes to prompting or decoding. 
+
+Privacy constraints. We apply two checks. First, the scrubber must only replace content rather than introduce new factual text. Let strip ( ˜q) remove placeholder tokens from the scrubbed query; after whitespace normalization, we require strip ( ˜q) ∈ Substr (q). (2) Here Substr (q) is the set of normalized contiguous substrings of q. Second, the generated answer must not reproduce any private field from q verbatim. We evaluate correctness 16 Published as a conference paper at COLM 2026 against the CoQA reference answer, and a counterfactual repair counts as successful only if it is correct and passes the no-leakage check. 
+
+Taxonomy of scrub-related and reasoning failures. To make the attribution actionable, we classify the localized cause using the five categories in Table 10. The first, second, fourth, and fifth categories indicate failures introduced by the privacy transformation; Reasoning Failure is reserved for cases in which the scrubbed input still contains all evidence needed to answer correctly. Table 10: Error taxonomy for the privacy scenario. 
+
+Category Localized cause 
+
+Cross-reference The same entity is replaced by different placeholders, preventing the model from recognizing that the mentions co-refer. Embraced Scrub-bing The target answer is hidden within or split across scrubbed spans, making it unavailable for extraction or reconstruction. Reasoning Failure All necessary evidence is preserved in ˜ q, but the model makes an incorrect inference. Unresolved Coref-erence Redaction prevents a pronoun or generic expression from being linked to its antecedent. Scrubbing Diver-gence An entity is represented inconsistently across the question and context, such as a placeholder in one view and plain text or a different label in another. 
+
+Takeaway. This privacy scenario extends the localization evaluation in Section 4.1 beyond ordinary reasoning errors. By identifying both the failed reasoning step and whether its cause lies in scrubbing, HPFA provides a verified target for repair without treating every failure as a decoder problem. 
+
+# D Prompt Templates 
+
+Table 11 summarizes the role, inputs, and outputs of each prompt family; full templates follow. Table 11: Prompt families used in our experiments. 
+
+Prompt family Role Inputs Outputs 
+
+Trajectory sam-pling One solution per task per call; repeatable for multiple trajectories Task text; format constraints from the template Full generations that follow the template Paired attribu-tion Compare reference vs. fail-ing trace; locate the earliest erroneous step on the fail-ure chain Query; reference and failing traces; answer or score sum-mary; optional prior hints Structured descrip-tion of the root-cause step Negative-only attribution Without a gold reference, lo-cate the earliest error on the failure chain (same output format as paired) Query; failing trace; answer or score summary; optional prior hints Same root_cause 
+
+tag structure as paired (step_id ,
+
+step_content )Hypergraph construction Atomize reasoning steps and build a dependency hy-pergraph for parsing Structured instance with query and pos./neg. attempts; op-tional few-shot and target in-stance Structured steps and dependency relations Re-reasoning Rewrite a solution from root-cause diagnosis with-out external gold references Query; failing trace; root-cause text Revised full gen-eration under tag constraints 
+
+17 Published as a conference paper at COLM 2026 
+
+Trajectory sampling / Code 
+
+"""/no_think You are an expert Python programmer. Solve the following programming task with a correct, runnable Python solution. ### Task {question} ### Output format (required) 1. You may briefly reason outside the tags if needed. 2. Put your **final, complete solution** (the full Python code the grader should run) inside **exactly one** pair of tags: <code> # your complete code here </code> 3. Use the literal tag names `<code> ` and `</code> ` (lowercase). Do not use markdown fences instead of these tags for the final code. 4. The code inside `<code>...</code> ` must be self-contained as much as the task allows. 5. If the task names a function or class (e.g. `def maximum_product_of_three(...) 
+
+`), you **must** define that exact name in your code so `from solution import <that name> ` succeeds; do not rename, omit, or only define helpers with different names. Your answer: """ 
+
+Paired attribution (success / failure) / Math 
+
+"""/no_think You are given a math problem and two solution attempts: one correct (positive) and one wrong (negative). The **failure solution** is written ** step-by-step** (e.g. "Step 1", numbered items, or similar). **Problem (query):** {query} **Groundtruth solution (correct, answer = {positive_answer}):** {positive_response} **Failure solution (wrong, answer = {negative_answer}):** {negative_response} {prev_hint} Compare the two reasoning chains. In the **failure solution only**, locate the ** single step** where the reasoning first goes wrong (the earliest step whose mistake leads to the wrong final answer). Put **only** the following inside one pair of tags, nothing outside the tags (no preamble, no analysis): <root_cause> step_id: <the step label or number exactly as in the failure solution> step_content: <the full text of that step, copied verbatim from the failure solution> </root_cause>""" 
+
+18 Published as a conference paper at COLM 2026 
+
+Negative-only attribution / Math 
+
+"""/no_think You are given a math problem and **one wrong solution attempt** ( negative) only. **No correct reference solution is provided.** The **failure solution** is written **step-by-step** (e.g. "Step 1", numbered items, or similar). **Problem (query):** {query} **Failure solution (wrong, answer = {negative_answer}):** {negative_response} {prev_hint} In the **failure solution only**, locate the **single step** where the reasoning first goes wrong (the earliest step whose mistake leads to the wrong final answer). Infer the error using the problem statement and the failure trace alone. Put **only** the following inside one pair of tags, nothing outside the tags (no preamble, no analysis): <root_cause> step_id: <the step label or number exactly as in the failure solution> step_content: <the full text of that step, copied verbatim from the failure solution> </root_cause>""" 
+
+Hypergraph construction / Code 
+
+"""You are an expert in structured analysis of **programming solution attempts** (natural-language reasoning plus Python code). Your task is to analyze **two** attempts for the **same** coding problem, a ** positive** attempt (passes tests) and a **negative** attempt (fails), and: 1. **Atomize steps**: Decompose each side into minimal units. **positive** maps to trajectory label **T1**, **negative** to **T2** in `trajectoryies_id `.2. **Build a hypergraph**: Within-side dependencies, then **merge** nodes only when **both** **positive.response** and **negative.response** **explicitly** contain the same step (same code intent). Do not merge on guesswork. 3. **Output** in the standard format below. ---### Hypergraph structure notes - **T1** <-> **positive** (passing). **T2** <-> **negative** (failing). - Merge only with strict textual evidence in both responses. - `trajectoryies_id ` uses "T1" and/or "T2" accordingly. ---Input format (**minimal adversarial shape**; **no `trajectories ` key**; **no** `
+
+gt_solution ` / `test ` / `test_info `): 
+
+``` json {"id": "string", 
+
+19 Published as a conference paper at COLM 2026 
+
+"query": "The programming problem statement", "positive": { "response": "Full model output for the passing attempt", "code": "Program that passes tests" }, "negative": { "response": "Full model output for the failing attempt", "code": "Program that fails tests" }}
+
+``` 
+
+---Your output format: 
+
+``` json {"steps": [ {"node_id": "S1", "trajectoryies_id": ["T1"], "text": "Content of one atomic step" }], "dependencies": [ {"from": ["S1"], "to": ["S2"] }]}
+
+``` 
+
+Field descriptions: 1. node_id: Unique step id. Merged steps use trajectoryies_id ["T1","T2"] when both sides explicitly share the step. 2. trajectoryies_id: **T1** always labels steps that come from the **positive** trajectory (the passing attempt: **positive.response** / **positive.code**). **T2** always labels steps that come from the **negative** trajectory (the failing attempt: **negative.response** / **negative.code**). Use ["T1"], ["T2 "], or ["T1","T2"] according to which side(s) the step belongs to. 3. text: Clear programming/reasoning step description. 4. dependencies: As before. ---Below is a few-shot example: few_shot_example: ${few_shot_example} ---Your actual input: ${real_input} """ 
+
+20 Published as a conference paper at COLM 2026 
+
+Re-reasoning / Code 
+
+"""/no_think You are given a programming task. A previous solution was wrong. The root cause analysis below points to the earliest mistake. **You are not given any reference or gold solution**. Write a **new** complete Python program that fixes the issue implied by the root cause and correctly solves the task on your own. **Task:** {query} **Previous wrong attempt (for context only; do not repeat its errors):** {negative_response} **Root cause (what went wrong):** {root_cause} Provide a brief plan if needed, then put the **full final program** in **exactly one** pair of tags: <code> # your complete solution </code> Use lowercase `<code> ` / `</code> `. Your answer:""" 
+
+21
