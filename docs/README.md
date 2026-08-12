@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-03 ~ 2026-08-12</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-12</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 39 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 9 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
-    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>3 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>24</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>15</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>3</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-12 09:56:43 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-12 21:03:28 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>10天完成39篇AI领域前沿论文整理，含24篇精读、15篇速读。</p>
-<p>两篇9.0分的高分成果最值得关注，分别聚焦搜索智能体调控自博弈、实例自适应LoRA生成的混合专家架构。</p>
-<p>普通读者可先从三篇8.0分的热门方向速读，快速了解领域最新进展。</p>
+<p>2026-08-12 完成9篇AI智能体领域论文研读，6篇精读3篇速读。</p>
+<p>最值得关注的是两篇满分智能体自进化方向研究，分别是LinkedIn落地的自进化智能客服系统，以及超越人类设计的智能体共进化研究。</p>
+<p>关注AI智能体发展的普通读者，可优先阅读这两篇高分精读论文。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +73,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">24 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SearchMaster: Grounded and Regulated Self-Play for Search Agents">SearchMaster: Grounded and Regulated Self-Play for Search Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="MoEGen: Mixture-of-Experts for Instance-Adaptive LoRA Generation">MoEGen: Mixture-of-Experts for Instance-Adaptive LoRA Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Noise-Aware Shrinkage for Differentially Private Zeroth-Order Fine-Tuning of Large Language Models">Noise-Aware Shrinkage for Differentially Private Zeroth-Order Fine-Tuning of Large Language Models</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Self-evolving Agentic Customer Support System at LinkedIn">Self-evolving Agentic Customer Support System at LinkedIn</span></li><li><span class="dpr-home-dashboard-paper-title" title="Co-Evolution in Agentic Systems: Toward Self-Directed Evolution Beyond Human Design">Co-Evolution in Agentic Systems: Toward Self-Directed Evolution Beyond Human Design</span></li><li><span class="dpr-home-dashboard-paper-title" title="MEGA: Self-Evolving Agent Optimization Infrastructure via Wisdom Graph">MEGA: Self-Evolving Agent Optimization Infrastructure via Wisdom Graph</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">llm-trends <strong>21</strong></span><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>6</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">15 篇</strong>
+    <strong class="dpr-home-dashboard-count">3 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Exploring and Bridging Knowledge Holes in Unlearned Multimodal Large Language Models">Exploring and Bridging Knowledge Holes in Unlearned Multimodal Large Language Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="From Profiling to Synthesis: Benchmarking Implicit Behavioral Alignment in Personalized LLM Agents">From Profiling to Synthesis: Benchmarking Implicit Behavioral Alignment in Personalized LLM Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="TQLite: Multi-LLM Jury Guided Distillation for Real-time MQM Translation Quality Evaluation">TQLite: Multi-LLM Jury Guided Distillation for Real-time MQM Translation Quality Evaluation</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SBCO: Self-Supervised, Verifier-Grounded Harness Optimization For Planning Agents">SBCO: Self-Supervised, Verifier-Grounded Harness Optimization For Planning Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Correcting Long-Horizon Search Agents via Tree-Structured Memory">Self-Correcting Long-Horizon Search Agents via Tree-Structured Memory</span></li><li><span class="dpr-home-dashboard-paper-title" title="Guixu: Valuation-Driven Data Discovery for Autonomous AI Agents with On-Chain Attestation">Guixu: Valuation-Driven Data Discovery for Autonomous AI Agents with On-Chain Attestation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">llm-trends <strong>14</strong></span><span class="dpr-home-dashboard-tag">ase <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span></div>
 </section>
 </div>
 
