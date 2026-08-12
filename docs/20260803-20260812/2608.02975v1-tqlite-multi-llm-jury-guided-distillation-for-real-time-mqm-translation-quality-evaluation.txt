@@ -1,0 +1,440 @@
+Title: TQLite: Multi-LLM Jury Guided Distillation for Real-time MQM Translation Quality Evaluation
+
+URL Source: https://arxiv.org/pdf/2608.02975v1
+
+Published Time: Wed, 05 Aug 2026 00:20:33 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# TQLite : Multi-LLM Jury Guided Distillation for Real-time MQM Translation Quality Evaluation 
+
+## Bhavin Jawade and Cameron R. Wolfe 
+
+## Netflix 
+
+## {bjawade,cameronwolfe}@netflix.com 
+
+## Abstract 
+
+Large language models (LLMs) have demon-strated impressive performance in MQM-based translation quality (TQ) evaluation, and recent advances in large reasoning models (LRMs) promise even greater improvements. However, both LLMs and LRMs are computationally ex-pensive to deploy at scale, while small language models (SLMs)— though much more efficient —struggle with the complex reasoning required for evaluation tasks. In this work, we present an extensive empirical study benchmarking SLMs, LLMs, and LRMs across a wide range of TQ evaluation setups, providing a comprehensive view of the current landscape and establish-ing best practices. To address the scalability challenge, we introduce TQLite , a novel dis-tillation framework that enables SLMs to ap-proach the MQM evaluation performance of the best LRM-based evaluators. Our approach leverages a multi-LRM jury to generate high-quality synthetic training data via practical data curation techniques and aggregation of evalua-tion responses across a diverse panel of models. Our results demonstrate that SLMs trained via 
+
+TQLite achieve strong MQM evaluation perfor-mance that far exceeds off-the-shelf evaluation capabilities of standard SLMs, offering a scal-able and cost-effective alternative to LLM- and LRM-based evaluators. 
+
+## 1 Introduction 
+
+Recent advancements in large language models (LLMs) have made them capable of accurately solv-ing a wide variety of tasks (Brown et al., 2020). However, the broad scope of LLMs makes them more difficult to evaluate compared to prior genera-tions of deep neural networks. Not only can LLMs solve many tasks, but the tasks that they solve tend to be open-ended— there may be many “correct” answers to any given question . In this regime, tra-ditional evaluation metrics for text generation are less effective (Papineni et al., 2002; Banerjee and 
+
+Figure 1: Our TQLite framework for distilling a multi-LRM jury into an SLM for efficient TQ evaluation. 
+
+Lavie, 2005) and tend to correlate poorly with hu-man judgments (Stiennon et al., 2020), leading to the popularization of reference-free and open-ended evaluation techniques like LLM-as-a-Judge (Zheng et al., 2023). The concept of LLM-as-a-Judge is simple: we just prompt a powerful LLM to evaluate a segment of text . Usually, the structure and content of the prompt provided to the LLM judge resemble in-structions that would normally be provided to a human evaluator (Chiang and Lee, 2023); e.g., a description of criteria to evaluate, a scoring rubric with detailed evaluation instructions, the scale or format of score to return, and more. LLM-as-a-Judge has been shown to correlate well with human assessments of generation quality (Li et al., 2023), leading to its widespread adoption as an evaluation technique for LLMs (Gu et al., 2024). LLM-as-a-Judge approaches have recently been adopted in research on machine translation (MT). Prior learned metrics for evaluating translation quality (TQ) explored finetuning smaller language models over labels from human evaluators to detect translation errors at both a segment (Sellam et al., 2020; Rei et al., 2022a) and a span (Guerreiro et al., 2024) level. Today, the best metrics for evaluating translation quality (TQ), as judged by performance on the WMT metrics task (Freitag et al., 2024), are primarily LLM-based. Several techniques have arXiv:2608.02975v1 [cs.CL] 4 Aug 2026 been proposed for applying LLM-as-a-Judge to TQ evaluation using both a direct assessment approach (Kocmi and Federmann, 2023b) or a multidimen-sional quality metrics (MQM) framework (Kocmi and Federmann, 2023a; Fernandes et al., 2023). When prompted with an MQM-based scoring framework, LLM judges provide state-of-the-art re-sults for TQ evaluation at the system level (Kocmi and Federmann, 2023a). At the segment level, the performance of such models naturally lags be-hind that of the best learned metrics (Juraska et al., 2024), but this gap can be closed with additional finetuning (Fernandes et al., 2023). The possibility of evaluating TQ with smaller open-source models has been partially explored (Lu et al., 2024), but nearly all state-of-the-art LLM judges for TQ are based on large closed-source models (e.g., GPT-4 (Achiam et al., 2023) or PaLM (Anil et al., 2023)), 
+
+making the evaluation process both expensive and difficult to replicate .Despite this current dependence on closed-source models, these trends are likely to be dis-rupted in the dynamic environment of LLM re-search. Given the close relationship between evaluation and reasoning, large reasoning models (LRMs)— including both closed (Jaech et al., 2024) and open-source (Guo et al., 2025; Team et al., 2025b) variants —have the potential to boost TQ evaluation capabilities, albeit at the cost of a larger computational footprint (Feng et al., 2025). Addi-tionally, higher-quality open-source LLMs are now available (Team et al., 2025a; Yang et al., 2025) that may rival closed-source models in the context of TQ evaluation. 
+
+Our contribution. We provide a comprehensive and practical benchmark of modern LLMs for TQ evaluation that covers models of all modes (i.e., reasoning versus standard), sizes, and levels of openness. Such an analysis paints a clear picture of current LLM-as-a-Judge capabilities for TQ. Based on the results of this analysis, we focus upon im-proving existing capabilities in three key areas: 1. Cost. 2. Performance. 3. Openness. Frontier-level LRMs and LLMs already possess impressive evaluation capabilities, but we find that current open models— and especially small lan-guage models (SLMs) —lag behind the TQ evalua-tion capabilities of top models. To solve this issue, we develop “TQLite”, a novel knowledge distilla-tion framework that uses a jury of the top LRMs and LLMs to construct a high-quality synthetic training dataset for TQ evaluation via majority vot-ing. We show that TQLite can be used to create SLM-based judges for TQ evaluation that are open, efficient and competitive with state-of-the-art met-rics at both the system and segment level. 
+
+## 2 Related Work 
+
+Reasoning. Although early LLMs were criti-cized for their poor reasoning capabilities (Brown et al., 2020), later work on chain of thought (CoT) prompting found that LLMs can reason well when prompted to explain their output in either a few (Wei et al., 2022) or zero-shot (Kojima et al., 2022) manner. This discovery has led CoT prompting to become a staple for LLMs, and many variants have been proposed (Yu et al., 2023). Recent advance-ments in LRMs are related to work on CoT prompt-ing, as LRMs operate by outputting a long CoT prior to producing their final output (Guo et al., 2025; Team et al., 2025b). Instead of eliciting this behavior via prompting, however, LRMs are trained to leverage their long CoT— often called a “reasoning trace” or “long CoT” —using large-scale reinforcement learning with verifiable re-wards (Lambert et al., 2024; Shao et al., 2024). The long CoT from an LRM is much longer than a standard CoT and can typically be controlled via a reasoning token to determine how much effort (i.e., low, medium or high) should be invested into solving a problem. At higher reasoning efforts, the model will generate a longer CoT, thus invest-ing more inference-time compute into a particular completion. 
+
+LLM-as-a-Judge. The idea of using LLMs for evaluation was popularized by Zheng et al., which conducted a formal study of the LLM-as-a-Judge approach used in an earlier blog post from the same group (Team, 2023). This formal proposal of LLM-as-a-Judge was followed by a swath of related re-search. GPTScore (Fu et al., 2023) benchmarks many LLMs based on their ability to evaluate text generation tasks. AlpacaEval (Li et al., 2023) uses LLM judges to create an automated leaderboard for instruction-following LLMs. G-Eval (Liu et al., 2023) introduces an evaluation framework in which LLMs assess text quality using a detailed rubric and chain-of-thought (CoT) prompting. Chiang and Lee and Wang et al. explore the level of agreement between LLM-as-a-Judge and human evaluators. Wang et al. analyzes biases in LLM judges and pro-poses potential calibration methods. Prometheus (Kim et al., 2023, 2024) explores finetuning open-source models to match the evaluation capabilities of frontier-level LLMs. 
+
+LLMs for TQ Evaluation. Gemba (Kocmi and Fed-ermann, 2023b) pioneered the use of LLMs for TQ evaluation and was later extended by Gemba-MQM 
+
+(Kocmi and Federmann, 2023a) to use an MQM-based evaluation framework. EAPrompt (Lu et al., 2023) aims to improve the segment-level perfor-mance of LLM evaluators for TQ by exploring sev-eral prompting strategies, including CoT prompt-ing. MQM-APE (Lu et al., 2024) extends the 
+
+Gemba-MQM framework by using LLM-generated post edits to identify the most relevant error spans. AutoMQM (Fernandes et al., 2023) benchmarks various off-the-shelf and finetuned LLMs for TQ evaluation with an MQM framework. 
+
+SLMs and Distillation. LLM scaling laws indicate that LLM performance improves smoothly with scale (Kaplan et al., 2020). However, standard Chinchilla-optimal scaling laws (Hoffmann et al., 2022) only consider training costs, ignoring the long-term inference cost of a larger model. High inference costs have increased interest in creating high-quality SLMs, which are usually developed either: 1. In parallel to a larger LLM— for the purpose of enabling faster, lower-cost experimenta-tion —as part of a multi-LLM model family; e.g., Llama-4-Scout (Meta, 2025) or Gemma-3-4b-it (Team et al., 2025a). 2. By distilling the knowledge of a larger teacher model into a more efficient student model; e.g., DeepSeek-R1-Distill (Guo et al., 2025). The topic of knowledge distillation (Hinton et al., 2015) has been widely explored for both LLMs and SLMs (Xu et al., 2024). 
+
+## 3 Preliminaries 
+
+Data. The majority of our experiments are con-ducted on the test set from the WMT22 metrics task (Freitag et al., 2022). This test set is com-prised of three language pairs: zh-en, en-de and en-ru. For each language pair, this dataset contains 
+
+∼2,000 sentences that are sampled from four pos-sible domains: news, social, conversational and e-commerce. Translations of these sentences are generated by 54 different human and machine trans-lation systems, largely taken from the WMT22 gen-eral MT task (Kocmi et al., 2022). In total, the dataset contains 106,758 segments to be evaluated across the three language pairs. 
+
+MQM framework. As described in (Freitag et al., 2021), we use human-labeled MQM scores (Lom-mel et al., 2014), which are available for the WMT22 metrics test set, as the gold standard for evaluating TQ. In the MQM framework, humans are asked to mark individual error spans within a translation segment and label each error span with both a category and a severity (i.e., critical, major, or minor). Instead of asking annotators to directly provide a quality score, the final MQM score is automatically derived from these error spans. In-terestingly, many LLM-based TQ evaluators also adopt an MQM framework by asking the model to identify error spans and deriving a final score from these spans (Kocmi and Federmann, 2023a; Fernandes et al., 2023). 
+
+Metrics. We focus on two key metrics for measur-ing TQ evaluation performance: • System-level pairwise accuracy (Kocmi et al., 2021). • Segment-level pairwise accuracy with tie cali-bration, a.k.a. acc ⋆ (Deutsch et al., 2023). We use the official scripts from WMT22 1 for eval-uation and avoid reporting correlation-based met-rics on both the system and segment level due to known sensitivities to small sample sizes and out-liers (Mathur et al., 2020). 
+
+Baselines. We compare our TQ evaluation mod-els to various baseline metrics and aim to cover a wide scope of methodologies in our analysis. We consider reference-based learned metrics like MetricX (Juraska et al., 2024), COMET-22 (Rei et al., 2022a), and BLEURT (Sellam et al., 2020). Additionally, learned reference-free metrics like COMET-kiwi (Rei et al., 2022b) and COMET-QE (Rei et al., 2021) are included, as well as LLM-based TQ evaluation metrics that precede 
+
+Gemba-MQM like Gemba-DA (Kocmi and Federmann, 2023b). 
+
+## 4 Benchmarking LLM Judges for TQ 
+
+Prior to training any SLM-based evaluators, we aim to develop a detailed understanding of the cur-   
+
+> 1We specifically adopt the evaluation code from the
+> Gemba-MQM repository to ensure an exact match. Figure 2: System-level (aggregate) and segment-level (per language pair) accuracy of LLMs using the stan-dard Gemba-MQM prompt on the WMT22 metrics test set. Color indicates model family, while dashed lines differ-entiate between different members of the same model family. The axis for each metric is normalized using the minimum and maximum performance achieved by any LLM, and the figure is annotated with the best and worst performance along each axis.
+
+rent limits and best practices for TQ evaluation with LLM-as-a-Judge. We begin with the prompt and framework from Gemba-MQM (Kocmi and Fed-ermann, 2023a) and ablate various aspects of the evaluation setup while measuring performance on the WMT22 test set. We match the settings of Kocmi and Federmann by assuming a reference-free evaluation setting and keeping the same three few-shot examples fixed across all experiments. Full experimental details are outlined in Appendix A, and all prompts used in our experiments are provided in Appendix B. 
+
+LLM selection. To begin, we replicate the prompt and scoring setting of Gemba-MQM across several closed and open-source LLMs, including GPT-4 (Achiam et al., 2023), GPT-4o and GPT-4o-mini (Hurst et al., 2024), Gemini-2.0-flash (Team, 2024), Llama-3 (Dubey et al., 2024), Aya-expanse (Dang et al., 2024), Qwen-3 (non-thinking) (Yang et al., 2025) and Gemma-3 (Team et al., 2025a). The goal of this experiment is to i) measure TQ evaluation capabilities across a wide set of different LLMs and 
+
+ii ) arrive at a smaller representative set of LLMs to use for subsequent experiments. The results of this experiment are outlined in Figure 2. As we can see, the default Gemba-MQM 
+
+prompt is specialized to the gpt-4 model— all other models, including the newer gpt-4o model, per-form significantly worse than gpt-4 when using this prompt . The gemini-2.0-flash model performs well on a segment-level— even surpassing the per-formance of gpt-4 on zh-en evaluation —but lags behind other models on a system level. Addition-ally, we see that efficient model variants tend to be outperformed by their corresponding full models; e.g., gpt-4o-mini performs worse than gpt-4o. When examining the performance of open LLMs, we see that the Gemma-3 family is a clear front-runner in TQ evaluation performance. Al-though closed-source LLMs tend to achieve the best performance, Gemma-3-27b-it actually rivals or surpasses the performance of GPT-4o on all met-rics. Interestingly, qwen-3 models are found to perform poorly on TQ evaluation. We learn from manual inspection that this poor performance arises from the fact that qwen-3 models output a much larger number of error spans relative to other mod-els. This issue persisted after several attempted prompt modifications and despite adhering to rec-ommended sampling settings. Based on these results, we select the following LLMs for subsequent experiments: GPT-4o (closed LLM), GPT-4o-mini (closed SLM), Gemma-3-27b-it (open LLM), Gemma-3-4b-it (open SLM). We omit GPT-4 despite its impressive performance be-cause the model is older, more expensive, and sub-ject to strict rate limits, which restricts experiments. 
+
+Prompt modifications. The original Gemba-MQM 
+
+prompt has some sources of ambiguity that would be beneficial to resolve. For example, the prompt does not explicitly specify the expected format of the model’s output and uses the word “categories” to describe both error categories and severities. To solve these issues, we create a slightly modified prompt for TQLite that resolves this ambiguity by providing a separate, well-structured description of error categories and severity levels; see Appendix B for the full prompt. Given the impressive performance of the 
+
+Gemba-MQM prompt, we maintain the core informa-tion from this prompt and keep changes to a mini-mum while solving the aforementioned issues. As shown in Table 1, the TQLite prompt with free text output still performs slightly worse than the orig-inal Gemba-MQM prompt, indicating that perfor-mance on the WMT22 metrics test set is sensitive to small changes. However, we choose to avoid Prompt Output Format Model System-Level Acc. Segment-Level Acc* All LPs En-De En-Ru Zh-En Avg. 
+
+Baselines 
+
+bleurt-20 84.67% 56.89% 53.37% 49.83% 53.36% 
+
+comet-22 83.94% 60.04% 58.34% 53.93% 57.44% 
+
+metricx-xxl-MQM-2020 85.04% 61.51% 60.70% 54.29% 58.83% 
+
+comet-qe 78.10% 56.96% 53.48% 49.05% 53.16% 
+
+comet-kiwi 78.83% 57.67% 56.33% 51.77% 55.26% 
+
+gemba-gpt4-DA 87.59% 56.20% 52.12% 53.76% 54.03% 
+
+Gemba-MQM Free Text 
+
+gpt-4 89.79% 59.41% 57.14% 53.44% 56.66% 
+
+gpt-4o 86.13% 56.93% 55.43% 50.80% 54.39% 
+
+gpt-4o-mini 82.12% 57.19% 53.25% 50.23% 53.56% 
+
+gemma-3-4b-it 84.67% 55.65% 50.86% 47.70% 51.40% 
+
+gemma-3-27b-it 87.23% 57.24% 54.82% 51.12% 54.39% 
+
+TQLite 
+
+Free Text 
+
+gpt-4o 85.87% 57.03% 54.92% 50.34% 54.10% 
+
+gpt-4o-mini 78.10% 54.62% 49.77% 48.39% 50.92% 
+
+gemma-3-4b-it 81.39% 55.96% 49.50% 45.97% 50.48% 
+
+gemma-3-27b-it 86.86% 56.29% 52.63% 50.93% 52.28% Structured Text 
+
+gpt-4o 84.67% 56.79% 53.50% 49.21% 53.17% 
+
+gpt-4o-mini 78.10% 54.87% 50.50% 47.40% 50.93% 
+
+gemma-3-4b-it 77.74% 54.91% 49.32% 42.39% 48.87% 
+
+gemma-3-27b-it 84.31% 55.91% 53.15% 50.42% 53.16% JSON 
+
+gpt-4o 82.48% 56.11% 52.00% 48.15% 52.09% 
+
+gpt-4o-mini 73.72% 55.47% 52.26% 49.37% 52.36% 
+
+gemma-3-4b-it 77.37% 54.48% 46.78% 44.09% 48.45% 
+
+gemma-3-27b-it 85.04% 56.58% 53.12% 51.23% 53.64% 
+
+TQLite-ST 
+
+Structured Text 
+
+gpt-4o 84.31% 57.63% 54.81% 50.27% 54.23% 
+
+gpt-4o-mini 82.48% 57.56% 54.91% 47.80% 53.42% 
+
+gemma-3-4b-it 76.28% 55.72% 50.27% 44.07% 50.02% 
+
+gemma-3-27b-it 84.67% 57.28% 54.77% 51.06% 54.37% CoT + Structured Text 
+
+gpt-4o 83.21% 58.16% 55.83% 51.96% 55.32% 
+
+gpt-4o-mini 75.55% 56.74% 53.21% 47.55% 52.50% 
+
+gemma-3-4b-it 80.66% 55.24% 49.22% 45.83% 50.10% 
+
+gemma-3-27b-it 86.50% 56.29% 52.95% 50.24% 53.16% 
+
+Table 1: System and segment-level accuracy of various prompt and model combinations on the WMT22 test set. 
+
+improving performance via manual prompt opti-mizations. The experiments in this section focus upon measuring the relative performance impact of systematic changes to the TQ evaluation setup, making absolute performance less of a concern. Our core TQLite experiments are also primarily based on finetuning, where prompt engineering has less of an impact. 
+
+Structured outputs. The Gemba-MQM prompt pro-vides no explicit description of the model’s ex-pected output structure, instead choosing to demon-strate the correct output structure via few-shot ex-amples. As a result, adherence to the desired out-put structure is noisy. For example, ∼10% of 
+
+Gemba-MQM outputs with GPT-4 contain a partial formatting error 2, and this ratio increases to 85% for less powerful models like Gemma-3-4B-it. 
+
+> 2
+
+Partial formatting errors occur when the model does not cover all three error severities in its output or provides an error without a properly formatted span. 
+
+For this reason, parsing the evaluation results from Gemba-MQM and TQLite requires the use of many custom— and imperfect —heuristics that, if implemented incorrectly, can drastically influence evaluation results. To prevent problems caused by heuristic parsing, we can give the model detailed instructions on how to format its output. However, such format restrictions have the potential to dete-riorate the LLM’s performance (Tam et al., 2024). In Table 1, we test two variants of the TQLite 
+
+prompt that instruct the model to format its output either as structured text 3 or a JSON document. Enforcing a strict output structure degrades TQ evaluation quality across all models at a system level, and JSON formatting seems to be slightly more detrimental than structured text formatting. Notably, the largest degradation in TQ evaluation quality occurs in the less powerful SLM models, 
+
+> 3
+
+The structured text approach matches the original out-put format of Gemba-MQM , but we add explicit instructions describing this structure into the prompt. indicating that models with less capacity struggle to handle more complex evaluation instructions .Despite these results, the need for heuristic pars-ing can significantly complicate the process of de-riving the final MQM score from a model’s pre-dicted output. In our experiments, we observed that even minor adjustments to the parsing algo-rithm could substantially improve or degrade eval-uation metrics, even when the model’s output is kept fixed. Ideally, our TQ evaluator should adhere to a stricter output format to minimize external factors— unrelated to the quality of the evaluation model —that could influence results. For this rea-son, we adopt the structured text output format (i.e., the less problematic of the two options) for the remainder of our experiments, and we aim to develop models capable of following this format while maintaining high TQ evaluation quality. 
+
+Multi vs. Single-Turn Prompts. The Gemba-MQM 
+
+prompt uses a multi-turn chat format for its few-shot examples. The evaluation instructions are pre-sented to the model as a user message in each turn, and the desired output is provided as a response from the assistant. The segment to be scored is provided to the model as a final user message, and the model is expected to output the corresponding evaluation result. Alternatively, we could derive a single-turn format for this prompt that includes all evaluation instructions and few-shot examples in a single user message. Such an approach sim-plifies the prompt and reduces the total number of tokens (i.e., by not repeating instructions in each turn) consumed by the model. We create a single-turn variant of the TQLite 
+
+prompt, which we call TQLite-ST ; see Appendix B for the full prompt. We see in Table 1 that using a single-turn chat format does not meaningfully impact TQ evaluation quality for any model. In fact, both GPT-4o and Gemma-3-27b-it slightly im-prove at the segment level by using a single-turn prompt , leading us to adopt single-turn prompts in the remainder of our experiments. We also extend this single-turn prompt by asking the model to out-put an explanation along with its error spans (i.e., zero-shot CoT prompting (Kojima et al., 2022)) but find that this approach— though moderately help-ful in some cases —does not yield a consistent or significant performance boost. 
+
+Reasoning models. Given that evaluation is fun-damentally a reasoning problem, we conclude this initial LLM-as-a-Judge exploration by exploring 
+
+> Figure 3: Aggregate system and segment-level accuracy on the WMT22 metrics test set as we average segment-level MQM scores from the same LRM (blue) or differ-ent LRMs (orange).
+
+the use of LRMs for TQ evaluation. We con-sider a wide scope of open and closed-source LRMs, including deepseek-r1-distill-llama (Guo et al., 2025), qwen-3 (thinking) (Yang et al., 2025), gemini-2.5 (Comanici et al., 2025), o1 (Jaech et al., 2024), o3 and o4-mini (OpenAI, 2025). For LRMs with reasoning token support, we test both low and high reasoning efforts. All tests use the TQLite-ST 
+
+prompt, and results are provided in Table 2. LRMs achieve (by far) the best performance on the system level of any model considered so far. In particular, o3 with high reasoning effort achieves a state-of-the-art system-level accuracy of 92.34%. At the segment level, TQ evaluation results with LRMs are more skewed. For example, gemini-2.5-pro-thinking achieves an average segment-level ac-curacy of 57.06%, outperforming all other LLM or LRM-based evaluators and approaching the per-formance of top learned metrics. The performance of both o1 and o3 falls within a similar range, but other LRMs perform noticeably worse. Open-source LRMs perform noticeably worse than their closed-source counterparts. We observe that model size tends to benefit evaluation perfor-mance for both open and closed-source models; e.g., gemini-2.5-pro outperforms gemini-2.5-flash, while qwen-3-32b outperforms qwen-3-8b. Addi-tionally, increasing the reasoning effort improves performance in most cases, but o4-mini is found to perform slightly better with low reasoning effort. 
+
+Multi-LRM jury. To further optimize perfor-mance, we can generate multiple LRM outputs for each segment and aggregate by computing the average score on a segment level. This approach Category Model System-Level Acc. Segment-Level Acc* All LPs En-De En-Ru Zh-En Avg.                                                                             
+
+> Open LRM
+> qwen-3-8b-thinking 76.64% 54.20% 48.44% 49.07% 50.57%
+> qwen-3-32b-thinking 83.58% 55.61% 51.78% 50.83% 52.74%
+> deepseek-r1-distill-llama-8b 76.28% 54.15% 45.47% 45.61% 48.41%
+> deepseek-r1-distill-llama-70b 84.31% 55.10% 51.10% 48.98% 51.73% Closed LRM
+> o1-low 85.04% 58.88% 57.05% 53.75% 56.56%
+> o1-high 86.13% 57.71% 57.62% 53.79% 56.37%
+> o3-low 91.61% 58.08% 58.63% 51.92% 56.21%
+> o3-high 92.34% 57.99% 57.49% 52.88% 56.12%
+> o4-mini-low 89.05% 57.45% 55.94% 50.92% 54.77%
+> o4-mini-high 87.96% 56.35% 55.47% 50.19% 54.00%
+> gemini-2.5-flash-thinking 87.23% 58.17% 57.12% 52.24% 55.84%
+> gemini-2.5-pro-thinking 89.42% 58.90% 58.18% 54.12% 57.06% Multi-LRM o4-mini-high ×387.96% 59.03% 57.35% 52.48% 56.29%
+> o4-mini-high ×o3-high ×o1-high 89.78% 58.84% 58.74% 53.64% 57.07%
+
+Table 2: Performance of LRMs on the WMT22 test set using the TQLite-ST prompt with structured text outputs. 
+
+is common for LRMs and is even explicitly rec-ommended in the usage guidelines for deepseek-r1. We test two variants of a multi-LRM jury: • Multi-Output : generate multiple outputs from the same LRM. • Multi-LRM : generate multiple outputs from several different LRMs. In both cases, we obtain our final score by tak-ing the average segment-level score. This multi-LRM jury strategy is tested with o4-mini in Ta-ble 2, where we see that both aggregation strate-gies improve TQ evaluation performance. Inter-estingly, this approach has the biggest impact at a segment level— using a multi-LRM jury yields a segment-level accuracy exceeding that of all indi-vidual LRMs in the jury .The behavior of multi-LRM aggregation is il-lustrated more granularly in Figure 3. Beginning with o4-mini, this figure displays the change in sys-tem and segment-level accuracy as we increase the number of LRM outputs over which aggregation is performed. As we can see, aggregating over out-puts from different LRMs yields a more consistent performance improvement compared to aggregat-ing over several outputs from the same LRM .
+
+Takeaways. The findings of our LLM-as-a-Judge benchmark for TQ can be summarized as follows: • Accurate TQ evaluation can be performed with both closed and open-source LLMs. • SLMs perform poorly, especially when asked to strictly format their output. • LRMs achieve the best performance and can be enhanced via a multi-LRM jury. • Closed-source models outperform open-source models in nearly all cases. Based on these findings, we now present our 
+
+TQLite methodology, which aims to distill the im-pressive TQ evaluation capabilities of (multi-)LRM judges into small open-source models. 
+
+## 5 Distilling Translation Quality 
+
+Problem setup. Let D = {xi}Ni=1 denote a set of source-target examples, where 
+
+xi =  s(i) 
+
+> l
+
+, s (i) 
+
+> t
+
+, t (i) 
+
+> t
+
+, t (i)
+
+> l
+
+,
+
+with s(i) 
+
+> l
+
+and t(i) 
+
+> l
+
+the source/target language iden-tifiers, s(i) 
+
+> t
+
+the source text, and t(i) 
+
+> t
+
+the translation. We adopt an MQM-style schema Σ = ( C, V) with categories C and severities V. An error span anno-tation (ESA) is 
+
+a =  e, c, v ,
+
+with e being the source or target error span, c ∈ C 
+
+error category, v ∈ V the error severity. 
+
+Synthetic data generation. We generate ESAs for each xi ∈ D using a panel of M large reasoning models (LRMs), denoted 
+
+T = {fθ1 , . . . , f θM }.
+
+Given the same prompt P and schema Σ, each fθm
+
+produces a set of ESAs A(m) 
+
+> i
+
+and a corresponding MQM score S(m) 
+
+> i
+
+. The MQM score for a set of ESAs is computed as the weighted sum of severity levels, normalized by the length of the translation segment. To assess the level of agreement between the LRMs for a given segment, we compute the score range as follows: 
+
+∆i = max  
+
+> m
+
+S(m) 
+
+> i
+
+− min  
+
+> m
+
+S(m) 
+
+> i
+
+,
+
+which measures the spread between the most le-nient and most critical judgments across the jury. Using this range, we categorize each example into one of five agreement levels: • Perfect agreement: ∆i = 0 
+
+• High agreement: ∆i ≤ 2
+
+• Moderate agreement: ∆i ≤ 5
+
+• Low agreement: ∆i ≤ 10 
+
+• No agreement: ∆i > 10 
+
+This categorization allows us to analyze where the jury of LRMs is consistent and where it di-verges. Segments with high or perfect agreement are strong candidates for direct inclusion in the synthetic training set. For each segment in the perfect or high agree-ment categories, we perform an additional refine-ment step using a meta-judge LLM. The input to the meta-judge consists of the error spans produced by all LRMs for that segment, along with their cor-responding error explanations. The meta-judge is prompted to: 1. Identify cases where different LRMs have highlighted spans that refer to the same un-derlying translation error, even if the exact span boundaries differ. 2. Compare the associated error explanations to confirm that the described errors are semanti-cally equivalent. 3. Merge such cases into a single, aggregated error annotation, selecting canonical span boundaries and assigning the most appropriate category and severity. This process serves two purposes: (i) to remove duplicate annotations that arise from minor bound-ary or phrasing differences across LRMs, and (ii) to ensure consistency in the assigned categories and severities. The result is a clean, consolidated set of error span annotations for high-confidence seg-ments, which is then used as synthetic supervision for training the distilled SLM evaluator. 
+
+Finetuning the student model. Using the filtered and cleaned high-quality annotations obtained from    
+
+> Figure 4: Distillation Scaling -Change in average segment-level accuracy with increase in number of train-ing samples for Gemma-3-12b-it .
+
+above, we train a smaller open-source language model to replicate the translation quality evalua-tion capabilities of the LRM jury. In our exper-iments, we use instruction-tuned models such as 
+
+Gemma-12B-it and Gemma-27B-it as the student models. These models are orders of magnitude smaller than typical LRMs used in the jury, which can exceed 10 11 –10 12 parameters. We adopt a standard supervised fine-tuning (SFT) approach. Each training example consists of the same prompt format used during the data curation stage—this includes the original segment (source and translation), the evaluation instructions, and the expected structured output containing the error span annotations. By keeping the prompt format identical, we ensure that the student model learns the task under the same input–output speci-fication as the LRMs from which the annotations were distilled. Formally, given a training set {(pj , y j )}Kj=1 ,where pj is the prompt and yj is the meta-judge’s aggregated output, we minimize the standard nega-tive log-likelihood: 
+
+LSFT = − 1
+
+K
+
+> K
+
+X
+
+> j=1
+
+log Pψ(yj | pj ),
+
+where ψ are the parameters of the student model. We train until convergence on a held-out synthetic validation set. 
+
+## 6 Experiments 
+
+6.1 Implementation Details 
+
+Below we provide details about configurations, hy-perparameters, and training and evaluation setup. Category Model System-Level Acc. Segment-Level Acc* All LPs En-De En-Ru Zh-En Avg.                           
+
+> Pretrained gemma-3-4b-it 86.50% 55.91% 52.78% 51.41% 53.36%
+> gemma-3-12b-it 78.10% 56.04% 52.38% 49.48% 52.63% TQLite-Distilled gemma-3-4b-it 82.48% 56.20% 53.81% 49.40% 53.13%
+> gemma-3-12b-it 85.04% 57.57% 55.30% 52.22% 55.03%
+> Table 3: Performance of LRMs on the WMT22 test set using the TQLite-ST prompt with structured text outputs.
+> Figure 5: Impact of LoRA Rank (number of train-able parameters) on average segment-level accuracy for
+> Gemma-3-12b-it trained with 20,000 training samples.
+> Figure 6: Impact of changing data quality through incor-porating varying degrees of jury agreement in training data on the average segment level performance.
+
+Synthetic Data Generation: For the input source and translation pairs used in synthetic data gen-eration, we curate a dataset of 3M data points from multiple public datasets, including opus-100 ,
+
+opus-books , europarl , opus-tedtalks , tanzil ,
+
+wikipedia , tatoeba , and WMT 2019, 2017, and 2015. The dataset covers the following languages: Spanish ( es ), Russian ( ru ), German ( de ), Chi-nese ( zh ), English ( en ), Japanese ( ja ), and Hindi (hi ). These languages span both high-resource and medium-resource settings, enabling diverse cover-age for error span annotation generation. For a set of LRMs M , we consider the following three models: OpenAI o1 and OpenAI o3 . We per-form error-span aggregation using GPT-4.1-mini 
+
+as a meta-judge. Unless stated otherwise, we re-port results for our fine-tuned models trained with MQM filtering based on Perfect-Agreement , which comprises 99,214 (~100K) high-quality synthetic samples. We finetune two small language models (Gemma-12B-it and Gemma-3-4B-it ). Unless spec-ified otherwise we perform LoRA based parameter efficient supervised finetuning with LoRA rank of 256. 
+
+6.2 Discussion Comparison against larger models. In Table 3, we present results for distilled variants of TQLite. For gemma-12b-it , we observe that distillation consistently improves both segment-level and system-level performance over its pretrained counterpart, achieving an average segment-level accuracy of 55.03%. We outperform all open LRM baselines from Table 2 which includes 
+
+qwen-3-8b-thinking , qwen-3-32b-thinking ,and deepseek-r1-distill-llama-8b/70b —by a substantial margin. While our results remain below the best closed LRM, we achieve them with significantly lower inference cost and latency, highlighting the benefits of Multi-LLM Jury based distillation for efficient translation quality judges. 
+
+Impact of varying Data Quality. Jury agreement, as discussed earlier, is a good proxy for distilla-tion data quality and provides an effective crite-rion for filtering samples during student finetun-ing. Figure 6 illustrates this effect for the distilled 
+
+Gemma-3-12B-it model trained on 20K samples. Training with only Perfect-Agreement data yields the highest accuracy (53.54%), closely followed by Perfect + High agreement (53.44%). Perfor-mance declines as lower-agreement samples are introduced, dropping to 52.21% with Moderate and 51.24% when Low agreement data is included. These results underscore that maintaining high jury agreement in training data is critical to preserving label quality and maximizing distillation effective-Figure 7: Inference time to performance tradeoff. 
+
+ness. 
+
+Impact of training samples. In Figure 4, we present the effect of training set size on segment-level accuracy for the distilled Gemma-3-12B-it 
+
+model. Accuracy improves consistently across the entire range, rising from 0.5259 at 5K samples to 0.5529 at 99K. The largest single jump occurs be-tween 10K (0.5159) and 20K (0.5354), indicating substantial benefit from moving out of the low-data regime. While gains per increment become smaller at larger scales, performance continues to increase steadily up to the maximum dataset size, showing limited signs of plateau within the tested range. 
+
+Number of training parameters. In Figure 5, we present the effect of LoRA rank—the number of trainable parameters—on segment-level accuracy for Gemma-3-12B-it trained with 20K samples. Accuracy rises steadily from rank 16 (52.91%) to a peak at rank 128 (53.80%), indicating that mod-erate capacity yields the best adaptation in this setting. The slight drop at rank 256 may stem from the 20K-sample training set being relatively small for such a high number of trainable parameters, lim-iting the model’s ability to fully exploit the added capacity and potentially introducing mild overfit-ting. Across all ranks, LoRA finetuning provides consistent improvements over the pretrained base-line. 
+
+Inference time and model size. In Figure 7 we present the average segment level accuracy to in-ference speed trade-off for the best closed source models and TQLite ( gemma-12b-it ). As it can be observed that, TQLite has the best accuracy x in-ference time metric, providing a good translation quality judgment at a significantly faster inference speed (lower inference time). This analysis was per-formed by using the APIs provided by the OpenAI for their various models, and using vLLM as the inference engine for Gemma-3-12b-it . We infer 
+
+Gemma-3-12b-it using 4x A100 (40GB) GPUs. 
+
+## 7 Conclusion 
+
+In this work, we presented TQLite , a multi-LRM jury–guided distillation framework for efficient MQM-based translation quality evaluation. Our benchmarking showed that LLM evaluators are highly sensitive to prompt design, and that large reasoning models—especially in multi-LRM ju-ries—deliver the strongest results but at high com-putational and monetary cost. TQLite distills agreement-filtered outputs from these juries into smaller open-source models, preserving much of their accuracy while enabling faster, cheaper in-ference. The resulting SLMs outperform all open baselines and approach closed frontier models, pro-viding a scalable path to high-quality, cost-effective TQ evaluation. 
+
+## Limitations 
+
+Our study demonstrates the effectiveness of dis-tilling multi-LRM juries to improve SLM perfor-mance for TQ evaluation; however, several limi-tations remain. First, SLM-based evaluators still fall short of the best LRM-based judges. Second, our synthetic training data—generated by an LRM jury, even with correct aggregation—may cause student models to inherit systematic biases from their teachers. Third, distilled SLM quality de-pends on LRM jury diversity and agreement. While high-agreement samples boost performance, filter-ing may reduce coverage of edge cases and harder translation errors. Lastly, our experiments target only high- and medium-resource language pairs from the WMT22 metrics test set; effectiveness for truly low-resource or morphologically complex lan-guages remains untested. Further work is needed to assess cross-lingual transfer and generalization. 
+
+## Ethics Statement 
+
+We use only publicly available datasets that are free of personally identifiable or sensitive informa-tion. Our approach relies on LLMs, which have a tendency to propagate biases present in their train-ing data. We attempt to mitigate these systematic biases through aggregation, but some bias may re-main. Additionally, our approach focuses on train-ing efficient SLMs, but LLMs are still notoriously resource-intensive for both training and inference. Our distilled models are primarily evaluated on high- and medium-resource languages, so caution is advised when applying them to other settings or critical applications. We aim to release code and data for transparency and reproducibility. 
+
+## References 
+
+Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. 2023. Gpt-4 technical report. 
+
+arXiv preprint arXiv:2303.08774 .Rohan Anil, Andrew M Dai, Orhan Firat, Melvin John-son, Dmitry Lepikhin, Alexandre Passos, Siamak Shakeri, Emanuel Taropa, Paige Bailey, Zhifeng Chen, et al. 2023. Palm 2 technical report. arXiv preprint arXiv:2305.10403 .Satanjeev Banerjee and Alon Lavie. 2005. Meteor: An automatic metric for mt evaluation with improved cor-relation with human judgments. In Proceedings of the acl workshop on intrinsic and extrinsic evaluation measures for machine translation and/or summariza-tion , pages 65–72. Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. 2020. Language models are few-shot learners. Advances in neural information processing systems , 33:1877–1901. Cheng-Han Chiang and Hung-yi Lee. 2023. Can large language models be an alternative to human evalua-tions? arXiv preprint arXiv:2305.01937 .Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Mar-cel Blistein, Ori Ram, Dan Zhang, Evan Rosen, et al. 2025. Gemini 2.5: Pushing the frontier with ad-vanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 .John Dang, Shivalika Singh, Daniel D’souza, Arash Ahmadian, Alejandro Salamanca, Madeline Smith, Aidan Peppin, Sungjin Hong, Manoj Govindassamy, Terrence Zhao, et al. 2024. Aya expanse: Combin-ing research breakthroughs for a new multilingual frontier. arXiv preprint arXiv:2412.04261 .Daniel Deutsch, George F Foster, and Markus Freitag. 2023. Ties matter: Modifying kendall’s tau for mod-ern metric meta-evaluation. CoRR .Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. 2024. The llama 3 herd of models. arXiv e-prints , pages arXiv–2407. Sicheng Feng, Gongfan Fang, Xinyin Ma, and Xinchao Wang. 2025. Efficient reasoning models: A survey. 
+
+arXiv preprint arXiv:2504.10903 .Patrick Fernandes, Daniel Deutsch, Mara Finkelstein, Parker Riley, André FT Martins, Graham Neubig, Ankush Garg, Jonathan H Clark, Markus Freitag, and Orhan Firat. 2023. The devil is in the errors: Leveraging large language models for fine-grained machine translation evaluation. arXiv preprint arXiv:2308.07286 .Markus Freitag, George Foster, David Grangier, Viresh Ratnakar, Qijun Tan, and Wolfgang Macherey. 2021. Experts, errors, and context: A large-scale study of human evaluation for machine translation. Transac-tions of the Association for Computational Linguis-tics , 9:1460–1474. Markus Freitag, Nitika Mathur, Daniel Deutsch, Chi-Kiu Lo, Eleftherios Avramidis, Ricardo Rei, Brian Thompson, Frederic Blain, Tom Kocmi, Jiayi Wang, et al. 2024. Are llms breaking mt metrics? results of the wmt24 metrics shared task. In Proceedings of the Ninth Conference on Machine Translation , pages 47–81. Markus Freitag, Ricardo Rei, Nitika Mathur, Chi-kiu Lo, Craig Stewart, Eleftherios Avramidis, Tom Kocmi, George Foster, Alon Lavie, and André FT Martins. 2022. Results of wmt22 metrics shared task: Stop using bleu–neural metrics are better and more ro-bust. In Proceedings of the Seventh Conference on Machine Translation (WMT) , pages 46–68. Jinlan Fu, See-Kiong Ng, Zhengbao Jiang, and Pengfei Liu. 2023. Gptscore: Evaluate as you desire. arXiv preprint arXiv:2302.04166 .Jiawei Gu, Xuhui Jiang, Zhichao Shi, Hexiang Tan, Xuehao Zhai, Chengjin Xu, Wei Li, Yinghan Shen, Shengjie Ma, Honghao Liu, et al. 2024. A survey on llm-as-a-judge. arXiv preprint arXiv:2411.15594 .Nuno M Guerreiro, Ricardo Rei, Daan van Stigt, Luisa Coheur, Pierre Colombo, and André FT Martins. 2024. xcomet: Transparent machine translation eval-uation through fine-grained error detection. Transac-tions of the Association for Computational Linguis-tics , 12:979–995. Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shirong Ma, Peiyi Wang, Xiao Bi, et al. 2025. Deepseek-r1: In-centivizing reasoning capability in llms via reinforce-ment learning. arXiv preprint arXiv:2501.12948 .Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. 2015. Distilling the knowledge in a neural network. arXiv preprint arXiv:1503.02531 .Jordan Hoffmann, Sebastian Borgeaud, Arthur Men-sch, Elena Buchatskaya, Trevor Cai, Eliza Ruther-ford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. 2022. Train-ing compute-optimal large language models. arXiv preprint arXiv:2203.15556 .Aaron Hurst, Adam Lerer, Adam P Goucher, Adam Perelman, Aditya Ramesh, Aidan Clark, AJ Os-trow, Akila Welihinda, Alan Hayes, Alec Radford, et al. 2024. Gpt-4o system card. arXiv preprint arXiv:2410.21276 .Aaron Jaech, Adam Kalai, Adam Lerer, Adam Richard-son, Ahmed El-Kishky, Aiden Low, Alec Helyar, Aleksander Madry, Alex Beutel, Alex Carney, et al. 2024. Openai o1 system card. arXiv preprint arXiv:2412.16720 .Juraj Juraska, Daniel Deutsch, Mara Finkelstein, and Markus Freitag. 2024. Metricx-24: The google sub-mission to the wmt 2024 metrics shared task. arXiv preprint arXiv:2410.03983 .Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 2020. Scaling laws for neural language models. arXiv preprint arXiv:2001.08361 .Seungone Kim, Jamin Shin, Yejin Cho, Joel Jang, Shayne Longpre, Hwaran Lee, Sangdoo Yun, Seongjin Shin, Sungdong Kim, James Thorne, et al. 2023. Prometheus: Inducing fine-grained evaluation capability in language models. In The Twelfth Inter-national Conference on Learning Representations .Seungone Kim, Juyoung Suk, Shayne Longpre, Bill Yuchen Lin, Jamin Shin, Sean Welleck, Graham Neubig, Moontae Lee, Kyungjae Lee, and Minjoon Seo. 2024. Prometheus 2: An open source language model specialized in evaluating other language mod-els. arXiv preprint arXiv:2405.01535 .Tom Kocmi, Rachel Bawden, Ondˇ rej Bojar, Anton Dvorkovich, Christian Federmann, Mark Fishel, Thamme Gowda, Yvette Graham, Roman Grund-kiewicz, Barry Haddow, et al. 2022. Findings of the 2022 conference on machine translation (wmt22). In 
+
+Proceedings of the Seventh Conference on Machine Translation (WMT) , pages 1–45. Tom Kocmi and Christian Federmann. 2023a. Gemba-mqm: Detecting translation quality error spans with gpt-4. arXiv preprint arXiv:2310.13988 .Tom Kocmi and Christian Federmann. 2023b. Large language models are state-of-the-art evaluators of translation quality. arXiv preprint arXiv:2302.14520 .Tom Kocmi, Christian Federmann, Roman Grund-kiewicz, Marcin Junczys-Dowmunt, Hitokazu Mat-sushita, and Arul Menezes. 2021. To ship or not to ship: An extensive evaluation of automatic metrics for machine translation. arXiv preprint arXiv:2107.10821 .Takeshi Kojima, Shixiang Shane Gu, Machel Reid, Yu-taka Matsuo, and Yusuke Iwasawa. 2022. Large lan-guage models are zero-shot reasoners. Advances in neural information processing systems , 35:22199– 22213. Nathan Lambert, Jacob Morrison, Valentina Pyatkin, Shengyi Huang, Hamish Ivison, Faeze Brahman, Lester James V Miranda, Alisa Liu, Nouha Dziri, Shane Lyu, et al. 2024. Tulu 3: Pushing frontiers in open language model post-training. arXiv preprint arXiv:2411.15124 .Xuechen Li, Tianyi Zhang, Yann Dubois, Rohan Taori, Ishaan Gulrajani, Carlos Guestrin, Percy Liang, and Tatsunori B Hashimoto. 2023. Alpacaeval: An auto-matic evaluator of instruction-following models. Yang Liu, Dan Iter, Yichong Xu, Shuohang Wang, Ruochen Xu, and Chenguang Zhu. 2023. G-eval: Nlg evaluation using gpt-4 with better human align-ment. arXiv preprint arXiv:2303.16634 .Arle Lommel, Hans Uszkoreit, and Aljoscha Burchardt. 2014. Multidimensional quality metrics (mqm): A framework for declaring and describing translation quality metrics. Tradumàtica , (12):0455–463. Qingyu Lu, Liang Ding, Kanjian Zhang, Jinxia Zhang, and Dacheng Tao. 2024. Mqm-ape: Toward high-quality error annotation predictors with automatic post-editing in llm translation evaluators. arXiv preprint arXiv:2409.14335 .Qingyu Lu, Baopu Qiu, Liang Ding, Liping Xie, and Dacheng Tao. 2023. Error analysis prompting en-ables human-like translation evaluation in large lan-guage models: A case study on chatgpt. Nitika Mathur, Timothy Baldwin, and Trevor Cohn. 2020. Tangled up in bleu: Reevaluating the eval-uation of automatic machine translation evaluation metrics. arXiv preprint arXiv:2006.06264 .Meta. 2025. The llama 4 herd: The beginning of a new era of natively multimodal ai innovation. Accessed: 2025-08-12. OpenAI. 2025. Introducing openai o3 and o4-mini. Accessed: 2025-08-12. Kishore Papineni, Salim Roukos, Todd Ward, and Wei-Jing Zhu. 2002. Bleu: a method for automatic evalu-ation of machine translation. In Proceedings of the 40th annual meeting of the Association for Computa-tional Linguistics , pages 311–318. Ricardo Rei, José GC De Souza, Duarte Alves, Chrysoula Zerva, Ana C Farinha, Taisiya Glushkova, Alon Lavie, Luisa Coheur, and André FT Martins. 2022a. Comet-22: Unbabel-ist 2022 submission for the metrics shared task. In Proceedings of the Seventh Conference on Machine Translation (WMT) ,pages 578–585. Ricardo Rei, Ana C Farinha, Chrysoula Zerva, Daan Van Stigt, Craig Stewart, Pedro Ramos, Taisiya Glushkova, André FT Martins, and Alon Lavie. 2021. Are references really needed? unbabel-ist 2021 sub-mission for the metrics shared task. In Proceedings of the Sixth Conference on Machine Translation , pages 1030–1040. Ricardo Rei, Marcos Treviso, Nuno M Guerreiro, Chrysoula Zerva, Ana C Farinha, Christine Maroti, José GC De Souza, Taisiya Glushkova, Duarte M Alves, Alon Lavie, et al. 2022b. Cometkiwi: Ist-unbabel 2022 submission for the quality estimation shared task. arXiv preprint arXiv:2209.06243 .Thibault Sellam, Dipanjan Das, and Ankur P Parikh. 2020. Bleurt: Learning robust metrics for text gener-ation. arXiv preprint arXiv:2004.04696 .Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. 2024. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 .Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, and Paul F Christiano. 2020. Learn-ing to summarize with human feedback. Advances in neural information processing systems , 33:3008– 3021. Zhi Rui Tam, Cheng-Kuang Wu, Yi-Lin Tsai, Chieh-Yen Lin, Hung-yi Lee, and Yun-Nung Chen. 2024. Let me speak freely? a study on the impact of format restrictions on performance of large language models. 
+
+arXiv preprint arXiv:2408.02442 .Gemini Team. 2024. Introducing gemini 2.0: our new ai model for the agentic era. Accessed: 2025-08-12. Gemma Team, Aishwarya Kamath, Johan Ferret, Shreya Pathak, Nino Vieillard, Ramona Merhej, Sarah Perrin, Tatiana Matejovicova, Alexandre Ramé, Morgane Rivière, et al. 2025a. Gemma 3 technical report. 
+
+arXiv preprint arXiv:2503.19786 .Kimi Team, Yifan Bai, Yiping Bao, Guanduo Chen, Jiahao Chen, Ningxin Chen, Ruijue Chen, Yanru Chen, Yuankun Chen, Yutian Chen, et al. 2025b. Kimi k2: Open agentic intelligence. arXiv preprint arXiv:2507.20534 .Vicuna Team. 2023. Vicuna: An open-source chat-bot impressing gpt-4 with 90% chatgpt quality. Ac-cessed: 2025-08-12. Jiaan Wang, Yunlong Liang, Fandong Meng, Zengkui Sun, Haoxiang Shi, Zhixu Li, Jinan Xu, Jianfeng Qu, and Jie Zhou. 2023a. Is chatgpt a good nlg evaluator? a preliminary study. arXiv preprint arXiv:2303.04048 .Peiyi Wang, Lei Li, Liang Chen, Zefan Cai, Dawei Zhu, Binghuai Lin, Yunbo Cao, Qi Liu, Tianyu Liu, and Zhifang Sui. 2023b. Large language models are not fair evaluators. arXiv preprint arXiv:2305.17926 .Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. 2022. Chain-of-thought prompting elicits rea-soning in large language models. Advances in neural information processing systems , 35:24824–24837. Xiaohan Xu, Ming Li, Chongyang Tao, Tao Shen, Reynold Cheng, Jinyang Li, Can Xu, Dacheng Tao, and Tianyi Zhou. 2024. A survey on knowledge dis-tillation of large language models. arXiv preprint arXiv:2402.13116 .An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, et al. 2025. Qwen3 technical report. arXiv preprint arXiv:2505.09388 .Zihan Yu, Liang He, Zhen Wu, Xinyu Dai, and Jia-jun Chen. 2023. Towards better chain-of-thought prompting strategies: A survey. arXiv preprint arXiv:2310.04959 .Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric Xing, et al. 2023. Judging llm-as-a-judge with mt-bench and chatbot arena. Advances in neural information processing systems , 36:46595–46623. 
+
+## A Experiment Details 
+
+Here, we outline all of the detailed experimental settings used across all of our baseline and TQLite 
+
+experiments. We begin with outlining settings for all benchmark experiments in 4, then cover settings for experiments with TQLite in the next section. 
+
+A.1 Benchmarking Experiments Baselines. All baseline performance metrics were obtained using the mt-metrics-eval package, which contains the official scripts and scores for the WMT22 metrics task. The accuracy for these base-line techniques match those found in prior work (Kocmi and Federmann, 2023a). 
+
+Models. The exact models that we use in our baseline experiments are as follows: • gpt-4 ( gpt-4-0613 )• gpt-4o ( gpt-4o-2024-08-06 )• gpt-4o-mini ( gpt-4o-mini-2024-07-18 )• o1 ( o1-2024-12-17 )• o3 ( o3-2025-04-16 )• o4-mini ( o4-mini-2025-04-16 )• gemini-2.5-pro • gemini-2.5-flash • gemma-3-4b-it • gemma-3-27b-it • qwen-3-8b • qwen-3-32b • deepseek-r1-distill-llama-8b • deepseek-r1-distill-llama-70b • llama-3-8b-instruct • llama-3-70b-instruct • aya-expanse-8b • aya-expanse-32b 
+
+Inference. All OpenAI models are accessed directly via the OpenAI API, specifically via the associated Python library. Similarly, all (closed) Google models are accessed via the Vertex AI API by using the google-cloud-aiplatform SDK. For all open models, we simply download the mod-els via HuggingFace at the links provided above. To run inference with open models, we use vLLM offline inference as demonstrated here. For the open reasoning models (i.e., qwen-3 and deepseek-r1-distill), we use SGLang offline infer-ence as demonstrated here, which we find to be faster when running inference with long comple-tions. All ∼7B parameter models use a single 80Gb A100 GPU for inference, while all larger models use a 8× 80Gb A100 node with a tensor parallel size of 8. 
+
+Sampling. Our default sampling settings across all models use a temperature of 0.0, a context length of 8,192, and max completion tokens of 4,096. These sampling parameters match the settings of (Kocmi and Federmann, 2023a), and we use them whenever possible. For all thinking (or reasoning) models, we increase the context length to 32,768 and the max completion tokens to 28,672 4, which is the recommended setting from OpenAI. We adopt the same setting for open reasoning models, though we find that the completions generated by these models are typically much shorter (i.e., ∼ 1-2K tokens or less). qwen-3 models are extremely sensitive to sam-pling hyperparameters, and the setting must be changed depending on whether thinking is enabled or not. During initial experiments outlined in Fig-ure 2, we set thinking to be disabled in both qwen-3 models and use the settings recommended here:     
+
+> 4This is just the context length minus the maximum length of any prompt used in other experiments (4,096).
+> Figure 8: Our TQLite prompt, which is a slightly modi-fied version of the prompt used by Gemba-MQM (Kocmi and Federmann, 2023a).
+
+• Temperature = 0.7 • TopP = 0.8 • TopK = 20 • MinP = 0 Similarly, when these models are used with think-ing enabled in Table 1, we update the temperature to a value of 0.6 and TopP to a value of 0.95 (i.e., the recommended sampling parameters for think-ing). For the deepseek-r1-distill reasoning models, we use the context window for reasoning models out-lined above and the following sampling settings: • Temperature = 0.6 • TopP = 0.95 • TopK = 20 • MinP = 0.1 These are the recommended settings from the model provider. OpenAI reasoning models like o1, o3, and o4-mini do not allow for the sampling temperature to be set by the user— the temperature is fixed to a value of one .
+
+## B Prompt Templates 
+
+We now outline each of the prompt templates used in both benchmarking experiments in Section 4 and TQLite experiments in Section 6. The original 
+
+Gemba-MQM prompt is taken directly from (Kocmi and Federmann, 2023a). All models use their de-fault chat template. We make no changes to the tokenizer or chat template for any model. For all models that accept a system prompt, we also in-clude the original system prompt from Gemba-MQM .Few-shot examples. For all experiments in Sec-tion 4, we use the same three few-shot examples used by Gemba-MQM Kocmi and Federmann. We directly take these examples from the code repos-itory for Gemba-MQM . For standard prompts, these few-shot examples are passed as multiple turns of a chat, where each user chat turn receives the entire prompt with the actual few-shot example inserted. The associated, ground truth error spans for each few-shot example are then returned as an assistant turn in the chat. The formatting for few-shot exam-ples in single-turn prompts is outlined below. Our modified TQLite prompt is shown in Fig-ure 8. Based on this TQLite prompt, we create two variants of the prompt that induce either struc-ture text or JSON output formatting by adding the following instructions to the prompt: Formatting Instruction 
+
+Structured Text: Please provide your error spans below. Your error spans should be organized under three headers: "Critical:", "Major:" and "Minor:". Under each header, provide your error span(s) for that severity. Each error span must include both the category of error and the error span itself separated by a hyphen with the format "<category> - <span>". Please output your error spans only with no additional explanation. 
+
+JSON: Please output all of your error spans as a json document. Please output only the json document alone with nothing else. Be sure to surround any quote from the source or translation with single quotes; e.g., ’xxx’. 
+
+For prompts with structured outputs, we use the same TQLite prompt outlined above, and these additional formatting instructions are simply ap-pended to the end of the prompt. Our single turn prompt TQLite-ST is provided in Figure 9. This same prompt is used by both standard LLMs and reasoning models. We also create a variant of this prompt that modifies the end of the single-turn prompt to include a zero-shot CoT prompt (Kojima et al., 2022) to elicit an    
+
+> Figure 9: Our TQLite-ST prompt, which modifies the
+> TQLite prompt to fully reside in a single chat turn.
+
+explanation from standard LLMs along with their evaluation: Zero-Shot CoT Instruction 
+
+Let’s think step-by-step. The source text and translation that you will evaluate are provided below. Begin by outputting an explanation of the errors that may or may not exist in the source and translation. Once you have fully explained the translation errors, please derive a set of specific error spans that exist in the source and translation, if any. <Insert Structured Text Instruction> {source_lang} source: {source_seg} {tgt_lang} translation: {tgt_seg} 
+
+Output parsing. To parse the output of our models and generate the final MQM scores, we use the code base from MQM-APE (Lu et al., 2024) found here. The post-processing code in the MQM portion of this repository (i.e., excluding any of the post-editing code) handles parsing the structured textual output format for TQ evaluation. However, we slightly modify this code to make it more lenient when processing errors spans. Specifically, in the 
+
+<category> - <span> structure, we allow the span portion of the error to include any text, rather than forcing the model to output a direct quote and ignoring the line otherwise. For parsing JSON outputs, we simply strip any surrounding JSON formatting from the model’s out-put and load the JSON document using the JSON package in python. If an error occurs when loading the JSON, we simply set the score for that seg-ment as None . For LLMs and reasoning models, JSON parsing errors occur in a very small number of cases (i.e., ≪ 1% of segments). For SLMs, this ratio can be slightly higher, though it is still small (i.e., 1 − 2% of segments). Data Generation Prompt Basedwe on the source segment and machine translation below, identify error spans in the transla-tion and classify them for their severity and category. You would also explain why you think that its an error span. The categories of errors are: 1. accuracy (addition, mistranslation, omission, untranslated text), 2. fluency (character encoding, grammar, inconsistency, punctuation, register, spelling), 3. style (awkward), 4. terminology (inappropriate for context, inconsistent use), 5. non-translation, 6. other 7. no-error. Each error is classified as one of three severities: critical, major, and minor. 1. Critical Error: Critical errors inhibit comprehension of the text. 2. Major Error: Major errors disrupt the flow, but what the text is trying to say is still understandable. 3. Minor Error: Minor errors are technically errors, but do not disrupt the flow or hinder comprehension.""" Here are few examples: <Few Set of Examples> Below is src_lang source text and tgt_lang machine translation pair that you are suppose to evaluate. Give the full answer json as output. Input: { "source_lang": src_lang, "source_sentence": src_sentence, "target_lang": tgt_lang, "target_sentence": tgt_sentence }Output:

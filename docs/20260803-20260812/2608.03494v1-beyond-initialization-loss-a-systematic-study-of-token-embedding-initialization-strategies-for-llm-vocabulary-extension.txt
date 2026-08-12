@@ -1,0 +1,486 @@
+Title: Beyond Initialization Loss: A Systematic Study of Token Embedding Initialization Strategies for LLM Vocabulary Extension
+
+URL Source: https://arxiv.org/pdf/2608.03494v1
+
+Published Time: Wed, 05 Aug 2026 00:56:45 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# Beyond Initialization Loss: A Systematic Study of Token Embedding Initialization Strategies for LLM Vocabulary Extension 
+
+## Raviraj Joshi *, Utkarsh Vaidya, Sanjay Singh Chauhan, Niranjan Wartikar 
+
+## NVIDIA 
+
+## {ravirajj, uvaidya, schauhan, nwartikar}@nvidia.com 
+
+## Abstract 
+
+Vocabulary extension is an efficient way to adapt pretrained large language models (LLMs) to new languages, but the initialization of newly added token embeddings can strongly affect continued pre-training (CPT) efficiency. We present a systematic study of more than 
+
+20 initialization strategies for Hindi vocabu-lary extension in Nemotron-3-Nano-30B-A3B. Our comparison spans vocabulary-averaging baselines; external and learned initialization methods, including FOCUS, top-k semantic retrieval, and residual MLP mappings; sub-word composition; norm calibration; and input-output asymmetry. We find that subword com-position methods outperform both vocabulary averaging and external/learned initialization ap-proaches. Within subword composition, asym-metric variants achieve the lowest observed early validation loss and reveal distinct pref-erences for input and output embedding initial-ization. The best observed configuration initial-izes Ein with uniform subword averaging and Hindi-specific norm calibration, and Eout with character-length-weighted subword averaging. Relative to the standard Mean-all baseline, this full initialization pipeline reaches comparable validation loss with over a 6× reduction in CPT steps and exceeds the baseline’s 3,500 -step MILU-Hindi accuracy after only 500 steps. Finally, we show that initialization loss and initialization bits-per-byte (Init BPB) are unre-liable predictors of downstream convergence, whereas lightweight CPT—as few as 50 steps— provides a cost-effective and reliable signal for selecting the best initialization strategy. 
+
+## 1 Introduction 
+
+Modern large language models (LLMs) process text using subword tokenizers such as Byte-Pair Encoding (BPE) (Sennrich et al., 2015) or Sen-tencePiece (Kudo and Richardson, 2018), which segment raw text into discrete vocabulary indices. 
+
+> *Corresponding author.
+
+To maximize compression within a fixed vocabu-lary budget |V |, these tokenizers are optimized on large pre-training datasets. Because such datasets are often English-dominant, the resulting vocab-ularies allocate limited capacity to low-resource languages and non-Latin scripts. When processing these underrepresented languages, the tokenizer frequently fragments words into character- or byte-level pieces. Tokenization efficiency is commonly quantified by fertility, the average number of tokens produced per word, where lower is better. While English typically has a low fertility rate close to 1.0
+
+token per word, morphologically rich languages, particularly Indic scripts such as Devanagari, are often severely over-tokenized; in these cases, many models exhibit fertility rates exceeding 2.0 tokens per word (Singh et al., 2024; Rust et al., 2021). This tokenization asymmetry imposes a sub-stantial tax on low-resource and non-Latin scripts. First, high token fertility inflates the context length 
+
+L for equivalent semantic content and increases both linear and quadratic pre-training and infer-ence costs. Second, it exhausts the model’s fixed context window (e.g., 8192 tokens), shortening the effective context span available for the target lan-guage. Third, it creates an economic burden when API pricing is based on token count: non-Western scripts can incur up to a 5× higher price for compa-rable semantic content (Ahia et al., 2023). Vocab-ulary extension addresses this issue by expanding the tokenizer’s native vocabulary with language-specific subwords and frequent terms extracted from target-language corpora, thereby reducing se-quence lengths and token fertility. In the original Nemotron-3-Nano-30B-A3B tokenizer, only 1,569 
+
+of 131 ,072 vocabulary entries contain Devanagari characters ( 1.2% ), underscoring the limited na-tive script coverage before extension. In our set-ting, we add 25 ,600 Hindi tokens sourced directly from the Nanda tokenizer (Choudhury et al., 2025), which extends the Llama-3 tokenizer with Hindi arXiv:2608.03494v1 [cs.CL] 4 Aug 2026 tokens. Measured on 100 ,000 Sangraha Hindi doc-uments (Khan et al., 2024), this extension reduces Hindi token fertility from 1.95 to 1.25 tokens per word. However, while vocabulary extension mitigates the fertility tax, it introduces a parameter optimiza-tion challenge at the start of continued pre-training (CPT). Expanding the tokenizer requires resizing the model’s embedding matrices, specifically the input lookup matrix ( Ein ) and the output language modeling head projection ( Eout ). This structural modification introduces newly allocated vectors that must align with the pretrained embedding man-ifold and function correctly within the network. Because these parameters have never been updated, they initially lack coherent representations. Poor initialization, including random Gaussian initializa-tion or mean-based Gaussian initialization (Hewitt, 2021), can create a “cold-start” bottleneck in which early CPT spends substantial compute aligning new vectors rather than improving target-language mod-eling. Suboptimal initialization of Eout can also distort the output distribution, producing unstable logits and high initial loss. To systematically study this parameter space, we evaluate more than 20 initialization configura-tions across five design axes: composition scope, subword weighting, norm calibration, initialization asymmetry, and external encoder projection. Using a Hindi vocabulary extension of Nemotron-3-Nano-30B-A3B, we compare these strategies under both static initialization metrics (initialization loss, or step-zero loss) and short-horizon CPT. Our results support a simple initialization strategy selection protocol in which a lightweight CPT probe of as few as 50 steps (approximately 0.42 B tokens) is run before committing to a full training run. We consider vocabulary-averaging baselines, ex-ternal and learned mapping systems such as FO-CUS (Dobler and De Melo, 2023), top-k semantic retrieval (Minixhofer et al., 2022), residual MLP transformations, and several subword composition and norm calibration schemes. Among these, sub-word composition is the strongest family of meth-ods. It initializes each new token as a weighted average of the embeddings of its constituent sub-words under a chosen weighting heuristic. Building on this observation, we study asymmetric initial-ization: Ein and Eout are initialized with differ-ent composition rules because lookup and genera-tion impose different constraints (Nakash et al., 2025). The best observed configuration initial-izes Ein with uniform subword averaging plus language-specific norm calibration, and initializes 
+
+Eout with character-length-weighted subword av-eraging. MuRIL-BERT semantic input weighting paired with character-length output weighting per-forms nearly identically, suggesting that auxiliary semantic embeddings are also useful for initializa-tion. Our core contributions are summarized as fol-lows: • Comprehensive empirical survey: We benchmark more than 20 configurations span-ning vocabulary-averaging baselines, external cross-lingual encoders, targeted norm calibra-tion, and asymmetric input-output mappings. • Decomposed initialization gains: We find that subword composition provides the largest improvement over vocabulary-averaging base-lines, while input-side Hindi norm calibra-tion and input-output decoupling further re-fine performance within the stronger subword-composition family. The best observed con-figuration uses uniform weighting with Hindi norm calibration for Ein and character-length weighting for Eout , and a near-tie from se-mantic BERT-based input weighting shows that auxiliary semantic embeddings are useful input-side signals. • Lightweight CPT initialization-strategy se-lection: We show that initialization-time rank-ings can change after a brief phase of CPT. A 50 -step probe provides a cost-effective and reliable signal for selecting the best initializa-tion strategy. • Downstream acceleration: Relative to the standard default baseline, the full initializa-tion pipeline of the best observed configura-tion reaches comparable validation loss with over a 6× CPT-step reduction and exceeds the baseline’s 3,500 -step MILU-Hindi accuracy after 500 steps, with a +25 .01 point absolute gain at the first downstream checkpoint. 
+
+## 2 Related Work 
+
+Tokenization Inequity and Vocabulary Ex-tension. Modern LLMs rely on subword tok-enization algorithms such as Byte-Pair Encod-ing (BPE) (Sennrich et al., 2015) and Sentence-Piece (Kudo and Richardson, 2018), which are trained on corpus statistics and inherently favor high-resource, Latin-script languages. This struc-tural bias manifests as elevated token fertility for morphologically rich or non-Latin scripts. Ahia et al. (2023) quantify the downstream economic consequence, demonstrating across 22 typologi-cally diverse languages that per-token API pric-ing systematically overcharges speakers of high-fertility languages by up to 5× relative to English. Petrov et al. (2023) further formalize this dispar-ity as a “language tax” baked into the tokenizer itself. Vocabulary extension (Cui et al., 2023a; Gee et al., 2022) directly addresses this problem by augmenting an existing tokenizer with language-specific subwords, reducing fertility and thus low-ering both computational and economic costs. Several language-specific LLM efforts have fol-lowed this pipeline for Chinese (Cui et al., 2023b), Japanese (Fujii et al., 2024), Finnish (Luukkonen et al., 2023), and Korean (Vo et al., 2024). 
+
+Continued Pre-training for Language Adapta-tion. Vocabulary extension necessitates a phase of continued pre-training (CPT) to integrate the newly added tokens into the pretrained model. A growing body of work has applied this approach to adapt English-centric LLMs to Indic and other low-resource languages. Joshi et al. (2024) ex-tend Nemotron-Mini-4B with CPT on 400 billion Hindi-English tokens, reporting state-of-the-art per-formance on IndicXTREME and related bench-marks. Khan et al. (2024) provide a comprehensive blueprint for building pre-training and fine-tuning datasets for 22 Indian languages, and similar mul-tilingual adaptation efforts have been conducted for Turkish (Toraman, 2024), Finnish (Luukkonen et al., 2023), and Korean (Vo et al., 2024). A unify-ing observation across these works is that initializa-tion quality determines how efficiently the model can absorb new token representations during CPT; nevertheless, most studies treat it as a secondary design choice and default to simple averaging. 
+
+Embedding Initialization for New Tokens. Ini-tializing embeddings for newly added tokens is a well-studied problem in cross-lingual model trans-fer. The simplest and most widely adopted baseline, proposed by Hewitt (2021) and integrated as the default in the Hugging Face Transformers library, draws new embeddings from a Gaussian distribu-tion centered at the mean of all existing token em-beddings. Gee et al. (2022) and Cui et al. (2023a) show that initializing new tokens as the mean of their constituent subword embeddings accelerates convergence over random initialization. Minix-hofer et al. (2022) propose WECHSEL, which leverages multilingual static word embeddings and bilingual dictionaries to semantically align new sub-word embeddings with a source model. Building on this, Dobler and De Melo (2023) propose FOCUS, which represents each new token as a sparse con-vex combination of overlapping source vocabulary entries via cosine similarity in an auxiliary fastText space and the Sparsemax operator (Martins and As-tudillo, 2016), removing the need for bilingual dic-tionaries. More recently, hypernetwork-based ap-proaches (Minixhofer et al., 2024) and embedding factorization methods (Liu et al., 2024) have been proposed for zero-shot tokenizer transfer and multi-lingual alignment. The AdaptiVocab work (Nakash et al., 2025) notes that uniform mean initialization is suboptimal for autoregressive generation because it does not account for the structural role a token plays in the output distribution, and therefore ap-plies distinct positional weighting schemes to input embeddings and the LM head. Yamaguchi et al. (2024) similarly find that auxiliary-encoder-based methods can underperform mean initialization in low-resource regimes, highlighting the distinct sen-sitivity of the LM head Eout to its initialization. 
+
+Evaluation of Initialization Quality. A recur-ring challenge in this line of work is choosing reliable evaluation metrics at initialization time. Initialization-time perplexity and bits-per-byte are commonly used as proxies for downstream perfor-mance (Dobler and De Melo, 2023; Minixhofer et al., 2022), but several studies have noted that rankings over these static metrics can be mislead-ing. Gee et al. (2022) observe that initialization quality does not always translate directly to down-stream fine-tuning performance, and Yamaguchi et al. (2024) find that the relative ordering of strate-gies can shift after even a short training phase. This motivates evaluation protocols that go beyond step-zero metrics. 
+
+## 3 Baselines and External Encoder Frameworks 
+
+We evaluate two standard vocabulary-averaging methods alongside several external mapping paradigms. Unless otherwise stated, each method is applied symmetrically to both Ein and Eout .Mean-All (Default Baseline): Following tok-enizer vocabulary expansion, newly added token embeddings are initialized using the mean embed-ding initialization method introduced by Hewitt (2021) and adopted as the default in the Hugging Face Transformers library ( mean_resizing=True ). Concretely, given the pre-expansion embedding matrix E ∈ Rn×d, the mean embedding μ and empirical covariance Σ are computed as: 
+
+μ = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ei, Σ = (E − μ)⊤(E − μ)
+
+n
+
+where μ is broadcast across rows. Each new token embedding is then sampled from a scaled multivari-ate normal distribution: 
+
+enew ∼ N (μ, α Σ)
+
+where α is a small scaling factor (e.g., α = 10 −5). 
+
+Mean-Hindi (Script-Restricted Baseline): 
+
+Structurally identical to the Mean-All baseline, this method computes the localized mean μHi and empirical covariance ΣHi by restricting the source token pool strictly to pre-existing vocabulary items that contain Devanagari script characters (VHi ⊂ V ). Devanagari script tokens are identified dynamically using a regular expression matching filter that scans the decoded token strings for characters within the Devanagari Unicode range 
+
+[U+0900 , U+097F ]. New embeddings are then sampled using the covariance-scaled multivariate normal distribution: 
+
+enew ∼ N (μHi , α ΣHi )
+
+FOCUS (Sparsemax-weighted fastText Align-ment): We implement FOCUS (Dobler and De Melo, 2023) to initialize new tokens as local-ized, sparse convex combinations of base token embeddings. Specifically, for each new token τ ,we extract semantic vectors f (τ ) ∈ R300 from a Hindi fastText model (Bojanowski et al., 2017) (cc.hi.300.bin ). This deviates from the origi-nal FOCUS recipe, which trains fastText on target-language data tokenized with the new tokenizer; we use public Hindi fastText vectors for reproducibil-ity and lower auxiliary-training cost. We compute its cosine similarity against all baseline candidates 
+
+c in a candidate pool C and scale the logits using a sharpening temperature τtemp = 0 .05 to focus probability mass: 
+
+zc = f (τ ) · f (c)
+
+τtemp ∥f (τ )∥2∥f (c)∥2
+
+These scaled logits z ∈ R|C| are mapped to a sparse probability distribution w using the Sparse-max activation function (Martins and Astudillo, 2016), which projects the inputs onto the (|C| − 1) -dimensional simplex and sets lower-scoring candi-dates to exactly 0:
+
+w = sparsemax( z) = argmin 
+
+> p∈∆|C|− 1
+
+∥p − z∥22
+
+We evaluate two distinct candidate pools C: stan-dard FOCUS ( ft-hi ), where C = V ; and Anchor FOCUS ( ft-hi, anchor-hi ), where the pool is restricted to original Hindi/Devanagari vocabulary items ( C = VHi ). The final new token embeddings are synthesized as: 
+
+e(τ ) = X
+
+> c∈C
+
+wc · e(c)
+
+Top-k Gemma Retrieval (Weighted Top-k
+
+Alignment): Following the retrieval-and-transfer paradigm of WECHSEL (Minixhofer et al., 2022), this method constructs a representation for each new token τ by identifying its k = 5 nearest neigh-bors in an auxiliary LLM embedding space and transferring a weighted combination of their pre-trained embeddings. Rather than fastText vectors, we use the static input embedding layer of Gemma-2-27B (Team et al., 2024) as the auxiliary space. Gemma-2-27B is chosen for its stronger multilin-gual and subword-level representations compared to static word vectors, and for its Indic token cov-erage. We first extract a mean-pooled Gemma embed-ding g(τ ) ∈ R4608 across its Gemma-tokenized subwords: 
+
+g(τ ) = 
+
+PTt=1 Mt · EGemma (xt)
+
+PTt=1 Mt
+
+where Mt ∈ { 0, 1} is the attention mask. We com-pute g(v) analogously for each original vocabulary token v ∈ V , then calculate cosine similarities in the Gemma space to find the top-k nearest neigh-bors Kτ = {i1, . . . , i k}. To map similarities to non-negative composition weights, we shift and normalize them relative to their minimum value in the subset: 
+
+sim ′ 
+
+> j
+
+= sim( τ, i j ) − min 
+
+> m∈K τ
+
+sim( τ, m ) + ϵwj = sim ′
+
+> j
+
+Pkm=1 sim ′
+
+> m
+
+where ϵ = 10 −8 is a stability constant. The uncali-brated representation is synthesized as eavg (τ ) = 
+
+Pkj=1 wj ·e(ij ). To reconcile magnitude shrinkage on the lookup side without increasing output logit instability, we selectively apply norm calibration to the input embedding space ( Ein ) while bypassing the output language modeling head ( Eout ): 
+
+ecal, in (τ ) = ˜ μin · eavg, in (τ )
+
+∥eavg, in (τ )∥2
+
+Residual MLP with Mean-Centered Alignment (Residual MLP): We implement a supervised residual mapping designed to reduce the mismatch between retrieval-based proxy vectors and the pre-trained embedding space. The pipeline is executed through the following sequence: 
+
+Anchor Preparation: We define a set of native Hindi anchor tokens A ⊂ VHi with known pre-trained embeddings ya ∈ Rd. For each anchor, we obtain an approximate proxy vector xa ∈ Rd
+
+via top-k similarity retrieval constrained strictly to non-Hindi baseline tokens. To eliminate structural translation shifts between these spaces, we calcu-late centroids μX and μY over A to mean-center the representations: 
+
+xca = xa − μX , yca = ya − μY
+
+Network Architecture and Objective: A resid-ual mapping model f (xca) = xca + MLP( xca) is parameterized by an MLP consisting of a Layer Normalization layer, a hidden layer of dimension 
+
+dhidden = 1024 , a GELU activation function, a dropout rate of 0.1, and a final linear projection back to d dimensions. The network is trained by minimizing a multi-component loss function over the batch size B:
+
+L = LMSE + λcos Lcos + λnorm Lnorm 
+
+where: LMSE = 1
+
+B
+
+> B
+
+X
+
+> b=1
+
+∥f (xcb) − ycb∥22
+
+Lcos = 1 − 1
+
+B
+
+> B
+
+X
+
+> b=1
+
+f (xcb) · ycb
+
+∥f (xcb)∥2∥ycb∥2
+
+Lnorm = 1
+
+B
+
+> B
+
+X
+
+> b=1
+
+(∥f (xcb)∥2 − ∥ ycb∥2)2
+
+where λcos = 0 .5 and λnorm = 0 .1.
+
+Inference Pipeline: For an unseen token τ with proxy representation xτ (retrieved via non-Hindi top-k baseline tokens), we predict its initialized embedding vector as: 
+
+e(τ ) = f (xτ − μX ) + μY
+
+## 4 Subword Composition Mechanics 
+
+Prior work has established subword averaging as a simple yet effective initialization strategy for vo-cabulary extension (Gee et al., 2022; Cui et al., 2023a): a new token’s embedding is initialized as the mean of its constituent subword embeddings from the original vocabulary. However, these ap-proaches treat all subwords as equally weighted and apply a symmetric strategy to both Ein and 
+
+Eout , leaving the broader design space of subword composition largely unexplored. We generalize this idea along two axes: (i) the weighting scheme applied to constituent subwords, and (ii) the decou-pling of initialization strategies between the input embedding matrix and the output language model-ing head. Formally, for any newly introduced token τ that decomposes into a sequence of n valid subwords 
+
+s1, s 2, . . . , s n within the original vocabulary V , we initialize its representation as a weighted linear combination of the subword embeddings: 
+
+e(τ ) = 
+
+> n
+
+X
+
+> i=1
+
+wi · e(si)
+
+This weighted formulation can be configured in-dependently for the input embedding matrix Ein 
+
+and the output language modeling head matrix 
+
+Eout (asymmetric composition). We examine four weighting families, yielding five implemented vari-ants, for deriving the weighting vector w ∈ Rn:• Uniform: Assigns equal contribution to all constituent subwords: 
+
+wi = 1
+
+n
+
+• Character-Length (Char-len): Scales weights proportionally to the textual length of the decoded subwords, giving longer fragments greater influence: 
+
+wi = |si|
+
+Pnj=1 |sj |
+
+where |si| = max(len(decode( si)) , 1) rep-resents the decoded character length of sub-word si. In our implementation, len( ·) counts Unicode code points in the tokenizer-decoded string, without additional Unicode normaliza-tion. • Max-Character (Max-char): A sparse, one-hot selection that copies only the embedding of the longest constituent subword: 
+
+wi =
+
+(
+
+1 if i = argmax j |sj |
+
+0 otherwise To handle length equivalence rigorously, ties are broken deterministically by selecting the first occurrence in the subword sequence. • Semantic Similarity (MuRIL-weighted / Gemma-weighted): Computes semantic weights by matching the full token τ with its decomposed fragments in an auxiliary repre-sentation space. Let h(τ ) be the semantic em-bedding of the full clean token, and h(si) be the semantic embedding of subword si. The raw alignment score is defined by cosine simi-larity: 
+
+sim i = h(τ ) · h(si)
+
+∥h(τ )∥2∥h(si)∥2
+
+The subword weights are derived by passing the scaled similarity scores through a soft-max function parameterized by temperature 
+
+τtemp > 0:
+
+wi = exp(sim i /τ temp )
+
+Pnj=1 exp(sim j /τ temp )
+
+where τtemp = 0 .1 encourages sharp distri-butions. We investigate two representation extractors for mapping h(·):
+
+– MuRIL-based (MuRIL-weighted): 
+
+Leverages Google’s Multilingual Representations for Indian Lan-guages (Khanuja et al., 2021) (google/muril-base-cased ). Rather than static lookups, the representation 
+
+h(x) is extracted from the model’s final encoder layer (last_hidden_state )via attention-mask-aware mean pooling: 
+
+h(x) = 
+
+PTt=1 Mt · zt
+
+PTt=1 Mt
+
+where zt represents the final hidden state vector at sequence position t, and Mt ∈{0, 1} represents the attention mask. 
+
+– Gemma-based (Gemma-weighted): 
+
+Leverages Gemma-2-27B (google/gemma-2-27b ). To min-imize compute overhead, it maps representations purely using the static input embedding layer ( embed_tokens )pooled uniformly over non-padding tokens: 
+
+h(x) = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+EGemma (xt)
+
+where EGemma denotes the static token embedding lookup. 
+
+Decoupling the Matrices (Symmetric vs. Asym-metric) 
+
+• Symmetric Initialization: Applies an identi-cal weighting paradigm to both the input em-bedding matrix ( Ein ) and the output language modeling head ( Eout ). • Asymmetric Initialization: Decouples these spaces entirely, allowing distinct mathemati-cal formulations for token lookup ( Ein ) and token prediction ( Eout ). 
+
+4.1 Norm Calibration Dynamics 
+
+Subword averaging tends to reduce the L2 norm of synthesized embeddings relative to native token embeddings, since averaging vectors that do not perfectly align results in a smaller combined mag-nitude. The resulting norm mismatch can produce lower logits and uneven gradient magnitudes, caus-ing the model to underutilize new tokens early in training and ultimately slowing convergence. To rectify this structural deficit, we apply norm cali-bration: 
+
+ecal (τ ) = ˜ μ · e(τ )
+
+∥e(τ )∥2
+
+where ˜μ represents the target calibration norm. We define and evaluate two alternative formulations for ˜μ based on the median L2 norm of an original vocabulary subset ( Vsubset ): 
+
+˜μ = median 
+
+> v∈Vsubset
+
+(∥e(v)∥2)
+
+• Global Norm Calibration: Rescales new vectors to match the median norm calcu-lated across the entire baseline vocabulary (Vsubset = V ). • Language-Specific Hindi Norm Calibra-tion: Restricts the target median calcula-tion strictly to active Hindi/Devanagari tokens within the original vocabulary ( Vsubset = VHi ). Script membership is identified by scanning for Unicode characters falling within the De-vanagari range ( U+0900 to U+097F ). In norm-calibrated configurations that we carry for-ward, calibration is applied only to the input matrix 
+
+Ein . We include an input-output calibration abla-tion, but rescaling Eout sharply increases initial-ization loss, consistent with output logit inflation. Although this variant partially recovers after short CPT, it is not competitive with input-only calibra-tion. 
+
+4.2 Evaluation Protocol 
+
+Prior literature often relies on initialization-time perplexity or cross-entropy loss to evaluate initial-ization strategies. However, we find that initializa-tion loss and initialization bits-per-byte ( Init BPB )are not sufficient for choosing the best configura-tion. Performance rankings frequently shift dur-ing the initial phase of CPT. We therefore use a lightweight CPT run of 50 steps for initialization-strategy selection. Empirical results indicate that relative rankings stabilize after these 50 steps, mak-ing validation loss at this stage (Val 50 ) a cost-effective signal for selecting the initialization strat-egy, with training-loss trajectories showing similar early trends. 
+
+## 5 Empirical Evaluation and Discussion 
+
+All experiments are conducted using the Nemotron-3-Nano-30B-A3B architecture, with CPT data drawn from the Hindi subset of the Nemotron v3 pretraining blend 1 and evaluation metrics reported on a held-out Hindi evaluation corpus. 
+
+Experimental setup. All short CPT probes use the same 1 : 1 blend of Hindi CPT data and the orig-inal MultiMix English/code/math/STEM data as the longer runs: global batch size 1024 , sequence length 8192 , AdamW-style optimization with peak learning rate 1 × 10 −5, cosine decay, and 128 
+
+NVIDIA A100 GPUs across 16 nodes. The model uses untied input and output embeddings, enabling asymmetric initialization of Ein and Eout . After ini-tialization, all parameters are trained jointly with-    
+
+> 1https://huggingface.co/collections/nvidia/ nemotron-v3-pre-training
+> Figure 1: Training loss trajectories for representative configurations from Sections A and B whose relative ordering changes during early CPT. Methods favored by static initialization metrics or early training losses, such as FOCUS (anchor-hi) ,Mean-Hindi , and sym-metric Char-len , are overtaken by alternatives with better early optimization trajectories.
+
+out a PEFT stage; a 50 -step probe processes ap-proximately 0.42 B tokens, which is non-trivial but less than 1% of the 7,000 -step CPT run at the same batch size. 
+
+5.1 Baselines and External Encoder Performance 
+
+We first evaluate two vocabulary initialization paradigms: statistical token-averaging baselines (Mean-all and Mean-Hindi ) and external cross-lingual mapping schemes, including FOCUS with and without script anchors, Top-k Gemma retrieval, and a residual MLP framework. The initialization cross-entropy loss, initial bits-per-byte (BPB), and early validation trajectory (Val 50 ) for these config-urations are reported in Table 1 (Section A). Within this suite, anchor-augmented FOCUS 
+
+yields the lowest initialization error (Init Loss =
+
+7.549 ). However, the ordering changes after lightweight CPT. At step 0, FOCUS (anchor-hi) 
+
+outperforms Top-k Gemma in initialization loss (7.549 vs. 8.098). By step 50 , Top-k Gemma 
+
+achieves the best Section A validation loss (Val 50 = 3.222 ). Figure 1 shows the correspond-ing training-loss view for representative methods, where the same qualitative ordering changes appear during early CPT. The residual MLP shows a similar pattern: it initializes poorly with an Init Loss of 12.199, worse than the script-restricted Mean-Hindi base-line (10.878), yet reaches a lower Val 50 than 
+
+Mean-Hindi after 50 steps ( 3.656 vs. 4.736 ). These inversions indicate that static cross-entropy does not fully determine how quickly an initializa-Table 1: Empirical profiles across baselines, external encoders, symmetric subword/norm ablations, and asymmetric initialization configurations. Init Loss denotes cross-entropy measured immediately after embedding initialization and before CPT; Init BPB denotes bits-per-byte at step 0; Val 50 denotes validation loss after 50 CPT steps. Bold values indicate the best result within each block and metric column. 
+
+Method Input Wt. Output Wt. Norm Init Loss Init BPB Val 50 
+
+A. Baselines and External Encoders 
+
+Mean-all — — — 13.346 1.8706 5.527 Mean-Hindi — — — 10.878 1.5247 4.736 FOCUS (ft-hi) — — — 8.080 1.1325 —FOCUS (anchor-hi) — — — 7.549 1.0581 3.276 Top-k Gemma — — — 8.098 1.1351 3.222 
+
+Residual MLP — — — 12.199 1.7098 3.656 
+
+B. Symmetric Subword Composition and Norm Calibration 
+
+Uniform Uniform Uniform None 7.499 1.0511 2.806 Char-len Char-len Char-len None 7.216 1.0113 2.818 MuRIL-weighted MuRIL MuRIL None 7.377 1.0339 2.807 Gemma-weighted Gemma Gemma None 7.725 1.0827 3.017 Max-char Max-char Max-char None 8.217 1.1517 3.284 Global Norm Uniform Uniform Global (in) 7.379 1.0343 2.758 Hindi Norm Uniform Uniform Hindi (in) 7.372 1.0332 2.753 
+
+Hindi Norm (in+out) Uniform Uniform Hindi (in+out) 17.618 2.4694 2.914 
+
+C. Asymmetric Initialization 
+
+Symmetric baseline Uniform Uniform Hindi (in) 7.372 1.0332 2.753 Char-len In Char-len Uniform Hindi (in) 7.266 1.0184 2.834 MuRIL In MuRIL Uniform Hindi (in) 7.372 1.0332 2.756 Gemma In Gemma Uniform Hindi (in) 7.342 1.0290 2.850 Max-char In Max-char Uniform Hindi (in) 7.246 1.0156 3.027 Char-len Out Uniform Char-len Hindi (in) 7.256 1.0170 2.722 
+
+MuRIL Out Uniform MuRIL Hindi (in) 7.364 1.0321 2.752 Gemma Out Uniform Gemma Hindi (in) 7.728 1.0831 2.927 Max-char Out Uniform Max-char Hindi (in) 8.160 1.1437 3.122 MuRIL In + Char-len Out MuRIL Char-len Hindi (in) 7.258 1.0173 2.724 
+
+tion can be optimized. Although restricting the av-eraging pool to target-script tokens ( Mean-Hindi )improves substantially over Mean-all , it remains weaker than the best external mapping methods after short CPT. 
+
+5.2 Symmetric Subword Averaging and Norm Calibration Ablations 
+
+As a computationally efficient alternative to ex-ternal encoders, we examine two groups of in-ternal methods: symmetric subword composition strategies ( Uniform , Char-len , MuRIL-weighted ,
+
+Gemma-weighted , and Max-char ) and norm cali-bration variants (input-only Global Norm , input-only Hindi Norm , and dual input-output Hindi Norm ). The empirical profiles of these configura-tions are detailed in Table 1 (Section B). A clear ranking change emerges between 
+
+Char-len and Uniform + Hindi Norm (Input matrix only) . The symmetric Char-len heuristic gives the best Section B initialization-time metrics (Init Loss = 7.216 ; Init BPB = 1.0113 ). After 
+
+50 steps, however, the Uniform + Hindi Norm (Input matrix only) variant gives the best Sec-tion B early optimization result (Val 50 = 2.753 ). Input-only norm calibration also outperforms all external baselines from Section A. These results suggest that norm calibration is an important com-panion to subword composition, especially on the input side where averaged vectors otherwise suffer from reduced embedding norms. Figure 1 visu-alizes analogous training-loss curve crossings for representative Section A and Section B configura-tions during early CPT. Conversely, extending this calibration symmetri-cally to the output layer sharply worsens initializa-tion (Init Loss = 17 .618 ). This variant partially re-covers under 50 CPT steps (Val 50 = 2 .914 ), but re-mains worse than input-only norm calibration. This functional divergence indicates that input lookup and output prediction benefit from different ini-tialization treatments, motivating the asymmetric framework evaluated next. 
+
+5.3 Asymmetric Initialization Strategies 
+
+We next evaluate decoupled, asymmetric config-urations with input-side norm calibration. The experimental matrix includes input-side ablations (varying input strategies while fixing output to 
+
+Uniform ), output-side ablations (varying output strategies while fixing input to Uniform ), and a hybrid Cross-Strategy Combo (MuRIL input with 
+
+Char-len output), as cataloged in Table 1 (Section C). The decoupling of layers again reveals a diver-gence between initialization quality and early train-ability. On the input side, the sparse Max-char In 
+
+mapping achieves the best initialization footprint within the input-side ablation (Init Loss = 7.246 ;Init BPB = 1.0156 ). Despite this favorable cold-start state, it reaches only Val 50 = 3 .027 , the weak-est result within the asymmetric cohort. Conversely, the output-side ablation pairing a 
+
+Uniform input strategy with a Char-len output strategy begins with a slightly higher initialization loss (Init Loss = 7 .256 ; Init BPB = 1 .0170 ), but gives the lowest observed overall early validation loss (Val 50 = 2.722 ), narrowly ahead of several strong alternatives. These outcomes suggest that input lookup benefits from uniform composition, whereas output prediction benefits from length-proportional weighting. The Cross-Strategy Combo (MuRIL-BERT In + Char-len Out ) is nearly tied with the best observed configuration (Val 50 = 2 .724 ), showing that BERT-style seman-tic embeddings can also provide useful input-side initialization signals. Selecting a strategy based solely on initialization loss would therefore choose a weaker initializer. Consequently, the best ob-served configuration, Uniform In + Char-len Out + Hindi Input Norm Calibration , is used for downstream evaluation and large-scale valida-tion, with MuRIL-BERT In + Char-len Out as a close runner-up. 
+
+5.4 Training Convergence Dynamics 
+
+To quantify end-to-end acceleration relative to the default initialization, we compare the best ob-served asymmetric configuration against the stan-dard Mean-all baseline. At step 50 , this configu-      
+
+> Figure 2: Training loss over the first 50 CPT steps for key configurations. The best observed asymmet-ric initialization and the MuRIL-BERT In + Char-len Out semantic-input runner-up closely track one another and remain below vocabulary-averaging and external-retrieval baselines during the lightweight CPT probe.
+
+ration reduces validation cross-entropy by 50 .8% 
+
+relative to the baseline ( 2.72 vs. 5.53 ). In the ex-tended convergence traces in Figure 3, the baseline reaches a comparable validation loss after approxi-mately 321 iterations, corresponding to over a 6×
+
+reduction in CPT steps for comparable validation loss. This speedup reflects the full initialization pipeline relative to the default baseline; the compo-nent ablations in Table 1 separately show the con-tribution of norm calibration and input-output de-coupling within the stronger subword-composition family. The ranking changes observed between Init Loss and Val 50 largely subside beyond this point. In our runs, relative rankings stabilize by step 50 , support-ing lightweight continued pre-training as a practi-cal proxy for longer-horizon optimization and as a stable basis for downstream task selection. Fig-ure 2 shows the corresponding early trajectories for the best observed configuration, its runner-up, and representative baselines. 
+
+5.5 Downstream Benchmark Evaluation (MILU-Hindi) 
+
+To verify that validation cross-entropy improve-ments translate to functional task enhancements, we evaluate target-language performance against the baseline on MILU-Hindi, the Hindi subset of the Multi-task Indic Language Understanding benchmark (Verma et al., 2025), across progres-sive CPT checkpoints from 500 to 3, 500 steps (Ta-ble 2). The proposed asymmetric framework ( Best Method ) outperforms the baseline at every check-CPT Step Baseline Best Method Gain ( ∆)                
+
+> 500 32.00 57.01 +25.01
+> 1500 50.18 60.71 +10.53
+> 2500 54.53 61.80 +7.27
+> 3000 55.80 62.30 +6.50
+> 3500 56.37 62.81 +6.44
+> Table 2: Downstream evaluation performance on the MILU-Hindi benchmark across matched CPT check-points. Baseline denotes Mean-all; Best Method de-notes Uniform In + Char-len Out with Hindi input norm calibration.
+
+point, reaching 62.81 . At step 500 , it shows an absolute gain of +25 .01 points (+78 .2% relative) over the baseline. It also exceeds the baseline’s 
+
+3,500 -step MILU-Hindi performance within 500 
+
+steps, corresponding to a 7× reduction in required training steps for this downstream target. 
+
+5.6 Asymptotic Stability and Scalability: Roughly 50B Continued Pre-training Regime 
+
+In the final experimental phase, we execute an ex-tended continued pre-training run encompassing roughly 50 billion tokens ( 7,000 global steps, 1 : 1 
+
+Hindi-English ratio) to evaluate long-term stability and source-language retention. We compare the unextended reference model ( Original ) against the vocabulary-extended model initialized with our best observed method ( Extended Best ) in Table 3.           
+
+> Benchmark Namespace Original Extended Best MILU-Hindi (Target) 63.56 63.77 (+0.21 )
+> MILU-English (Source) 74.79 74.38 ( −0.41 )
+> Table 3: Long-run MILU evaluation. Original denotes the unextended reference model; Extended Best denotes the vocabulary-extended model initialized with the best observed asymmetric method after roughly 50 B tokens of continued pre-training.
+
+The extended model slightly improves MILU-Hindi performance over the original reference model ( 63.77 vs. 63.56), while MILU-English re-mains close to the original (74.38 vs. 74.79 ). Ap-pendix B provides a broader retention evaluation showing that Extended Best matches the original within evaluation noise across English and non-Hindi multilingual benchmarks. These results pre-serve model quality while recovering the efficiency motivation for vocabulary extension. Hindi fertil-ity drops from 1.95 to 1.25 , yielding 35 .9% fewer tokens and 24 .5% faster evaluation runtime from the reduced token count. These long-run results suggest that the asymmetric initialization remains stable at scale. We limit this run to roughly 50 Btokens due to compute constraints; additional CPT may further improve scores. 
+
+## 6 Conclusion and Future Work 
+
+This study systematically evaluates embedding ini-tialization for LLM vocabulary extension. Our findings show that subword composition provides the largest improvement over vocabulary-averaging baselines, while input-side norm calibration and input-output decoupling further refine performance within the stronger subword-composition family. The best observed asymmetric strategy—applying uniform subword averaging with language-specific norm calibration to the input matrix ( Ein ), and character-length weighting to the output head (Eout )—substantially reduces the cold-start opti-mization cost relative to the default initialization baseline, achieving over a 6× reduction in steps for comparable validation loss and a 7× reduction for downstream benchmark performance. Additionally, we highlight a methodological warning: initialization-time metrics can undergo ranking inversions during early CPT, making them unreliable proxies for later convergence. In con-trast, a brief 50 -step CPT probe provides a stable and reliable signal for selecting the initialization strategy. Future work will investigate the general-izability of this asymmetric subword composition framework across other non-Latin writing systems, including Arabic, CJK scripts, and non-Indic lan-guage families. 
+
+## Limitations 
+
+This study focuses on Hindi vocabulary extension for Nemotron-3-Nano-30B-A3B, so the findings may not directly transfer to other languages, scripts, tokenizer families, or model architectures. The newly added Hindi tokens are sourced from the Nanda tokenizer, so we study embedding initial-ization rather than vocabulary construction. Fi-nally, while the 50 -step CPT probe is reliable in our experiments, it should be validated across ad-ditional training mixtures and downstream bench-marks. Asymmetric methods achieve lower early loss values in our runs, but the differences among top configurations diminish as training progresses, implying that the asymmetry result should be in-terpreted as a practical design signal rather than a definitive separation among the strongest initializ-ers. 
+
+## References 
+
+Orevaoghene Ahia, Sachin Kumar, Hila Gonen, Jungo Kasai, David R Mortensen, Noah A Smith, and Yulia Tsvetkov. 2023. Do all languages cost the same? tok-enization in the era of commercial language models. In Proceedings of the 2023 Conference on Empiri-cal Methods in Natural Language Processing , pages 9904–9923. Piotr Bojanowski, Edouard Grave, Armand Joulin, and Tomas Mikolov. 2017. Enriching word vectors with subword information. Transactions of the associa-tion for computational linguistics , 5:135–146. Monojit Choudhury, Shivam Chauhan, Rocktim Jy-oti Das, Dhruv Sahnan, Xudong Han, Haonan Li, Aaryamonvikram Singh, Alok Anil Jadhav, Utkarsh Agarwal, Mukund Choudhary, and 1 others. 2025. Llama-3-nanda-10b-chat: An open genera-tive large language model for hindi. arXiv preprint arXiv:2504.06011 .Yiming Cui, Ziqing Yang, and Xin Yao. 2023a. Efficient and effective text encoding for chinese llama and alpaca. arXiv preprint arXiv:2304.08177 .Yiming Cui, Ziqing Yang, and Xin Yao. 2023b. Effi-cient and effective text encoding for chinese llama and alpaca. arXiv preprint arXiv:2304.08177 .Konstantin Dobler and Gerard De Melo. 2023. Focus: Effective embedding initialization for monolingual specialization of multilingual models. In Proceed-ings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 13440–13454. Kazuki Fujii, Taishi Nakamura, Mengsay Loem, Hi-roki Iida, Masanari Ohi, Kakeru Hattori, Hirai Shota, Sakae Mizuki, Rio Yokota, and Naoaki Okazaki. 2024. Continual pre-training for cross-lingual llm adaptation: Enhancing japanese language capabili-ties. arXiv preprint arXiv:2404.17790 .Leonidas Gee, Andrea Zugarini, Leonardo Rigutini, and Paolo Torroni. 2022. Fast vocabulary transfer for language model compression. In Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing: Industry Track , pages 409– 416. John Hewitt. 2021. Initializing new word embeddings for pretrained language models. URL: https:/nlp. stanford. edu/˜ johnhew//vocab-expansion. html .Raviraj Joshi, Kanishk Singla, Anusha Kamath, Rau-nak Kalani, Rakesh Paul, Utkarsh Vaidya, San-jay Singh Chauhan, Niranjan Wartikar, and Eileen Long. 2024. Adapting multilingual llms to low-resource languages using continued pre-training and synthetic corpus. arXiv preprint arXiv:2410.14815 .Mohammed Safi Ur Rahman Khan, Priyam Mehta, Ananth Sankar, Umashankar Kumaravelan, Sumanth Doddapaneni, Sparsh Jain, Anoop Kunchukuttan, Pratyush Kumar, Raj Dabre, Mitesh M Khapra, and 1 others. 2024. Indicllmsuite: A blueprint for creat-ing pre-training and fine-tuning datasets for indian languages. In Proceedings of the 62nd Annual Meet-ing of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 15831–15879. Simran Khanuja, Diksha Bansal, Sarvesh Mehtani, Savya Khosla, Atreyee Dey, Balaji Gopalan, Dilip Kumar Margam, Pooja Aggarwal, Rajiv Teja Nagipogu, Shachi Dave, and 1 others. 2021. Muril: Multilingual representations for indian languages. 
+
+arXiv preprint arXiv:2103.10730 .Taku Kudo and John Richardson. 2018. Sentencepiece: A simple and language independent subword tok-enizer and detokenizer for neural text processing. In Proceedings of the 2018 conference on empiri-cal methods in natural language processing: System demonstrations , pages 66–71. Yihong Liu, Peiqin Lin, Mingyang Wang, and Hinrich Schuetze. 2024. Ofa: A framework of initializing unseen subword embeddings for efficient large-scale multilingual continued pretraining. In Findings of the Association for Computational Linguistics: NAACL 2024 , pages 1067–1097. Risto Luukkonen, Ville Komulainen, Jouni Luoma, Anni Eskelinen, Jenna Kanerva, Hanna-Mari Kupari, Filip Ginter, Veronika Laippala, Niklas Muennighoff, Aleksandra Piktus, and 1 others. 2023. Fingpt: Large generative models for a small language. In Proceed-ings of the 2023 conference on empirical methods in natural language processing , pages 2710–2726. Andre Martins and Ramon Astudillo. 2016. From soft-max to sparsemax: A sparse model of attention and multi-label classification. In International confer-ence on machine learning , pages 1614–1623. PMLR. Benjamin Minixhofer, Fabian Paischer, and Navid Rek-absaz. 2022. Wechsel: Effective initialization of subword embeddings for cross-lingual transfer of monolingual language models. In Proceedings of the 2022 Conference of the North American Chap-ter of the Association for Computational Linguistics: Human Language Technologies , pages 3992–4006. Benjamin Minixhofer, Edoardo M Ponti, and Ivan Vuli´ c. 2024. Zero-shot tokenizer transfer. Advances in Neural Information Processing Systems , 37:46791– 46818. Itay Nakash, Nitay Calderon, Eyal Ben David, Elad Hoffer, and Roi Reichart. 2025. Adaptivocab: En-hancing llm efficiency in focused domains through lightweight vocabulary adaptation. arXiv preprint arXiv:2503.19693 .Aleksandar Petrov, Emanuele La Malfa, Philip Torr, and Adel Bibi. 2023. Language model tokenizers introduce unfairness between languages. Advances in neural information processing systems , 36:36963– 36990. Phillip Rust, Jonas Pfeiffer, Ivan Vuli´ c, Sebastian Ruder, and Iryna Gurevych. 2021. How good is your tok-enizer? on the monolingual performance of multilin-gual language models. In Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Confer-ence on Natural Language Processing (Volume 1: Long Papers) , pages 3118–3135. Rico Sennrich, Barry Haddow, and Alexandra Birch. 2015. Neural machine translation of rare words with subword units. arXiv preprint arXiv:1508.07909 .Harman Singh, Nitish Gupta, Shikhar Bharadwaj, Di-nesh Tewari, and Partha Talukdar. 2024. IndicGen-Bench: A multilingual benchmark to evaluate gen-eration capabilities of LLMs on Indic languages. In 
+
+Proceedings of the 62nd Annual Meeting of the As-sociation for Computational Linguistics (Volume 1: Long Papers) , pages 11047–11073, Bangkok, Thai-land. Association for Computational Linguistics. Gemma Team, Morgane Riviere, Shreya Pathak, Pier Giuseppe Sessa, Cassidy Hardin, Surya Bhupati-raju, Léonard Hussenot, Thomas Mesnard, Bobak Shahriari, Alexandre Ramé, and 1 others. 2024. Gemma 2: Improving open language models at a practical size. arXiv preprint arXiv:2408.00118 .Cagri Toraman. 2024. Adapting open-source generative large language models for low-resource languages: A case study for turkish. In Proceedings of the Fourth Workshop on Multilingual Representation Learning (MRL 2024) , pages 30–44. Sshubam Verma, Mohammed Safi Ur Rahman Khan, Vishwajeet Kumar, Rudra Murthy, and Jaydeep Sen. 2025. Milu: A multi-task indic language understand-ing benchmark. In Proceedings of the 2025 Confer-ence of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) ,pages 10076–10132. Anh-Dung Vo, Minseong Jung, Wonbeen Lee, and Dae-woo Choi. 2024. Redwhale: An adapted korean llm through efficient continual pretraining. arXiv preprint arXiv:2408.11294 .Atsuki Yamaguchi, Aline Villavicencio, and Nikolaos Aletras. 2024. An empirical study on cross-lingual vocabulary adaptation for efficient language model inference. In Findings of the Association for Com-putational Linguistics: EMNLP 2024 , pages 6760– 6785. A Extended Convergence Curves 
+
+Figure 3: Extended validation-loss, training-loss, and MILU-Hindi trajectories comparing the Mean-all baseline with the best observed initialization pipeline. The left panel shows that the best observed configuration reaches validation loss 2.72 at step 50 , matching the Mean-all baseline after approximately 321 iterations; the right panel shows the downstream MILU-Hindi comparison used for the 500 -step and 3,500 -step analysis. 
+
+## B English and Multilingual Retention 
+
+Table 4 compares Original with Extended Best on English and non-Hindi multilingual benchmarks. All differences remain within roughly one standard error, indicating that Extended Best matches the original within evaluation noise. For code, raw counts change from 126 /164 to 123 /164 on HumanEval and from 
+
+191 /257 to 187 /257 on MBPP-Sanitized. 
+
+Benchmark Metric Original Extended Best ∆ |∆|/SE General knowledge & reasoning 
+
+MMLU (5-shot) exact_match 78.62 78.13 −0.49 1.04 MMLU-Pro (5-shot) exact_match 64.53 64.88 +0 .35 0.59 AGIEval-EN (CoT) exact_match 67.75 67.84 +0 .09 0.07 ARC-Challenge (25-shot) acc 91.81 91.64 −0.17 0.15 HellaSwag acc_norm 85.57 85.12 −0.45 0.90 PIQA acc_norm 84.33 83.68 −0.65 0.54 RACE acc 88.13 86.89 −1.24 0.86 WinoGrande (5-shot) acc 79.08 79.87 +0 .79 0.49 OpenBookQA acc_norm 46.40 46.80 +0 .40 0.13 
+
+Code 
+
+HumanEval (greedy) pass@1 76.83 75.00 −1.83 0.39 MBPP-Sanitized (3-shot) pass@1 74.32 72.76 −1.56 0.40 
+
+Math 
+
+GSM8K (8-shot CoT) exact_match 92.04 92.04 +0 .00 0.00 MATH-500 (4-shot) pass@1[32] 77.46 77.04 −0.42 0.17 
+
+Multilingual (non-English, non-Hindi) 
+
+Global-MMLU-Lite (8-lang avg) acc 74.56 75.13 +0 .57 0.52 MGSM (6-lang avg, CoT 8-shot) flexible-extr. 80.07 80.53 +0 .47 0.33 
+
+Table 4: English and multilingual retention evaluation after the long-run CPT setting. All values are percentages; ∆
+
+is Extended Best minus Original. Category Original Extended Best ∆
+
+General knowledge & reasoning (9) 76.25 76.09 −0.15 
+
+Code (2) 75.58 73.88 −1.70 
+
+Math (2) 84.75 84.54 −0.21 
+
+Multilingual (2) 77.32 77.83 +0 .52 
+
+Mean across all 15 benchmarks — — −0.28 
+
+Mean across 13 English-only benchmarks — — −0.40 
+
+Table 5: Category-level retention summary for the benchmarks in Table 4.

@@ -1,0 +1,1033 @@
+Title: FraQ: Efficient Coordinate-Space Recompression for Federated Low-Rank Adaptation
+
+URL Source: https://arxiv.org/pdf/2608.03605v1
+
+Published Time: Wed, 05 Aug 2026 01:03:05 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# FRA Q: Efficient Coordinate-Space Recompression for Federated Low-Rank Adaptation 
+
+Shenghui Li 1 and Thiemo Voigt 1,21Uppsala University, Uppsala, Sweden 
+
+2Research Institutes of Sweden, Stockholm, Sweden 
+
+{shenghui.li,thiemo.voigt}@angstrom.uu.se 
+
+Abstract 
+
+Federated fine-tuning with Low-Rank Adapta-tion (LoRA) enables collaborative and efficient adaptation of Large Language Models (LLMs) without centralizing private data. However, its two-factor parameterization introduces an aggregation mismatch across clients, as naive factor-wise averaging does not recover the aver-age of the induced updates. Forming the exact aggregate in the full weight space and recom-pressing it avoids this mismatch, but decom-posing the resulting full-size matrix is compu-tationally expensive and memory-intensive. We propose F RA Q, an efficient coordinate-space re-compression method for federated LoRA. Start-ing from stacked factors that represent the ex-act aggregate, F RA Q expresses the aggregate as the product of an orthonormal basis and a compact coordinate matrix. It then recovers the singular spectrum from a small Gram matrix of this coordinate representation and selects the smallest rank satisfying a prescribed energy threshold. The selected coordinate subspace is mapped back via the basis to construct the global adapter. Experiments across text clas-sification and commonsense reasoning bench-marks demonstrate that F RA Q achieves accu-racy close to that of uncompressed baselines while substantially reducing downlink commu-nication and incurring low server-side recom-pression overhead. 
+
+1 Introduction 
+
+Large Language Models (LLMs) have demon-strated remarkable capabilities across a wide range of tasks (Brown et al., 2020; Touvron et al., 2023; Grattafiori et al., 2024; Qwen Team, 2025). While fine-tuning further improves the adaptability of LLMs to downstream domains (Howard and Ruder, 2018), fully updating their massive parameter sets remains computationally expensive and sus-ceptible to overfitting. Parameter-Efficient Fine-Tuning (PEFT) methods alleviate these limitations 1 2 3 4 5 6 7 8           
+
+> Number of Clients ( N)
+> 0.00 0.25 0.50 0.75 1.00 1.25 1.50
+> Per-Client Downlink Payload (GiB)
+> Payload Removed by Recompression
+> Downlink Scaling: Stacking vs. Recompression
+> r= 8
+> r= 16
+> r= 32
+> r= 64
+> Uncompressed Stacking Recompressed
+> r= 8 r= 16 r= 32 r= 64
+> Client Local LoRA Rank ( r)
+> 0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75
+> Downlink Payload with  8 Clients (GiB)
+> 55.5% Removed
+> 83 MiB
+> 78.7% Removed
+> 79 MiB
+> 83.1% Removed
+> 126 MiB
+> 87.3% Removed
+> 189 MiB
+> Payload Reduction vs. Local Rank
+> Recompressed Payload Compressible Downlink Overhead
+
+Figure 1: Exact aggregation via unrecompressed stack-ing rapidly increases per-client downlink with client count and local rank. On LLaMA-3.2-3B, recompres-sion with at least 90% spectral-energy retention cuts this payload by 55.5–87.3%. 
+
+by adapting LLMs with only a small number of trainable parameters, with Low-Rank Adaptation (LoRA) (Hu et al., 2022) being a representative ap-proach that introduces trainable low-rank updates to existing weight matrices. When the data required for fine-tuning LLMs are distributed across institutions or edge devices, directly centralizing them is often infeasible due to privacy or regulatory constraints. Federated Learn-ing (FL) (McMahan et al., 2017) provides a nat-ural paradigm for collaborative learning without sharing local data. When combined with LoRA, FL allows clients to train and communicate only compact low-rank adapters rather than full model parameters, substantially reducing communication overhead. However, LoRA also makes aggregation more subtle: conventional FedAvg-style aggrega-tion (Zhang et al., 2024) averages the two LoRA factor matrices independently, although the product of averaged factors generally differs from the aver-age of the corresponding low-rank updates. This mismatch produces an inexact global update and can degrade fine-tuning performance (Sun et al., 2024; Singhal et al., 2025). To address this mismatch, existing methods either constrain the local LoRA parameteriza-arXiv:2608.03605v1 [cs.AI] 4 Aug 2026 tion (Sun et al., 2024) or move to update-level ag-gregation through residual merging (Singhal et al., 2025) or factor stacking (Wang et al., 2024). The former limits local adaptation, whereas update-level methods better preserve the aggregate with-out necessarily producing a compact rank-adaptive global adapter. In particular, unrecompressed stack-ing exactly represents the aggregate, yet its adapter width grows with the sum of participating client ranks (Wang et al., 2024; Singhal et al., 2025), in-creasing the per-client downlink payload and local computation cost. Intuitively, the stacked width can be much larger than the number of directions needed to capture most of the aggregate’s spectral energy (Yan et al., 2026; Ramesh and Dass, 2026a). The server can therefore recompress the aggregate into a lower-rank adapter before broadcasting it. As illustrated in Figure 1, recompression removes much of the downlink overhead while retaining most of the spectral energy. However, conventional approaches materialize the dense aggregate in the full weight space and apply truncated SVD (Bai et al., 2024; Singhal et al., 2025), incurring substantial server-side mem-ory and computation. Recent compact-space vari-ants avoid dense reconstruction, yet still require repeated truncated SVDs (Panariello et al., 2025; Ramesh and Dass, 2026a) or two reduced QR fac-torizations followed by an SVD of the compact core (Ramesh and Dass, 2026b). We propose F RA Q, a direction-adaptive, one-sided coordinate-space recompression framework for federated LoRA. F RA Q confines orthogonal-ization to the smaller weight dimension, yielding an implicit basis and exact coordinates. It then recovers the spectrum through a compact Gram eigenproblem, selects the global rank using an en-ergy threshold, and maps only the retained direc-tions back through the implicit basis to form an optimal rank-p adapter. Our main contributions are summarized as follows: • We establish an isometric coordinate formula-tion for federated LoRA recompression, prov-ing that compact coordinates of the exact stacked aggregate preserve its nonzero sin-gular spectrum and low-rank approximation geometry. This guarantees full-space rank-p
+
+optimality after coordinate-space truncation. • We design F RA Q, a direction-adaptive, one-sided algorithm that orients the factorization along the smaller weight dimension, con-structs an implicit basis with a single reduced QR, and performs rank-adaptive recompres-sion in compact coordinate space. FRA Qthereby avoids materializing and decompos-ing the full-size aggregate while remaining equivalent to full-space recompression. • Extensive experiments across multiple tasks under varying data heterogeneity and both uni-form and heterogeneous client ranks show that FRA Q maintains accuracy close to that of un-compressed aggregation while substantially reducing downlink communication and incur-ring low server-side recompression overhead. 
+
+2 Preliminaries 
+
+Fine-tuning with LoRA. LoRA (Hu et al., 2022) represents the update of a pretrained weight ma-trix through a low-rank factorization. The fine-tuned weights W ′ are expressed as the sum of the frozen pretrained weights W0 and a low-rank up-date ∆W :
+
+W ′ = W0 + ∆ W = W0 + sBA , (1) where W0, W ′ ∈ Rm×n are the pretrained and fine-tuned weights, B ∈ Rm×ρ and A ∈ Rρ×n are the trainable low-rank factors, and s = αLoRA /ρ is the LoRA scaling factor. Thus, the effective weight update is ∆W = sBA . Instead of updating W0
+
+directly, LoRA trains only the small factors B and 
+
+A, reducing the number of trainable parameters from mn to ρ(m + n).
+
+Federated fine-tuning. Federated learn-ing (McMahan et al., 2017) trains a shared model across a set C of K clients holding private data, coordinated by a central server over T communica-tion rounds. Under FedAvg, the server aggregates local updates by a data-weighted average; with 
+
+nk samples at client k, N = P 
+
+> k
+
+nk, and weight 
+
+αk = nk/N , the global update is 
+
+∆W =
+
+> K
+
+X
+
+> k=1
+
+αk ∆Wk, (2) where ∆Wk is the local update from client k.FedIT (Zhang et al., 2024) extends this scheme to LoRA: each client k fine-tunes local adapters 
+
+(Bk, Ak). FedIT assumes homogeneous LoRA configurations, so all clients use a common LoRA Clients upload local adapters. 𝑮 = 𝑯𝑯 !                             
+
+> 1. Weighted Adapter Stacking 2. Basis–Coordinate Representation 3. Spectral Recovery & Rank Selection 4. Global Adapter Construction
+> 𝝀 !
+> 𝜆 !
+> ⋱
+> ⋱
+> 𝜆 !
+> =𝑮 ∈ ℝ !×! 𝑼 ∈ ℝ $×$
+> ⨉𝑼 &
+> ⨉
+> ×≈𝑼 '
+> 𝑼 (&
+> 𝝀 !
+> ⋱𝜆 "×
+> 𝑨 !∈ ℝ "×$ 𝑩 !∈ ℝ $×%
+> Basis
+> 𝐐 ∈ ℝ "×$
+> Gram Matrix
+> 𝑮 ∈ ℝ !×!
+> 𝑩 &𝑨 &
+> ✖𝑨 𝟏 𝑩 𝟏 ➕
+> Frozen Weights
+> W
+> Client 1
+> ✖𝑨 (𝑩 (➕
+> Frozen Weights
+> W
+> Client 2
+> ✖𝑨 )𝑩 )➕
+> Frozen Weights
+> W
+> Client 3
+> Coordinates
+> H ∈ ℝ $×%
+> ✖
+> Clients merge 𝑩 !
+> and 𝑨 !to base model and initialize new adapters before next round.
+> ✖
+> Instead of 𝜟𝑾 ∈ ℝ "×$ , the server broadcasts 𝑩 !∈ ℝ "×% and 𝑨 !∈ℝ%×$ to save downlink overhead.
+> ✖
+> 𝜟𝑾 != 𝑨 !𝑩 !𝜟𝑾 != 𝑸𝑯, 𝑸 !𝑸 = 𝑰
+> FRA Q Server
+> 𝑩 &= 𝑯 !𝑼 *𝑨 &= 𝑼 +!𝑸 !𝑮 = 𝑼𝜦𝑼 !≈ 𝑼 +𝜦 +𝑼 +!
+> s,
+> s(
+> s)
+
+Figure 2: Overview of F RA Q, illustrated for the m > n orientation. Each client initializes and trains a LoRA adapter on the current global model and uploads its factors to the server. The server (1) forms weighted factor stacks whose product equals the exact update-level aggregate; (2) constructs an orthonormal basis and a coordinate representation without materializing the full-size aggregate; (3) recovers the spectrum from a small Gram matrix and selects the global rank using an energy-retention threshold; and (4) combines the retained coordinate-space approximation with the basis to construct compact global LoRA factors for broadcast. Clients merge the broadcast global adapter into their cached global weights and reinitialize fresh local adapters for the next round. 
+
+scale s. The server averages the factors indepen-dently, 
+
+B =
+
+KX
+
+k=1 
+
+αk Bk, A =
+
+KX
+
+k=1 
+
+αk Ak. (3) 
+
+Inexactness of LoRA aggregation. The diffi-culty is that aggregating adapters is not equivalent to aggregating their updates. Because each client’s effective contribution is sBkAk rather than the in-dividual factors, independently averaging Bk and 
+
+Ak does not recover the exact aggregated update: 
+
+sB A | {z } 
+
+FedIT: inexact 
+
+= sX
+
+i,j 
+
+αiαj BiAj̸ = s X
+
+k
+
+αk BkAk
+
+| {z }
+
+∆W : exact 
+
+.
+
+(4) The discrepancy stems from the cross terms BiAj
+
+with i̸ = j, i.e., the average of the products is not equal to the product of the averages. Anaive remedy is to materialize the exact aggregate 
+
+∆W ∈ Rm×n in Eq. (4) and re-decompose it with a truncated SVD, but this discards the low-rank structure that makes LoRA efficient and incurs a costly full-matrix decomposition on the server. Our method computes the rank-truncated form of the exact aggregate ∆W directly in a compact coordi-nate space, avoiding both the cross-term noise of Eq. (4) and the cost of full-matrix SVD. 
+
+3 Proposed Method 
+
+We introduce F RA Q, an efficient method for consol-idating client LoRA updates into a compact global adapter. As illustrated in Figure 2, F RA Q first forms weighted factor stacks whose product equals the exact update-level aggregate and represents this aggregate through an orthonormal basis and a com-pact coordinate matrix. It then recovers the spec-trum from a small Gram matrix formed from the coordinates, uses an energy-retention threshold to select the broadcast rank, and maps the retained directions through the basis to construct the LoRA factors broadcast to clients. 
+
+3.1 Problem Formulation 
+
+At the beginning of round t, all clients initialize from the current global weights Wt, which incor-porate all previously merged updates into the pre-trained model W0. Client k then fine-tunes a rank 
+
+rk low-rank adapter (Bk, Ak), with Bk ∈ Rm×rk
+
+and Ak ∈ Rrk ×n, on top of Wt, yielding the effective local update ∆Wk = skBkAk, where 
+
+sk = αLoRA ,k /r k. For clarity, we omit round in-dices on adapter factors throughout Sections 3.1– 3.3; Figure 2 follows the same convention. With aggregation weights αk = nk/N , the server seeks the weighted aggregate of these updates, 
+
+∆W =
+
+> K
+
+X
+
+> k=1
+
+αk∆Wk =
+
+> K
+
+X
+
+> k=1
+
+αkskBkAk. (5) Averaging Bk and Ak separately introduces the cross-term noise of Eq. (4) (Sun et al., 2024). Instead, following the exact weighted stacking scheme of FLoRA (Wang et al., 2024) and FLoRIST (Ramesh and Dass, 2026a), the server constructs 
+
+B = [ √α1B1, . . . , √αK BK ] ∈ Rm×r, (6) 
+
+A =
+
+h√α1s1A⊤ 
+
+> 1
+
+, . . . , √αK sK A⊤
+
+> K
+
+i⊤
+
+∈ Rr×n.
+
+where r = PKk=1 rk is the total client rank. The client-specific LoRA scale is incorporated into the stacked A factor, matching the implementation. Consequently, BA = P 
+
+> k
+
+αkskBkAk = ∆ W .The aggregate is therefore represented exactly as 
+
+∆W = BA , rank  ∆W  ≤ r, (7) with heterogeneous client ranks rk accommodated naturally by the concatenation. This exactness, however, comes at a cost: stacking inflates the indi-vidual rank-rk adapters into an aggregate of rank up to the total client rank r, which grows with the number of participating clients. To keep the down-link compact, the server must instead broadcast a rank-p adapter Bg ∈ Rm×p and Ag ∈ Rp×n,where p ≪ r. The problem to solve is therefore the recompression of the exact aggregate: find the rank-p adapter closest to ∆W in Frobenius norm, 
+
+min Bg ,Ag ∥∆W − BgAg∥F , or equivalently 
+
+min  
+
+> rank( Z)≤p
+
+∆W − Z F . (8) 
+
+3.2 Isometric Coordinate Representation 
+
+For any compatible matrix product M = XY ,we have col( M ) ⊆ col( X). If X has r columns, then rank( M ) ≤ rank( X) ≤ r. Thus, although 
+
+M may be full-sized, its columns lie in a subspace of dimension at most r. Representing M in an orthonormal basis whose span contains this sub-space is therefore exact. The following proposition shows that the resulting basis–coordinate mapping is isometric, allowing optimal low-rank recompres-sion to be performed equivalently in the coordinate and original matrix spaces. 
+
+Proposition 1 (Isometric coordinate equivalence) .
+
+Let M = XY , where X ∈ Rd×r and Y ∈ Rr×D,with r ≤ d. Let Q ∈ Rd×r have orthonor-mal columns whose span contains col( X), i.e., 
+
+Q⊤Q = Ir and col( X) ⊆ col( Q). Define 
+
+C = Q⊤X ∈ Rr×r,
+
+H = CY = Q⊤M ∈ Rr×D. (9) 
+
+Then M = QH . Moreover, for any cH ∈ Rr×D,
+
+M − QcH F = H − cH F . (10) 
+
+Thus, the columns of H are the exact coordinates of the corresponding columns of M in the basis 
+
+Q, and H and M have the same nonzero singu-lar values. Consequently, if Hp is a best rank-p
+
+approximation of H, then 
+
+QH p ∈ arg min    
+
+> fM∈Rd×D
+> rank( fM)≤p
+
+M − fM F . (11) Proposition 1 shows that optimal rank-p re-compression can be performed on H in the r-dimensional coordinate space induced by Q, with-out materializing the full matrix M . The proposi-tion is stated under the assumption r ≤ d, which holds in all federated LLM fine-tuning settings eval-uated in this work. The extension to r > d is provided in Appendix A.2, and the proof of the proposition is provided in Appendix A.1. 
+
+3.3 FRA Q Recompression 
+
+Given the weighted factor stacks in Eq. (6), F RA Qinstantiates Proposition 1 to recompress the exact aggregate. Because transposition preserves singu-lar values, rank, and the Frobenius norm, F RA Qcan operate on either the aggregate or its trans-pose. We therefore orient the factorization along the smaller weight dimension: 
+
+(X, Y ) = 
+
+(
+
+(B, A), m ≤ n, 
+
+(A⊤, B⊤), m > n. (12) Accordingly, M = XY equals ∆W when m ≤
+
+n and ∆W ⊤ when m > n . In either case, X ∈
+
+Rd×r and Y ∈ Rr×D, where d = min( m, n ) and 
+
+D = max( m, n ).
+
+Basis-coordinate representation. To obtain the orthonormal basis required by Proposition 1, F RA Qfactorizes the tall-and-skinny left factor X ∈ Rd×r.We use a reduced Householder QR factorization as the default exact basis construction, obtaining 
+
+R ∈ Rr×r and an implicit representation of Q ∈
+
+Rd×r such that X = QR and Q⊤Q = Ir. Be-cause col( M ) ⊆ col( X) ⊆ col( Q), the columns of M are represented exactly in the basis Q. Sub-stituting X = QR into M = XY and defin-ing H = RY gives M = QH . Whereas exist-ing approaches to LoRA merging and recompres-sion, such as Core Space Merging (Panariello et al., 2025) and FLoRIST (Ramesh and Dass, 2026a), construct left and right bases using a pair of thin SVDs, F RA Q obtains the required basis from a sin-gle reduced Householder QR factorization of X
+
+and incorporates Y directly through RY .
+
+Spectral recovery and rank selection. Since Proposition 1 establishes that H and M share the same nonzero singular values, F RA Q performs spectral analysis entirely in the coordinate space. Rather than computing an SVD of H ∈ Rr×D, it forms the compact left Gram matrix and computes its symmetric eigendecomposition: 
+
+G = HH ⊤ = U ΛU ⊤ ∈ Rr×r. (13) Here U ⊤U = Ir and Λ = diag( λ1, . . . , λ r), with 
+
+λ1 ≥ · · · ≥ λr ≥ 0. Because G = HH ⊤,the columns of U are the left singular vectors of H, and λi = σi(H)2 = σi(M )2. Moreover, Pri=1 λi = ∥H∥2 
+
+> F
+
+= ∥M ∥2 
+
+> F
+
+, so each λi measures the contribution of the corresponding singular di-rection to the aggregate’s spectral energy. For a nonzero aggregate and an energy-retention threshold τ ∈ (0 , 1] , F RA Q selects the smallest rank whose leading directions retain at least a τ
+
+fraction of this energy: 
+
+p = min 
+
+(
+
+p′ ∈ { 1, . . . , r }
+
+Pp′ 
+
+> i=1
+
+λi
+
+Pri=1 λi
+
+≥ τ
+
+)
+
+. (14) 
+
+Global adapter construction. Let Up =[u1, . . . , up] ∈ Rr×p contain the eigenvectors as-sociated with the p largest eigenvalues of G. These vectors span the dominant left singular subspace of H. Orthogonally projecting H onto this sub-space therefore gives its best rank-p approxima-tion Hp = UpU ⊤ 
+
+> p
+
+H. Mapping this approximation back to the original matrix space via Q yields 
+
+QH p = ( QU p)( U ⊤ 
+
+> p
+
+H). (15) We therefore define 
+
+Lp = QU p ∈ Rd×p, Rp = U ⊤ 
+
+> p
+
+H ∈ Rp×D.
+
+(16) The full basis Q need not be materialized: after zero-padding Up to d × p, Lp = QU p can be obtained by applying the stored Householder re-flectors directly. When m ≤ n, M = ∆ W , so these factors already have the required LoRA ori-entation. When m > n , M = ∆ W ⊤, and the factorization is transposed to recover the original orientation. Thus, 
+
+(Bg, Ag) = 
+
+(
+
+(Lp, Rp), m ≤ n, 
+
+(R⊤ 
+
+> p
+
+, L⊤ 
+
+> p
+
+), m > n. (17) In both cases, BgAg is a best rank-p ap-proximation of the effective weighted aggregate P 
+
+> k
+
+αkskBkAk by Proposition 1. The resulting pair (Bg, Ag) is therefore a merge-ready factoriza-tion as its product already includes the client-side LoRA scaling. 
+
+Complexity. In the typical regime p ≤ r ≤
+
+d, F RA Q requires O(( d + D)r2 + r3) time and 
+
+O(( d + D)r + r2) additional workspace beyond the weighted factor stacks; this bound includes 
+
+O(( d + D)rp ) for rank-p factor recovery. The ori-entation in Eq. (12) confines reduced Householder QR to X ∈ Rd×r and eigendecomposition to 
+
+G ∈ Rr×r, while the larger dimension D appears only in matrix multiplications. We provide deriva-tion and FLOP comparisons in Appendix A.3. 
+
+3.4 Overall Pipeline 
+
+As summarized in Figure 2, F RA Q retains the merge-and-reinitialize workflow of FLoRA (Wang et al., 2024), but broadcasts a recompressed global adapter instead of the full stacked adapter. The rank-p global adapter is stored with αLoRA ,g = p,giving unit global scaling sg = αLoRA ,g /p = 1 .Therefore, merging the broadcast adapter applies exactly the merge-ready patch BgAg, without an additional scaling factor. At the beginning of round 
+
+t, each client merges the global adapter broadcast in the preceding round into its cached global weights: 
+
+Wt = Wt−1 +B(t−1)  
+
+> g
+
+A(t−1)  
+
+> g
+
+, B(0)  
+
+> g
+
+A(0)  
+
+> g
+
+= 0.
+
+Each client then initializes a fresh rank-rk residual adapter (B(t) 
+
+> k
+
+, A(t) 
+
+> k
+
+), fine-tunes it on top of frozen 
+
+Wt, and uploads the resulting factors. Reinitializa-tion prevents the previously merged global adapter from being counted again in the next aggregate. The server forms the exact weighted factor stacks according to Eq. (6) and applies F RA Q to produce Table 1: Overall comparison of federated LoRA methods on (a) text classification and (b) commonsense reasoning. We report accuracy (%), downlink payload normalized to FLoRA (%), and aggregation latency (ms; mean ± std). Best accuracies among compressed-downlink methods are shown in bold , and second-best accuracies are underlined. FLoRA and FedEx-LoRA are excluded from this ranking because they do not perform rank recompression. 
+
+(a) Text classification. METHOD 
+
+Accuracy DOWNLINK 
+
+(% FLoRA) AVG . A GG .TIME (ms) 20 N EWSGROUPS BANKING 77 CLINC150 HWU64 
+
+Dir(0 .1) Dir(0 .02) Dir(0 .1) Dir(0 .02) Dir(0 .1) Dir(0 .02) Dir(0 .1) Dir(0 .02) 
+
+FLoRA 64.42 61.65 88.30 87.22 94.79 95.43 89.99 89.27 100.00 4.3 ± 0.2
+
+FedEx-LoRA 63.02 61.62 86.96 87.00 93.38 94.35 89.78 88.85 110.00 11 .7 ± 0.3
+
+FedIT 65.28 56.45 84.33 79.20 91.85 89.31 88.44 82.46 10.00 1.9 ± 0.1
+
+LoRA-A 2 63.09 56.63 84.18 81.11 91.23 86.79 88.75 83.49 10.00 1.4 ± 0.1
+
+FlexLoRA 65.50 59.51 86.42 82.34 92.67 91.09 89.58 83.90 10.00 2722 .2 ± 7.8
+
+FLoRG 61.73 54.51 81.80 77.39 88.79 84.22 87.00 79.98 1.70 64 .4 ± 0.4
+
+FLoRIST 62.83 56.28 83.57 78.62 88.89 84.15 88.54 81.53 4.20 206 .1 ± 0.7
+
+FRA Q ( τ = 0 .80 ) 63.87 60.95 87.11 85.66 94.42 94.81 89.99 88.65 23.40 14 .2 ± 0.0
+
+FRA Q ( τ = 0 .95 ) 64.29 61.16 87.69 86.82 94.57 95.28 89.99 89.06 48.70 14 .3 ± 0.3
+
+(b) Reasoning benchmarks. METHOD BOOL Q PIQA SIQA HELLA SWAG WINO GRANDE ARC-E ARC-C OBQA AVG .DOWNLINK                                                                                                                         
+
+> (% FLoRA) AVG . A GG .TIME (ms) FLoRA 88.78 79.49 78.45 85.34 77.27 89.73 78.24 81.60 82.36 100.00 16 .7±0.4
+> FedEx-LoRA 88.75 78.89 78.15 83.42 78.30 89.69 77.22 82.60 82.13 112.51 60 .0±9.5
+> FedIT 87.31 78.67 76.82 79.64 73.64 89.86 77.73 80.40 80.51 12.51 9.7±0.3
+> LoRA-A 285.84 71.49 72.67 55.23 64.09 81.27 63.99 74.00 71.07 12.51 5.0±0.1
+> FlexLoRA 87.86 79.49 76.41 81.18 75.85 89.86 78.41 80.40 81.18 12.51 197270 .4±34 .3
+> FLoRG 86.97 77.42 75.13 74.50 71.19 87.37 74.32 79.60 78.31 4.01 3403 .7±9.4
+> FLoRIST 85.66 77.48 73.13 70.25 71.03 88.43 75.51 76.40 77.24 12.51 728 .0±6.7
+> FRA Q ( τ= 0 .80 )88.47 80.03 77.02 82.19 76.24 89.18 76.45 82.00 81.45 40.01 86 .7±1.7
+> FRA Q ( τ= 0 .95 )88.13 79.33 77.33 83.28 78.45 89.56 77.39 82.80 82.03 67.82 86 .7±1.8
+
+the next compact global adapter (B(t) 
+
+> g
+
+, A(t) 
+
+> g
+
+) for broadcast. The weighted factor stacks are algebraically equivalent to explicitly aggregating the full-size local updates. Consequently, F RA Q recompresses the same aggregate without requiring a common local factor rank, naturally accommodating hetero-geneous client ranks {rk}. The complete round-by-round procedure is provided in Appendix B. 
+
+4 Experiments 
+
+In this section, we evaluate the performance of our F RA Q against existing federated LoRA meth-ods across various heterogeneity and homogeneous rank settings and datasets. We assess performance based on accuracy, downlink overhead, and server-side recompression efficiency. 
+
+4.1 Experimental Setup Tasks, federated settings, and metrics. We eval-uate F RA Q with RoBERTa-base (Liu et al., 2019b) on four intent and topic classification datasets: BANKING77 (Casanueva et al., 2020), 20 News-groups (Lang, 1995), CLINC150 (Larson et al., 2019), and HWU64 (Liu et al., 2019a). Each dataset is partitioned across 10 clients using Dirich-let label splits with α ∈ { 0.1, 0.02 }, representing moderate and extreme heterogeneity. Training runs for 30 communication rounds with 200 local steps per round. For this model, we use a single linear classification head for all methods. The classifier is jointly trained with the local LoRA adapters and aggregated using FedAvg during the first five com-munication rounds, after which it is frozen. This ensures that subsequent performance differences primarily reflect the LoRA adaptation and aggrega-tion mechanisms. We fine-tune LLaMA-3.2-3B (Meta AI, 2024) on the Commonsense-170K reasoning benchmark following FedEx-LoRA (Singhal et al., 2025). This setting uses eight clients with a pathological cross-task partition, where each client holds one rea-soning task. The main evaluation uses a uni-form local LoRA rank of 8. We additionally con-Table 2: Heterogeneous-rank results on commonsense reasoning benchmarks. We report accuracy (%), downlink payload normalized to FLoRA (%), and aggregation latency (ms; mean ± std). Best accuracies among compressed-downlink methods are shown in bold , and second-best accuracies are underlined.                                                                              
+
+> METHOD BOOL QPIQA SIQA HELLA SWAG WINO GRANDE ARC-E ARC-C OBQA AVG .DOWNLINK
+> (% FLoRA) AVG . A GG .TIME (ms) FLoRA 89.30 76.77 77.64 81.05 74.27 88.01 72.18 78.60 79.73 100.0 18 .9±0.7
+> FlexLoRA 88.62 77.04 75.69 79.99 72.69 88.13 69.71 75.60 78.44 27.6 334587 .6±1576 .2
+> FLoRIST 88.47 76.99 74.92 79.71 73.01 88.09 71.76 77.60 78.82 23.0 4364 .6±10 .5
+> FRA Q ( τ= 0 .80 )88.62 76.22 75.08 78.16 72.14 87.67 71.93 76.60 78.30 16.2 369 .4±5.3
+> FRA Q ( τ= 0 .95 )88.93 77.31 76.10 81.01 74.19 87.63 71.33 78.20 79.34 45.5 367 .9±4.0
+
+sider heterogeneous local ranks (r1, . . . , r 8) =(4 , 16 , 32 , 64 , 4, 16 , 32 , 64) under the same reason-ing setup, with all other training settings unchanged. Dataset details and complete training hyperparam-eters are provided in Appendices C.1 and C.3. We evaluate F RA Q at energy thresholds τ =0.80 and 0.95 to characterize the accuracy– communication trade-off. We measure per-client downlink by the number of LoRA parameters broadcast per round, normalized to the uncom-pressed FLoRA stack ( 100% ). We evaluate server-side aggregation efficiency using wall-clock latency and peak memory, complemented by the theoret-ical FLOP analysis in Appendix A.3. Latency is reported as mean ± standard deviation and includes recompression where applicable. Federated train-ing is simulated on a cluster of NVIDIA GH200 GPUs, whereas server-side efficiency is measured on a single GPU from this cluster under identi-cal software conditions for all methods. Unless otherwise noted, weight matrices with compatible shapes are processed using batched GPU kernels. 
+
+Baselines. We compare F RA Q against factor-space aggregation methods FedIT (Zhang et al., 2024) and LoRA-A2 (Koo et al., 2025), exact and uncompressed aggregation methods FLoRA (Wang et al., 2024) and FedEx-LoRA (Singhal et al., 2025), and recompression methods FlexLoRA (Bai et al., 2024), FLoRG (Meng et al., 2026), and FLoRIST (Ramesh and Dass, 2026a). Detailed baseline descriptions are provided in Appendix C.2. The heterogeneous-rank evaluation includes only methods that natively support varying client ranks, namely FLoRA, FlexLoRA, FLoRIST, and F RA Q. 
+
+4.2 Main Results Accuracy and communication. Table 1 reports accuracy, normalized downlink, and aggregation la-tency. Boldface and underlining mark the best and second-best compressed results; unrecompressed FLoRA and FedEx-LoRA are excluded. FRA Q(τ =0 .95 ) achieves the best compressed result on three of four classification datasets under moderate heterogeneity and all four under extreme hetero-geneity, remaining within 0.61 percentage points of FLoRA across all eight settings. F RA Q ( τ =0 .80 )ranks second on all four datasets under extreme het-erogeneity. On commonsense reasoning, the two variants rank first and second among compressed methods at 82 .03% and 81 .45% , respectively, with 
+
+τ =0 .95 only 0.33 points below FLoRA. At τ =0 .80 , F RA Q uses 23 .4% and 40 .0% of the FLoRA downlink for classification and reason-ing, respectively; τ =0 .95 increases these values to 
+
+48 .7% and 67 .8% in exchange for higher accuracy. FLoRG and FLoRIST use less downlink but incur substantially larger accuracy losses, particularly under extreme label heterogeneity. 
+
+Heterogeneous client ranks. Table 2 evaluates methods that natively support heterogeneous lo-cal ranks. FRA Q ( τ =0 .95 ) achieves the high-est average accuracy among compressed meth-ods at 79 .34% , only 0.39 percentage points below FLoRA while using 45 .5% of its downlink. F RA Q(τ =0 .80 ) reduces the downlink further to 16 .2% ,the lowest among all compared methods, while retaining an average accuracy of 78 .30% .
+
+Server-side efficiency. FRA Q requires 14.2 ms and 86.7 ms per aggregation for RoBERTa-base and LLaMA-3.2-3B, respectively, making it 8–15 ×
+
+faster than FLoRIST and 190 –2,300 × faster than FlexLoRA. In the heterogeneous-rank experiments, both variants require approximately 0.37 s, around 
+
+12 × faster than FLoRIST and more than 900 ×
+
+faster than FlexLoRA. Figure 3 further examines scalability with to-tal stacked rank and hidden size. Across both sweeps, F RA Q remains the fastest method while maintaining low peak memory under batched and • FRA Q ■ FLoRIST ▲ FlexLoRA Batched Unbatched 20 80 160 480    
+
+> r
+> 10 1
+> 10 2
+> 10 3
+> Time (ms)
+> 20 80 160 480
+> r
+> 10 1
+> 10 2
+> Memory (MiB)
+
+(a) Scalability versus total rank r512 1024 2048 4096     
+
+> d
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> Time (ms)
+> 512 1024 2048 4096
+> d
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> Memory (MiB)
+
+(b) Scalability versus hidden size d
+
+Figure 3: Server-side recompression runtime and peak memory as (a) the total stacked rank r varies at d = 768 and (b) the hidden size d varies at r = 80 . Solid and dashed curves denote batched and unbatched execution, respectively. FRA Q consistently achieves the lowest runtime while maintaining low peak memory across both sweeps.                    
+
+> •FRA Q■FLoRIST ▲FlexLoRA Optimal 010 20 30 40 50 60
+> Output Rank ( rout )
+> 10 −8
+> 10 −7
+> 10 −6
+> 10 −5
+> 10 −4
+> 10 −3
+> 10 −2
+> 10 −1
+> 10 0
+> Relative Error  k ^W ¡ WkF = kWkF
+> 10 110 310 510 710 9
+> Condition Number ∙(W)
+> 10 −7
+> 10 −6
+> 10 −5
+> 10 −4
+> Full-Rank Relative Error
+> fp32 ²machine limit
+
+Figure 4: Numerical fidelity and stability in FP32 against FP64 references. The left panel reports mean er-ror over LLaMA-3.2-3B LoRA updates (shading: 10th– 90th percentiles), while the right tests full-rank recon-struction under controlled condition numbers. F RA Qtracks the Eckart–Young optimum and remains near 
+
+10 −7 through κ(W ) = 10 10 .
+
+unbatched execution. Unlike FlexLoRA, whose dense reconstruction causes runtime and memory to grow rapidly with hidden size, F RA Q operates on stacked factors; its smaller-side QR and Gram recovery also avoid the repeated rectangular SVDs used by FLoRIST. These trends are consistent with the FLOP analysis in Appendix A.3. 
+
+Numerical fidelity and stability. Figure 4 eval-uates all methods in FP32 with TF32 disabled against FP64 references. The left panel uses 196 LoRA modules from one LLaMA-3.2-3B feder-ated round with eight rank-8 clients. F RA Q closely tracks the Eckart–Young optimum over the signal-bearing rank range and matches the fidelity of FLoRIST. The sharp decrease in optimal error near rank 24, despite a formal stacked rank of 64, indi-cates substantial spectral redundancy among client updates. The right panel isolates finite-precision stability using rank-64 synthetic aggregates with condition numbers from 1 to 10 10 . Because the output rank is also 64, the measured error contains no intentional truncation error. 
+
+Table 3: Ablation study on real LLaMA-3.2-3B LoRA updates. Relative error is measured against the coordinate-SVD rank-8 reference.                    
+
+> Variant Time (ms) ↓Memory (MiB) ↓Rel. error ↓
+> Adaptive + Gram 14.21 90.13 2.56 ×10 −4
+> Fixed + Gram 25.98 90.13 8.51 ×10 −4
+> Adaptive + coordinate SVD 62.26 199.02 Reference
+
+FRA Q maintains a relative error of approximately 
+
+10 −7 throughout the sweep, close to FLoRIST and roughly two orders of magnitude below FlexLoRA, demonstrating stable FP32 reconstruction even for severely ill-conditioned aggregates. 
+
+Ablation study. Table 3 isolates the two main al-gorithmic choices on 56 LLaMA-3.2-3B gate and up projections of shape 8192 × 3072 . Direction-adaptive orientation reduces latency by 1.83 × with-out increasing peak memory, while Gram-based re-covery is 4.38 × faster and uses 54 .7% less memory than coordinate SVD. Both Gram variants remain within 0.1% of the rank-8 reference. 
+
+5 Conclusion 
+
+We presented F RA Q, a coordinate-space recom-pression framework for federated LoRA aggrega-tion. Starting from weighted stacks that exactly represent the aggregated update, F RA Q uses a re-duced QR factorization and a compact Gram eigen-problem to recover its spectrum without material-izing the dense update or performing a full-matrix SVD. Experiments across diverse federated fine-tuning settings demonstrate that F RA Q achieves a favorable trade-off among model accuracy, down-link communication, and server-side aggregation latency, making federated fine-tuning more prac-tical in heterogeneous and resource-constrained environments. Limitations 
+
+We note two limitations of F RA Q. First, the cost of coordinate-space aggregation scales with the total stacked rank of the participating clients in each round, that is, the sum of their local LoRA ranks. When a large cohort of clients participates per round, this total rank grows accordingly, and the reduced QR factorization, the Gram-matrix con-struction, and the eigendecomposition all become more expensive. Consequently, the server-side re-compression efficiency degrades as the number of participating clients increases, and the advantage of FRA Q over full-weight SVD shrinks in the regime of very large per-round participation. A detailed cost breakdown is given in the appendix. Second, like FLoRA, F RA Q follows a merge-and-reinitialize scheme: in every round the con-solidated update is baked into the global model and clients reinitialize fresh adapters, so local adapters are not warm-started from the previous round as in PEFT-style methods that reuse the downloaded adapter. This can slow per-adapter convergence relative to methods that keep refin-ing a persistent adapter. Importantly, however, the coordinate-space recompression at the heart of F RA Q is not tied to the merge-and-reinitialize paradigm. The same QR-and-Gram construction could potentially replace SVD-based recompres-sion in non-merge-and-reinitialize methods such as 
+
+FLoRIST and FLoRG, but validating the resulting accuracy and runtime is left to future work. 
+
+References 
+
+Jiamu Bai, Daoyuan Chen, Bingchen Qian, Liuyi Yao, and Yaliang Li. 2024. Federated fine-tuning of large language models under heterogeneous tasks and client resources. In The Thirty-eighth Annual Conference on Neural Information Processing Sys-tems .Yonatan Bisk, Rowan Zellers, Ronan Le Bras, Jian-feng Gao, and Yejin Choi. 2020. PIQA: Reasoning about physical commonsense in natural language. In 
+
+Proceedings of the AAAI Conference on Artificial Intelligence .Tom Brown et al. 2020. Language models are few-shot learners. In Advances in Neural Information Processing Systems , volume 33, pages 1877–1901. Curran Associates, Inc. Inigo Casanueva, Tadas Temcinas, Daniela Gerz, Matthew Henderson, and Ivan Vulic. 2020. Efficient intent detection with dual sentence encoders. In Pro-ceedings of the 2nd Workshop on Natural Language Processing for Conversational AI , pages 38–45. As-sociation for Computational Linguistics. Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. 2019. BoolQ: Exploring the surprising difficulty of natural yes/no questions. In Proceedings of the 2019 Conference of the North American Chap-ter of the Association for Computational Linguistics (NAACL) .Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. 2018. Think you have solved question an-swering? Try ARC, the AI2 reasoning challenge. 
+
+arXiv preprint arXiv:1803.05457 .Gene H Golub, Alan Hoffman, and Gilbert W Stewart. 1987. A generalization of the eckart-young-mirsky matrix approximation theorem. Linear Algebra and its applications , 88:317–327. Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schel-ten, Alex Vaughan, Amy Yang, Angela Fan, Anirudh Goyal, Anthony Hartshorn, Aobo Yang, Archi Mi-tra, Archie Sravankumar, Artem Korenev, Arthur Hinsvark, et al. 2024. The llama 3 herd of models. 
+
+Preprint , arXiv:2407.21783. Jeremy Howard and Sebastian Ruder. 2018. Universal language model fine-tuning for text classification. In Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 328–339, Melbourne, Australia. Association for Computational Linguistics. Edward J Hu, yelong shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2022. LoRA: Low-rank adaptation of large language models. In International Conference on Learning Representations .Zhiqiang Hu, Lei Wang, Yihuai Lan, Wanyu Xu, Ee-Peng Lim, Lidong Bing, Xing Xu, Soujanya Poria, and Roy Ka-Wei Lee. 2023. LLM-Adapters: An adapter family for parameter-efficient fine-tuning of large language models. In Proceedings of the 2023 Conference on Empirical Methods in Natural Lan-guage Processing (EMNLP) .Jabin Koo, Minwoo Jang, and Jungseul Ok. 2025. To-wards robust and efficient federated low-rank adap-tation with heterogeneous clients. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,pages 416–429, Vienna, Austria. Association for Computational Linguistics. Ken Lang. 1995. Newsweeder: Learning to filter net-news. In Proceedings of the Twelfth International Conference on Machine Learning , pages 331–339. Stefan Larson, Anish Mahendran, Joseph J. Peper, Christopher Clarke, Andrew Lee, Parker Hill, Jonathan K. Kummerfeld, Kevin Leach, Michael A. Laurenzano, Lingjia Tang, and Jason Mars. 2019. An evaluation dataset for intent classification and out-of-scope prediction. In Proceedings of the 2019 Confer-ence on Empirical Methods in Natural Language Pro-cessing and the 9th International Joint Conference on Natural Language Processing , pages 1311–1316. Association for Computational Linguistics. Xingkun Liu, Arash Eshghi, Pawel Swietojanski, and Verena Rieser. 2019a. Benchmarking natural lan-guage understanding services for building conversa-tional agents. In Proceedings of the Tenth Interna-tional Workshop on Spoken Dialogue Systems Tech-nology , Ortigia, Siracusa, Italy. Springer. Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Man-dar Joshi, Danqi Chen, Omer Levy, Mike Lewis, Luke Zettlemoyer, and Veselin Stoyanov. 2019b. Roberta: A robustly optimized bert pretraining ap-proach. arXiv preprint arXiv:1907.11692 .Brendan McMahan, Eider Moore, Daniel Ramage, Seth Hampson, and Blaise Aguera y Arcas. 2017. Communication-Efficient Learning of Deep Net-works from Decentralized Data. In Proceedings of the 20th International Conference on Artificial In-telligence and Statistics , volume 54 of Proceedings of Machine Learning Research , pages 1273–1282. PMLR. Chuiyang Meng, Ming Tang, and Vincent W.S. Wong. 2026. FLoRG: Federated fine-tuning with low-rank gram matrices and procrustes alignment. In The Four-teenth International Conference on Learning Repre-sentations .Meta AI. 2024. Llama 3.2: Revolutionizing Edge AI and Vision with Open, Customizable Models. Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish Sabharwal. 2018. Can a suit of armor conduct elec-tricity? A new dataset for open book question an-swering. In Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing (EMNLP) .Aniello Panariello, Daniel Marczak, Simone Magistri, Angelo Porrello, Bartłomiej Twardowski, Andrew D. Bagdanov, Simone Calderara, and Joost van de Wei-jer. 2025. Accurate and efficient low-rank model merging in core space. In The Thirty-ninth Annual Conference on Neural Information Processing Sys-tems .Qwen Team. 2025. Qwen2.5 technical report. Preprint ,arXiv:2412.15115. Hariharan Ramesh and Jyotikrishna Dass. 2026a. FLoRIST: Singular value thresholding for efficient and accurate federated fine-tuning of large language models. In Ninth Conference on Machine Learning and Systems .Hariharan Ramesh and Jyotikrishna Dass. 2026b. Spec-tral transformation for layer-wise global rank dis-covery in federated lora for vision transformers. 
+
+Preprint , arXiv:2607.21074. Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavat-ula, and Yejin Choi. 2021. WinoGrande: An adver-sarial winograd schema challenge at scale. Commu-nications of the ACM , 64(9):99–106. Maarten Sap, Hannah Rashkin, Derek Chen, Ronan Le Bras, and Yejin Choi. 2019. Social IQa: Com-monsense reasoning about social interactions. In 
+
+Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing (EMNLP) .Raghav Singhal, Kaustubh Ponkshe, and Praneeth Vepakomma. 2025. FedEx-LoRA: Exact aggrega-tion for federated and efficient fine-tuning of large language models. In Proceedings of the 63rd Annual Meeting of the Association for Computational Lin-guistics (Volume 1: Long Papers) , pages 1316–1336, Vienna, Austria. Association for Computational Lin-guistics. Youbang Sun, Zitao Li, Yaliang Li, and Bolin Ding. 2024. Improving lora in privacy-preserving federated learning. In The Twelfth International Conference on Learning Representations .Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothée Lacroix, Baptiste Rozière, Naman Goyal, Eric Hambro, Faisal Azhar, et al. 2023. Llama: Open and effi-cient foundation language models. arXiv preprint arXiv:2302.13971 .Ziyao Wang, Zheyu Shen, Yexiao He, Guoheng Sun, Hongyi Wang, Lingjuan Lyu, and Ang Li. 2024. Flora: Federated fine-tuning large language models with heterogeneous low-rank adaptations. In Ad-vances in Neural Information Processing Systems ,volume 37, pages 22513–22533. Peishen Yan, Yang Hua, Hao Wang, Jiaru Zhang, Xi-aoyu Wu, Tao Song, and Haibing Guan. 2026. Fed-momentum: Preserving lora training momentum in federated fine-tuning. Preprint , arXiv:2603.08014. Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. 2019. HellaSwag: Can a machine really finish your sentence? In Proceed-ings of the 57th Annual Meeting of the Association for Computational Linguistics (ACL) .Jianyi Zhang, Saeed Vahidian, Martin Kuo, Chunyuan Li, Ruiyi Zhang, Tong Yu, Guoyin Wang, and Yiran Chen. 2024. Towards building the federatedgpt: Fed-erated instruction tuning. In ICASSP 2024 - 2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 6915–6919. A Theoretical Guarantees and Complexity Analysis 
+
+A.1 Proof of Proposition 1 
+
+Proof. Because col( X) ⊆ col( Q), the matrix 
+
+QQ ⊤ acts as the identity on X:
+
+QQ ⊤X = X. (18) Therefore, 
+
+QH = QQ ⊤XY = XY = M . (19) Moreover, for any cH ∈ Rr×D,
+
+M − QcH F = Q
+
+
+
+H − cH
+
+
+
+> F
+
+= H − cH F ,
+
+where the last equality follows from Q⊤Q = Ir.This proves Eq. (10). Let H = U ΣV ⊤ be a compact SVD. Since both Q and U have orthonormal columns, 
+
+(QU )⊤(QU ) = U ⊤Q⊤QU = I. (20) Therefore M = ( QU )ΣV ⊤ is a compact SVD of M . Thus, H and M share the same nonzero singular values. Truncating this SVD to its leading p compo-nents and applying the Eckart–Young–Mirsky the-orem (Golub et al., 1987) proves Eq. (11). 
+
+A.2 General-Rank Formulation and Asymptotic Complexity 
+
+For completeness, we first analyze the general case in which the total stacked rank may exceed the smaller weight dimension. Let 
+
+d = min( m, n ), D = max( m, n ),r =
+
+> K
+
+X
+
+> k=1
+
+rk, s = min( d, r ). (21) After orientation, X ∈ Rd×r and Y ∈ Rr×D.A reduced Householder QR factorization obtains 
+
+R ∈ Rs×r and an implicit representation of Q ∈
+
+Rd×s, followed by H = RY ∈ Rs×D and G =
+
+HH ⊤ ∈ Rs×s. The per-matrix costs are reduced QR: O(drs ), (22) coordinate construction: O(srD ), (23) Gram construction: O(s2D), (24) eigendecomposition: O(s3), (25) patch recovery: O(ps (d + D)) . (26) Thus, the formulation remains valid when r > d ,in which case s = d. In the typical regime r ≤
+
+d, we have s = r, and the total time reduces to 
+
+O(dr 2 + r2D + r3), typically dominated by the coordinate and Gram constructions. The direction-adaptive orientation ensures that the Householder representation of Q is computed only from the factor associated with the smaller dimension d. If the factorization were always an-chored on B, QR would instead cost O(Dr 2) when 
+
+m > n , compared with F RA Q’s O(dr 2), a factor-of-D/d reduction. The additional workspace for the Householder representation, R, H, and G is 
+
+O s(d + D + r) + s2, which reduces to O(( d +
+
+D)r + r2) in the typical regime. These bounds exclude the resident stacked factors representing the exact aggregate. Direct dense recompression additionally materializes the d × D update, cost-ing O(dDr ) computation and O(dD ) workspace before its matrix decomposition. For L adapted weight matrices, the total server cost is the sum of the per-matrix costs, 
+
+Ftotal =
+
+> L
+
+X
+
+> ℓ=1
+
+F (dℓ, D ℓ, r ℓ, p ℓ) , (27) which accounts for the different shapes and selected ranks of transformer projections. 
+
+A.3 Detailed FLOP Comparison 
+
+We next provide a leading-order arithmetic compar-ison among F RA Q, FLoRIST, and FlexLoRA. Let 
+
+p ≤ r denote the retained global rank. We focus on the typical LoRA regime 
+
+p ≤ r ≪ d ≤ D. (28) For a coarse leading-order comparison, we use the following standard arithmetic estimates: 
+
+FSVD (a, r ) ≈ 4ar 2 + O(r3), (29) 
+
+FQR (a, r ) ≈ 2ar 2 − 23 r3, (30) 
+
+FGEMM (a, b, c ) ≈ 2abc. (31) Here, Eq. (29) approximates a thin SVD of an 
+
+a×r matrix, Eq. (30) approximates reduced House-holder QR, and Eq. (31) approximates multiplica-tion of an a × b matrix by a b × c matrix. These estimates are intended only to expose the leading dimension-dependent terms; exact constants de-pend on the numerical routine, whether singular vectors are explicitly formed, and the underlying hardware implementation. FlexLoRA. FlexLoRA explicitly materializes the dense aggregate ∆W ∈ Rd×D before decomposi-tion. Even under a favorable implementation that forms the aggregate through one multiplication of the weighted stacked factors, dense materialization costs approximately 2dDr FLOPs. An economy SVD of the resulting d × D matrix, with d ≤ D,has a leading cost of approximately 4Dd 2 + O(d3).Recovering the top-p factors requires only lower-order scaling and slicing operations. We therefore obtain 
+
+FFlexLoRA ≈ 2dDr +4 Dd 2+O d3 + ( d + D)p .
+
+(32) This estimate is conservative in favor of FlexLoRA because it omits any additional accumulation cost incurred when client updates are materialized sepa-rately. 
+
+FLoRIST. FLoRIST first applies thin SVDs to the two stacked factors, whose dimensions are d×r
+
+and D × r after orienting them consistently. Their leading cost is 
+
+4dr 2 + 4 Dr 2 = 4( d + D)r2. (33) FLoRIST then forms and decomposes an r×r inter-mediate matrix, contributing an additional O(r3)
+
+term. Recovering rank-p global factors requires multiplying the rectangular singular-vector bases by the retained intermediate factors, contributing approximately 2( d+D)rp FLOPs. Its total leading cost is therefore 
+
+FFLoRIST ≈ 4( d + D)r2 + 2( d + D)rp + O(r3).
+
+(34) 
+
+FRA Q. FRA Q performs reduced QR only on the factor anchored along the smaller weight dimen-sion. The QR factorization of the d×r matrix costs approximately 2dr 2 − 23 r3 FLOPs. Constructing the coordinate matrix 
+
+H = RY , R ∈ Rr×r, Y ∈ Rr×D, (35) costs approximately 2Dr 2 FLOPs. Forming the symmetric Gram matrix G = HH ⊤ with a symmetry-aware rank-k update costs approxi-mately Dr 2 FLOPs; a generic matrix multiplica-tion that explicitly computes both triangular halves would instead cost approximately 2Dr 2.The symmetric eigendecomposition of G ∈
+
+Rr×r contributes O(r3). Finally, recovering the rank-p merge factors requires applying the stored Householder reflectors to Up and computing 
+
+U ⊤ 
+
+> p
+
+H, with a combined cost of O(( d + D)rp ).Thus, when the Gram matrix is formed using sym-metry, F RA Q has the leading cost 
+
+FFRAQ ≈ (2 d + 3 D)r2 + O (d + D)rp + r3 .
+
+(36) If the full Gram matrix is formed with generic GEMM, the coefficient 3D in Eq. (36) becomes 
+
+4D.
+
+Comparison with FLoRIST. Equations (34) and (36) show that F RA Q and FLoRIST share the same coarse asymptotic order, Θ( Dr 2 + r3), but FRA Q performs substantially less decomposition-heavy computation. FLoRIST applies thin SVDs to both rectangular factors, whereas F RA Q applies reduced QR only to the factor associated with the smaller weight dimension. The rectangular decom-position FLOPs are 
+
+F FLoRIST dec ≈ 4( d + D)r2, (37) 
+
+F FRAQ dec ≈ 2dr 2. (38) Consequently, FRA Q reduces the dimension-dependent decomposition workload by approxi-mately 
+
+F FLoRIST dec 
+
+F FRAQ dec 
+
+≈ 2
+
+
+
+1 + Dd
+
+
+
+. (39) For square matrices, Eq. (39) corresponds to an approximately 4× reduction in rectangular decom-position FLOPs. The reduction increases for highly rectangular projection matrices. Considering all leading r2 terms and neglect-ing the common rank-p reconstruction term, the arithmetic ratio is approximately 
+
+FFLoRIST 
+
+FFRAQ 
+
+≈ 4( d + D)2d + 3 D . (40) For D ≥ d, this ratio ranges from approximately 
+
+1.33 × to 1.60 ×. The larger empirical wall-clock gains arise because F RA Q handles the dependence on D through GEMM/SYRK kernels rather than additional SVDs, which generally have higher syn-chronization, workspace, and kernel-launch over-head. 
+
+Comparison with FlexLoRA. The advantage over FlexLoRA is also asymptotic. FlexLoRA’s dense SVD contributes the dominant term Θ( Dd 2),whereas F RA Q operates on the stacked rank and re-quires Θ( Dr 2) work in the typical regime. Because Table 4: Leading-order server-side FLOP comparison for one adapted weight matrix. We assume p ≤ r ≪ d ≤ D,where d = min( m, n ), D = max( m, n ), and r = P 
+
+> k
+
+rk. The F RA Q Gram matrix is assumed to be formed with a symmetry-aware rank-k update. The displayed FLOPs are approximate leading-order quantities rather than exact operation counts. 
+
+Method Matrix factorizations Leading-order FLOPs Dominant scaling 
+
+FlexLoRA SVD( d × D) 2dDr + 4 Dd 2 + O d3 + ( d + D)p Θ( Dd 2 + dDr )
+
+FLoRIST SVD( d × r) + SVD( D × r) + SVD( r × r) 4( d + D)r2 + 2( d + D)rp + O(r3) Θ( Dr 2 + r3)
+
+FRA Q QR( d × r) + EVD( r × r) (2 d + 3 D)r2 + O (d + D)rp + r3 Θ( Dr 2 + r3)
+
+r ≪ d, F RA Q replaces quadratic dependence on the smaller model dimension d with quadratic de-pendence on the stacked rank r. Let γ = D/d ≥ 1.Neglecting the lower-order dense-materialization, rank-p reconstruction, and cubic terms, the approx-imate FLOP ratio is 
+
+FFlexLoRA 
+
+FFRAQ 
+
+≈ 4γ
+
+2 + 3 γ
+
+ dr
+
+2
+
+. (41) Thus, the arithmetic advantage of F RA Q over FlexLoRA grows quadratically with the dimension-to-rank ratio d/r , consistent with the scalability results in Figure 3. 
+
+B Complete F RA Q Procedure 
+
+Algorithm 1 provides the complete round-by-round procedure for F RA Q, including client-side merge-and-reinitialization and server-side recompression. Reinitializing the residual adapters after merging the previous global adapter prevents their old fac-torization from being counted again against the updated global base. Although our storage conven-tion gives unit global scaling, Algorithm 1 writes 
+
+sg explicitly in each merge operation. 
+
+Algorithm 1: End-to-end federated training with F RA Q. 
+
+Input: Pretrained weights W0, rounds T , clients C
+
+with ranks {rk }, LoRA scales {sk }, dataset sizes {nk }, energy threshold τ ∈ (0 , 1] 
+
+Output: Merged global model WT +1 
+
+W1 ← W0
+
+s(0)  
+
+> g
+
+B(0)  
+
+> g
+
+A(0)  
+
+> g
+
+← 0
+
+for t = 1 to T do Server: broadcast the round-(t−1) global adapter (B(t−1)  
+
+> g
+
+, A(t−1)  
+
+> g
+
+, s (t−1)  
+
+> g
+
+) to all clients (empty when t = 1 )
+
+foreach k ∈ C do in parallel 
+
+Merge the received global adapter: 
+
+Wt ← Wt−1 + s(t−1)  
+
+> g
+
+B(t−1)  
+
+> g
+
+A(t−1) 
+
+> g
+
+Initialize a fresh residual adapter (Bk , Ak )
+
+of rank rk
+
+(Bk , Ak ) ← LocalUpdate (Wt, Bk , Ak )
+
+Upload (Bk , Ak ) to server 
+
+Server: form scaled and weighted stacks 
+
+B ← [√α1B1, . . . , √αK BK ]
+
+A ← [√α1s1A1; . . . ; √αK sK AK ]
+
+Orient: (X, Y ) ← (B, A) if m ≤ n; else 
+
+(X, Y ) ← (A⊤, B⊤)
+
+s ← min( d, r )
+
+Compute Householder QR of X, storing reflectors and R
+
+Form H ← RY and G ← HH ⊤
+
+Eigendecompose G = U ΛU ⊤ and order the eigenpairs by decreasing λi
+
+Select the smallest p ∈ { 1, . . . , s } such that Ppi=1 λi/ Psi=1 λi ≥ τ ; retain Up
+
+Lp ← ApplyQ( reflectors , Up) and 
+
+Rp ← U ⊤ 
+
+> p
+
+H
+
+(B(t) 
+
+> g
+
+, A(t) 
+
+> g
+
+) ← (Lp, Rp) if m ≤ n; else 
+
+(B(t) 
+
+> g
+
+, A(t) 
+
+> g
+
+) ← (R⊤ 
+
+> p
+
+, L⊤ 
+
+> p
+
+)
+
+Set α(t)LoRA ,g ← p and s(t) 
+
+> g
+
+← α(t)LoRA ,g /p = 1 ;store the rank-p global adapter 
+
+Wt+1 ← Wt + s(t) 
+
+> g
+
+B(t) 
+
+> g
+
+A(t)
+
+> g
+
+return WT +1 
+
+C Experimental Details 
+
+C.1 Datasets and Data Partitions 
+
+This appendix expands on the datasets used in our two evaluation settings: the federated intent/topic classification benchmark (Table 1a) and the com-monsense reasoning benchmark used in the addi-tional evaluation (Table 1b). 
+
+Intent and topic classification. For the federated RoBERTa-base experiments we use four English text classification datasets: • BANKING77 (Casanueva et al., 2020): a fine-grained single-domain intent detection dataset of online-banking customer queries spanning 77 intents. • CLINC150 (Larson et al., 2019): a multi-domain intent classification benchmark cover-ing 150 intents across 10 domains, designed to also include out-of-scope queries. • HWU64 (Liu et al., 2019a): a multi-domain home-assistant intent dataset with 64 intents across 21 domains. • 20 Newsgroups (Lang, 1995): a classic topic classification benchmark of newsgroup posts grouped into 20 categories. To emulate realistic client data heterogeneity, each dataset is partitioned across clients with a Dirichlet distribution Dir( α) over the label space, where a smaller concentration parameter α yields a more skewed (non-IID) partition. We report results under a moderate heterogeneity level Dir(0 .1) and an extreme level Dir(0 .02) , and evaluate global test accuracy at the final communication round. 
+
+Commonsense reasoning. For the additional evaluation in Table 1b, we adopt the Commonsense-170K training and evaluation protocol used by FedEx-LoRA (Singhal et al., 2025), following Hu et al. (2023): models are fine-tuned on the Commonsense-170K instruction-tuning corpus and evaluated on eight multiple-choice reasoning tasks. Each task is cast as a multiple-choice problem in which the model selects the correct answer from the provided options, and we report per-task ac-curacy together with the eight-task average. The benchmarks are: • BoolQ (Clark et al., 2019): naturally occur-ring yes/no questions, each paired with a Wikipedia passage that provides the context. • PIQA (Bisk et al., 2020): physical common-sense questions that require choosing the more sensible of two candidate solutions to an ev-eryday physical goal. • SIQA (Social IQa) (Sap et al., 2019): ques-tions probing reasoning about people’s social interactions and their likely motivations and consequences. • HellaSwag (Zellers et al., 2019): sentence-completion questions in which the model se-lects the most plausible continuation of a given context. • WinoGrande (Sakaguchi et al., 2021): a large-scale adversarial Winograd schema benchmark requiring binary pronoun/coreference resolution. • ARC-Easy (ARC-e) and ARC-Challenge (ARC-c) (Clark et al., 2018): grade-school science questions split into an easier subset and a harder subset of questions that simple retrieval methods answer incorrectly. • OpenBookQA (OBQA) (Mihaylov et al., 2018): elementary science questions that re-quire combining a small “open book” of core science facts with broad commonsense knowl-edge. Because our reasoning evaluation follows the same benchmark protocol as FedEx-LoRA, the results in Table 1b are directly comparable to theirs. 
+
+C.2 Baseline Methods 
+
+We compare against all methods reported in Table 1. 
+
+FedIT (Zhang et al., 2024) applies FedAvg inde-pendently to the two LoRA factors, while LoRA-
+
+A2 (Koo et al., 2025) alternates which LoRA factor is frozen and adaptively selects the rank to improve robustness under heterogeneous data. 
+
+FLoRA (Wang et al., 2024) represents the exact weighted update by stacking the client factors and broadcasts the resulting high-rank adapter. FedEx-LoRA (Singhal et al., 2025) provides an alterna-tive exact aggregation method for federated LoRA. 
+
+FlexLoRA (Bai et al., 2024) materializes the dense aggregate and applies truncated SVD to construct compact global adapters. FLoRG (Meng et al., 2026) aggregates low-rank Gram matrices and uses Procrustes alignment, whereas FLoRIST (Ramesh and Dass, 2026a) recompresses the stacked factors through rectangular SVDs and a small intermediate decomposition. Table 5: Hyperparameter details for the RoBERTa classification and LLaMA reasoning experiments. Table 1 uses a uniform local LoRA rank of 8; the heterogeneous-rank configuration in Table 2 is specified in a separate row.                                                                                            
+
+> Hyperparameter RoBERTa-base LLaMA-3.2-3B
+> Training datasets BANKING77, 20Newsgroups, CLINC150, HWU64 COMMONSENSE170K Optimizer AdamW AdamW Learning rate 5×10 −43×10 −4
+> Learning-rate schedule Constant Constant Warmup ratio 00
+> Batch size (per client) 32 16
+> Gradient accumulation steps 11
+> Local optimizer steps per round 200 100
+> Global communication rounds 30 5
+> Total clients 10 8
+> Client participation rate 1.01.0
+> Data heterogeneity Dirichlet Pathological non-IID Dirichlet concentration α0.1,0.02 N/A LoRA rank (Table 1) 88
+> LoRA ranks (Table 2) N/A [4 ,16 ,32 ,64 ,4,16 ,32 ,64]
+> LoRA scale sk=αLoRA ,k /r k22
+> LoRA alpha αLoRA ,k (Table 1) 16 16
+> LoRA alphas αLoRA ,k (Table 2) N/A [8 ,32 ,64 ,128 ,8,32 ,64 ,128]
+> LoRA dropout 00
+> Target modules
+> query ,key ,
+> value q_proj ,k_proj ,v_proj ,o_proj ,
+> gate_proj ,up_proj ,down_proj
+> Maximum sequence length 256 256
+> Training precision FP32 BF16 Random seed 42 42
+> Energy-retention threshold τ0.80 ,0.95 0.80 ,0.95
+> Evaluation interval Every 5rounds Post-training evaluation Classifier-head freezing After round 5N/A
+
+C.3 Hyperparameter Settings 
+
+Table 5 lists the training and federated learning hyperparameters for the RoBERTa-base classifica-tion experiments and the LLaMA-3.2-3B reasoning experiments. Unless otherwise noted, we use the same setting for all methods and datasets to ensure a controlled comparison. 
+
+D Alternative Orthogonalization Backends 
+
+Proposition 1 establishes exact coordinate-space equivalence whenever Q is an orthonormal basis whose span contains the column space of the ori-ented left factor X. However, this proposition does not prescribe how such a basis must be constructed. Although F RA Q uses reduced QR as its default im-plementation, other exact orthogonalization meth-ods can satisfy the same conditions. Specifically, for any Q satisfying 
+
+Q⊤Q = I, col( X) ⊆ col( Q),
+
+we may define 
+
+C = Q⊤X, H = CY .
+
+Then X = QC and XY = QH . By Proposi-tion 1, the compact eigendecomposition 
+
+HH ⊤ = U ΛU ⊤
+
+recovers the nonzero singular spectrum and left singular subspace needed by F RA Q. Reduced QR is one realization of this construction: if X =
+
+Qqr R, then C = R. The triangular structure of 
+
+R is incidental; orthonormality and column-space coverage are the essential conditions. 
+
+Polar factorization. For full-column-rank X,the polar decomposition gives 
+
+X = Qpol S,
+
+Qpol = X(X⊤X)−1/2,
+
+S = ( X⊤X)1/2.
+
+Here Qpol has orthonormal columns and S is sym-metric positive definite. Thus XY = Qpol (SY ),and S can replace the QR factor R without chang-ing the subsequent coordinate-space decomposi-tion. Hence exact F RA Q depends on an orthogonal-basis factorization, rather than on QR specifically. Iterative orthogonalization. An iterative polar method, such as Newton–Schulz orthogonalization, can instead produce an approximately orthogonal basis eQ. The direct drop-in construction is 
+
+eC = eQ⊤X, fH = eCY ,
+
+fH fH⊤ = eU eΛ eU ⊤.
+
+No triangular structure is required of eC. With a fi-nite number of iterations, however, eQ⊤ eQ generally differs from I, and therefore 
+
+eQ eC = eQ eQ⊤X̸ = X.
+
+This backend consequently introduces an orthog-onalization error in addition to the intended rank-truncation error. For more accurate reconstruction, one may in-stead use the least-squares coordinates 
+
+eC = ( eQ⊤ eQ)−1 eQ⊤X.
+
+Then eQ eC = P eQX, which equals X whenever eQ
+
+spans the same column space as X. Importantly, exact reconstruction alone does not make the usual eigendecomposition of fH fH⊤ exact: when eQ is not orthonormal, left multiplication by eQ changes the metric. An exact small coordinate-space variant can restore the standard form by factoring 
+
+eQ⊤ eQ = LL ⊤, XY = ( eQL −⊤ )( L⊤ eCY ),
+
+where eQL −⊤ has orthonormal columns. The FRA Q coordinate-space decomposition can then be applied to L⊤ eCY . This only requires a small 
+
+r × r factorization, but it reduces the advantage of a pure GEMM-based backend. 
+
+Accuracy and performance considerations. An iterative method run sufficiently close to conver-gence can replace thin QR nearly transparently. In contrast, a fixed-step, low-precision scheme de-signed primarily for optimizer updates need not deliver the accuracy required for recompression. We therefore recommend measuring 
+
+∥ eQ⊤ eQ − I∥F , ∥X − eQ( eQ⊤X)∥F
+
+∥X∥F
+
+,
+
+as well as the gap between the final truncated update and exact QR-based F RA Q. Whether sev-eral Newton–Schulz GEMMs outperform a vendor-optimized thin QR depends on the tall-skinny di-mensions, precision, and GPU. The algorithmic substitution is therefore valid, while its practical benefit must be established by an accuracy–latency benchmark on the target hardware.

@@ -1,0 +1,1824 @@
+Title: Private Direct Preference Optimization for LLM Alignment
+
+URL Source: https://arxiv.org/pdf/2608.05040v1
+
+Published Time: Thu, 06 Aug 2026 01:15:27 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Private Direct Preference Optimization for LLM Alignment 
+
+# Yangfan Jiang ∗
+
+National University of Singapore Singapore jyangfan@u.nus.edu 
+
+# Fei Wei 
+
+Alibaba Group Hangzhou, China feiwei@alibaba-inc.com 
+
+# Ergute Bao 
+
+Inria Saclay, France ergute.bao@inria.fr 
+
+# Xiaokui Xiao 
+
+National University of Singapore Singapore xkxiao@nus.edu.sg 
+
+# Yaliang Li 
+
+Alibaba Group Bellevue, United States yaliang.li@alibaba-inc.com 
+
+# Bolin Ding 
+
+Alibaba Group Bellevue, United States bolin.ding@alibaba-inc.com 
+
+## Abstract 
+
+Direct preference optimization (DPO) is now a standard method for aligning large language models (LLMs) using human preference data. Each DPO example contains a prompt and a pair of candidate model responses. While prompts and responses are often public or model-generated, the relative preference between responses reflects subjective judgments and can reveal sensitive attributes of annota-tors or end users. Off-the-shelf privacy-preserving approaches are not well matched to this structure, leading to unnecessary noise injection and biased updates in training. In this paper, we formalize preference privacy , a label-DP-style privacy notion for DPO that protects only the relative preference between candidate responses, assuming an adversary who already knows the prompt and responses. We then design PrivDPO , a DPO variant that enforces preference privacy while remaining compati-ble with large-scale LLM training. Our main observation is that, for neighboring examples differing only in their preference signal, the gradient difference lies on a one-dimensional preference axis deter-mined solely by the text; all preference information flows through this axis. PrivDPO adds calibrated randomness only along this axis via an unbiased randomized rescaling of the DPO objective, avoid-ing per-example gradient operations. Our experiments on three alignment benchmarks and three LLM families show that PrivDPO 
+
+consistently achieves strong privacy-utility trade-offs compared with privacy-preserving baselines. 
+
+## 1 Introduction 
+
+Large language models (LLMs) have become foundational building blocks for many real-world applications, including chatbots, coding agents, and health assistants [12, 19, 57, 70]. At the same time, LLMs can produce outputs that are harmful, biased, or otherwise misaligned with human values [5, 6, 50, 59], which limits their usage in security- and safety-critical settings. To address this, modern systems align a pre-trained model us-ing human preference data, most prominently via reinforcement learning from human feedback (RLHF) [6, 59, 66], ensuring that model behaviors better reflect human values and produce outputs that are less harmful, biased, or unsafe. A representative tech-nique in this line of RLHF work is direct preference optimization 
+
+(DPO) [61], which has been widely adopted for aligning production-scale LLMs [2, 24, 40, 41, 68], and is also supported by OpenAI’s fine-tuning API for aligning GPT-4.1-series models [58]. 
+
+> ∗Work done during an internship at Tongyi Lab, Alibaba Group.
+
+The main idea of DPO is to fine-tune a pre-trained LLM on datasets containing human preference signals, thereby calibrating the model’s behavior based on positive and negative human feed-back. Specifically, each DPO training example is a triplet (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ),where 𝑥 denotes the input prompt, 𝑦 𝑤 the preferred response aligned with human values, and 𝑦 𝑙 the less preferred response that may be harmful or unhelpful to the input prompt 𝑥 . In practice, such datasets are typically collected by prompting an LLM to pro-duce a pair of candidate responses, after which human annotators or end-users select the preferred option. 
+
+## 1.1 The Case for Preference Privacy 
+
+While DPO is effective for LLM alignment, its reliance on human preference data creates privacy risks, especially in vertical domains such as healthcare, finance, and legal assistance. The preference signal, i.e., whether an annotator prefers 𝑦 𝑤 over 𝑦 𝑙 , can reveal personal judgments or sensitive attributes. For example, preferences on politically charged or ethically sensitive prompts may expose an individual’s stance, beliefs, or group membership, creating risks such as harassment or employment discrimination if mishandled. Beyond individual risk, mishandling of sensitive preference data during the DPO process can undermine public trust and damage the credibility of the organizations developing and deploying LLMs. Protecting preference information is therefore important for both individual privacy and responsible LLM deployment. A natural approach is to apply differential privacy (DP) [23, 26– 28], which protects individual records by adding calibrated noise during training [1]. However, standard DP is overly conservative in this context, because it protects the entire triplet (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ), in-cluding the input prompt 𝑥 , both candidate responses 𝑦 𝑤 and 𝑦 𝑙 ,and the associated preference signal. In practice, however, input prompts and candidate responses in DPO datasets are typically non-private, since they are generated by LLMs or drawn from pub-licly available sources. For example, in the TL;DR summarization dataset [66] used by OpenAI, the public Reddit post serves as the prompt, the pre-trained LLM generates candidate summaries, and annotators indicate which summary they prefer. In such cases, the truly sensitive element is in the individuals’ preference signals, i.e., which response they prefer, rather than the text content of either the prompt or the LLM-generated responses. As a result, apply-ing standard DP would inject noise for non-sensitive components, degrading utility without matching the actual privacy need. Although prior work on label DP [13, 30, 33, 42, 51] addresses a similar challenge in supervised learning, such methods rely on 
+
+> 1arXiv:2608.05040v1 [cs.CR] 5 Aug 2026 Yangfan Jiang, Fei Wei, Ergute Bao, Xiaokui Xiao, Yaliang Li, and Bolin Ding
+
+additional assumptions about label distributions or task structures and are therefore not direct drop-in replacements for standard DPO at LLM scale. Other potential approaches, such as randomized re-sponse techniques [29, 75], can privatize preference labels through random flipping, but they introduce bias into DPO optimization and degrade alignment performance. There remains a lack of practical privacy-preserving techniques specifically designed for the unique gradient landscape of DPO. 
+
+## 1.2 Contributions 
+
+Motivated by this, we formalize preference privacy , which protects user preference information embedded in human feedback data. At a high level, it guarantees that, regardless of the underlying preference signal, outcomes derived from the data remain indistin-guishable. Building on this privacy notion, we propose PrivDPO , an effective and scalable DPO method for LLM alignment with formal preference privacy guarantees. This notion follows the same indistinguishability structure as label DP, instantiated for preference annotations; our main contri-bution is to realize this guarantee efficiently for DPO-based LLM alignment. While preference privacy can be viewed as a natural relaxation of DP, achieving it in practical LLM alignment, especially at scale, presents two significant challenges: (i) introducing as lit-tle randomness as possible to satisfy the privacy notion without unnecessary utility loss, which requires accurately identifying and carefully perturbing the sensitive component in the parameter space that encodes human preferences; and (ii) ensuring scalability for practical LLM optimization, which requires non-trivial algorithmic design to effectively balance privacy, utility, and efficiency. 
+
+PrivDPO addresses these challenges by leveraging several theo-retical insights of preference privacy in the DPO setting, derived from an in-depth analysis of the DPO objective under preference privacy constraints. Specifically, we examine the privacy-leakage surface in the DPO training process and identify how user pref-erence information is encoded in model gradients. Our analysis reveals that the gradient difference between two otherwise identical samples, differing only in their preference annotations, aligns with a specific axis that captures the preference signal between 𝑦 𝑤 and 
+
+𝑦 𝑙 given the prompt 𝑥 . This axis is determined solely by the textual content of 𝑥 , 𝑦 𝑤 , and 𝑦 𝑙 , without relying on any sensitive pref-erence information. In other words, user preference information flows through a one-dimensional subspace of the LLM parameter space, which we refer to as the preference axis . This observation implies that it is sufficient to introduce randomness only along this preference axis to protect user preference information, rather than perturbing the entire model gradient space. However, directly instantiating this idea in LLM training, e.g., by computing the preference axis vector for each gradient and perturb-ing it to mask preference information, is impractical. For example, in a production-level LLM with over 30B parameters, the gradient of a single DPO example already requires more than 100 GB of GPU memory, not including the additional cost of optimizer states, e.g., in the case of Adam [46]. Moreover, retrieving per-example gradi-ents is incompatible with existing large-scale training frameworks, which shard model gradients and optimizer states across GPUs for scalability and throughput, and therefore cannot obtain a complete single-example gradient on demand. As a result, direct gradient manipulation is infeasible for production-scale LLMs. To overcome these challenges, we further analyze the DPO ob-jective under preference privacy constraints while accounting for model utility. We find that unbiased perturbation of gradients along the preference axis is mathematically equivalent to privatizing the DPO objective via an asymmetric randomized rescaling mecha-nism. This insight leads to our final solution, PrivDPO , a simple yet effective alignment method that enforces preference privacy with-out explicit gradient manipulation. The core idea is to perturb the DPO objective for each training example using a tailored random rescaling strategy, ensuring preference privacy while preserving unbiasedness. This design is fully compatible with modern large-scale LLM training frameworks and requires only minimal code changes. Importantly, our analysis is model-agnostic and depends only on the form of the DPO objective, making PrivDPO broadly applicable to all types of LLM architectures. We further show that 
+
+PrivDPO yields unbiased gradients with favorable error bounds under the preference privacy model, avoiding the bias of RR-based input perturbation and the high-dimensional noise of standard DP mechanisms such as DP-SGD. Beyond its algorithmic contribution, our work also offers several practical insights. Empirical results show that PrivDPO consistently outperforms existing privacy-preserving baselines across diverse LLM families, including Llama, Pythia, and Qwen, and across model sizes ranging from 3B to 32B parameters. Notably, we demonstrate, for the first time to our knowledge, that it is practical to align large-scale LLMs with up to 32B parameters under a rigorous privacy guarantee for user preferences without notable compromises of training efficiency or model quality. 
+
+## 2 Preliminaries 2.1 Direct Preference Optimization 
+
+We begin by formalizing large language models (LLMs), then de-scribe LLM alignment via RLHF with a reward model, and finally introduce DPO as a reward-model-free alternative. 
+
+2.1.1 LLMs. We consider an autoregressive language model 𝜋 𝜃 
+
+parameterized by 𝜃 ∈ R𝑑 , where 𝑑 scales into the billions for modern LLMs. Given a prompt 𝑥 , the model generates a response sequence 
+
+𝑦 = [𝑦 1, 𝑦 2, . . . , 𝑦 𝑁 ] token by token, with probability 
+
+𝜋 𝜃 (𝑦 | 𝑥 ) =
+
+> 𝑁
+
+Ö
+
+> 𝑖 =1
+
+𝜋 𝜃 (𝑦 𝑖 | 𝑥, 𝑦 <𝑖 ),
+
+where 𝑦 <𝑖 := 𝑦 1: 𝑖 −1 denotes previously generated tokens. 
+
+2.1.2 Preference Optimization. We assume a preference dataset 
+
+D = {( 𝑥, 𝑦 𝑤 , 𝑦 𝑙 )} , where each example is a triplet consisting of a prompt 𝑥 and a pair of responses (𝑦 𝑤 , 𝑦 𝑙 ). We follow the standard convention in the DPO literature [61], where the ordering encodes the human preference 𝑦 𝑤 ≻ 𝑦 𝑙 . That is, (𝑦 𝑤 , 𝑦 𝑙 ) is not merely a set of candidates, but an ordered pair in which the first element denotes the preferred response. This representation is widely adopted and avoids introducing an additional preference variable. In our setting, the sensitive information lies precisely in this ordering, i.e., the relative preference between the two responses, while the textual content of 𝑥, 𝑦 𝑤 , 𝑦 𝑙 is assumed to be non-sensitive. 
+
+> 2Private Direct Preference Optimization for LLM Alignment
+
+Let 𝜋 ref denote a reference model, which is typically a pre-trained or supervised fine-tuned LLM that has not yet been aligned with human preferences. The goal of RLHF-based alignment is to fine-tune a model 𝜋 𝜃 initialized from 𝜋 ref to maximize the expected reward while remaining close to the reference model. Formally, this can be written as a KL-regularized optimization problem: max 
+
+> 𝜋 𝜃
+
+E𝑥 ∼D ,𝑦 ∼𝜋 𝜃 (· | 𝑥 )
+
+𝑟 (𝑥, 𝑦 ) − 𝛽𝐷 KL (𝜋 𝜃 ∥ 𝜋 ref ) , (1) where 𝑟 (𝑥, 𝑦 ) is a reward learned from pairwise comparisons based on Bradley-Terry model [11]. The parameter 𝛽 controls the diver-gence penalty from 𝜋 ref , preventing the aligned model from drifting too far from the base LLM and thereby mitigating the risk of model collapse (e.g., catastrophic degradation in model behavior). We refer interested readers to [4, 18, 31, 53, 61–63, 66, 87] for further details. Under mild assumptions, Rafailov et al. [61] show that the reward can be implicitly represented in terms of 𝜋 𝜃 :
+
+𝑟 (𝑥, 𝑦 ) = 𝛽 log 𝜋 𝜃 (𝑦 | 𝑥 )
+
+𝜋 ref (𝑦 | 𝑥 ) + 𝛽 log 𝑍 (𝑥 ), (2) where 𝑍 (𝑥 ) is a partition function independent of 𝑦 . This formula-tion allows the pairwise preference between two responses to be modeled as a probabilistic comparison, following the Bradley-Terry assumption [11] that the probability of preferring 𝑦 𝑤 over 𝑦 𝑙 is given by a logistic function of the difference between their implicit rewards. From the implicit reward in Eq. (2), the DPO objective for a preference triplet 𝑡 = (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ) can be derived as [61]: 
+
+LDPO (𝑡 ; 𝜋 𝜃 ; 𝜋 ref ) =
+
+− log 𝜎 
+
+
+
+𝛽 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 )
+
+𝜋 ref (𝑦 𝑤 | 𝑥 ) − 𝛽 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 )
+
+𝜋 ref (𝑦 𝑙 | 𝑥 )
+
+
+
+, (3) where 𝜎 (·) denotes the sigmoid function. Intuitively, the DPO ob-jective pushes 𝜋 𝜃 toward assigning higher probability to 𝑦 𝑤 over 
+
+𝑦 𝑙 , while penalizing deviations from 𝜋 ref .In practice, DPO training starts from a base model, often with a warm-up supervised fine-tuning (SFT) stage on (𝑥, 𝑦 ) pairs from D.The resulting 𝜋 ref better matches the preference data distribution, making DPO optimization more stable and effective [31, 53, 61]. 
+
+## 2.2 Differential Privacy 
+
+Differential privacy (DP) [23, 26–28] is a rigorous framework for protecting individuals’ sensitive information. It has been exten-sively studied, and more recently, in the context of deep learning and LLM fine-tuning [1, 8, 21, 49, 71, 79]. We review its definition. 
+
+Definition 2.1 (Differential Privacy [26, 27]) . A randomized mech-anism M satisfies (𝜀, 𝛿 )-DP, if for any two neighboring datasets 𝐷, 𝐷 ′
+
+differing in only one record, and for any subset of possible outputs 
+
+O ⊆ 𝑅𝑎𝑛𝑔𝑒 (M) , we have 
+
+Pr [M ( 𝐷 ) ∈ O] ≤ 𝑒 𝜀 Pr [M ( 𝐷 ′) ∈ O] + 𝛿. (4) The parameter 𝜀 is known as the privacy budget that controls the privacy and utility trade-off. Smaller values of 𝜀 and 𝛿 imply that the output distributions of M on any pair of neighboring datasets are harder to distinguish, thereby providing stronger privacy guar-antees. Given a non-private algorithm, the basic idea to achieve DP is to introduce calibrated noise into the algorithm procedure [23], ensuring that altering a single record does not significantly affect the outcome distribution. In general, smaller privacy parameters require injecting larger DP noises into the algorithm procedure, which can in turn degrade the accuracy of the algorithm. 
+
+Deep learning with DP. We briefly review standard approaches for achieving DP in deep learning, most notably DP-SGD [1] and its variants. DP aims to ensure that any single training record has only a negligible influence on the output distribution of the algorithm. To this end, DP-SGD bounds each record’s influence by clipping the ℓ2 norm of per-example gradients and adding noise to the clipped gradients, ensuring that gradients computed from neighboring records are statistically indistinguishable. DP-SGD has been widely applied in deep learning [1, 21, 71], and more recently in LLM fine-tuning [8, 49, 79]. However, as noted earlier and elaborated in Section 4.4, its privacy model and algorith-mic design are not well aligned with DPO-based LLM alignment. This motivates our tailored notion of preference privacy (Section 3) and the corresponding mechanism design (Section 4). 
+
+## 3 Formalizing Preference Privacy 
+
+This section presents the definition and privacy properties of 𝜖 -preference privacy, followed by a review of existing first-cut solu-tions that satisfy this privacy notion. The privacy definition adopts the same notion of indistinguishability used in DP and can there-fore be viewed as a natural relaxation of DP, with the protected information specifically tailored to the DPO setting. In what follows, we first define neighboring DPO training records that differ only in their preference annotations, and then introduce the privacy notion based on this definition. 
+
+Definition 3.1 (Preference Neighboring) . Given two DPO training triplets 𝑡 and 𝑡 ′, we say that 𝑡 and 𝑡 ′ are preference neighbors if and only if they share the same input prompt 𝑥 and output response pair 
+
+{𝑦 𝑤 , 𝑦 𝑙 }, but differ in their preference annotations. 
+
+Example 3.1. Let 𝑡 = (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ) be a DPO training example with the preference signal 𝑦 𝑤 ≻ 𝑦 𝑙 . Define 𝑡 ′ = (𝑥, 𝑦 𝑙 , 𝑦 𝑤 ) with 𝑦 𝑤 ≺ 𝑦 𝑙 ,which is identical to 𝑡 except for the reversed preference signal. Then 𝑡 and 𝑡 ′ are preference neighbors. Let T denote the domain of the DPO training example 𝑡 . We define preference privacy as follows. 
+
+Definition 3.2 (𝜖 -Preference Privacy) . A randomized mechanism 
+
+M : T ↦ → R satisfies 𝜖 -preference privacy if, for all pairs of preference neighboring DPO examples 𝑡 and 𝑡 ′, and for any subset of outputs 
+
+𝑂 ⊆ R , it holds that 
+
+Pr [M ( 𝑡 ) ∈ 𝑂 ] ≤ 𝑒 𝜖 · Pr [M ( 𝑡 ′) ∈ 𝑂 ]. (5) We note that Definition 3.2 adopts a pure 𝜖 -style guarantee, in contrast to the (𝜖, 𝛿 )-DP definition in Definition 2.1. This distinction is intentional. In our setting, preference privacy is defined over a binary preference signal, which admits mechanisms (including ours and RR-based baselines) that satisfy pure 𝜖 -style guarantees without requiring a 𝛿 relaxation. By contrast, standard approaches such as DP-SGD operate in high-dimensional parameter spaces and typically rely on Gaussian noise, which only provides (𝜖, 𝛿 )-DP guarantees. We therefore present (𝜖, 𝛿 )-DP in Definition 2.1 for completeness, while focusing on pure 𝜖 -preference privacy for our mechanism design and analysis. 
+
+> 3Yangfan Jiang, Fei Wei, Ergute Bao, Xiaokui Xiao, Yaliang Li, and Bolin Ding
+
+Next, we present the key properties of 𝜖 -preference privacy and provide its semantic interpretation, clarifying the scope of protected preference information and its privacy implications in DPO. 
+
+## 3.1 Privacy Properties and Semantics 
+
+Privacy properties and sequential composition. Since the def-inition of 𝜖 -preference privacy is inspired by and closely follows well-established privacy notions such as differential privacy and Pufferfish privacy [45], it inherits several important privacy prop-erties shared by those notions. In particular, 𝜖 -preference privacy satisfies convexity and transformation invariance (referred to as the post-processing property in the context of DP), which are two fun-damental privacy properties deemed essential for a privacy notion to provide a sound and intuitive guarantee [43–45]. 
+
+Proposition 3.1 (Convexity) . Let M1 and M2 be any two random-ized mechanisms with independent sources of randomness and both satisfy 𝜖 -preference privacy. Denote by fM a randomized protocol that runs M1 with probability 𝑞 and runs M2 with probability 1 −𝑞 . Then, for any 𝑞 ∈ ( 0, 1), fM also satisfies 𝜖 -preference privacy. 
+
+The convexity property ensures that introducing an additional source of uncertainty, i.e., by randomly selecting between mecha-nisms with the same preference privacy guarantee, never weakens that guarantee. 
+
+Proposition 3.2 (Transformation Invariance) . Let M : T ↦ → R 
+
+be a mechanism that satisfies 𝜖 -preference privacy. Then, for any algorithm A : R ↦ → H that cannot access the random bits of M, it holds that A ◦ M : T ↦ → H also satisfies 𝜖 -preference privacy. 
+
+The implication of transformation invariance is that, as long as M satisfies 𝜖 -preference privacy and its random bits are not leaked, the outputs A ◦ M ( 𝑡 ) and A ◦ M ( 𝑡 ′) are indistinguishable for any pair of preference-neighboring 𝑡 and 𝑡 ′, from the view of any computationally unbounded adversary that is simulated by algorithm A. Consequently, the adversary cannot gain more infor-mation about the underlying preference than the privacy definition allows, regardless of how the adversary processes the observed outcome from M.
+
+Proposition 3.3 (Sequential Composition) . Let M1 : T ↦ → R 1
+
+satisfy 𝜖 1-preference privacy. Let M2 : T × R 1 ↦ → R 2 be such that, for every fixed 𝑟 1 ∈ R 1, the mechanism 𝑡 ↦ → M 2 (𝑡, 𝑟 1) satisfies 
+
+𝜖 2-preference privacy. Then M1,2 (𝑡 ) := (M 1 (𝑡 ), M2 (𝑡, M1 (𝑡 ))) sat-isfies (𝜖 1 + 𝜖 2)-preference privacy. 
+
+Here, the adaptive mechanism M2 is allowed to depend on the previously released output M1 (𝑡 ); the condition above requires that, after fixing this auxiliary input, M2 still satisfies 𝜖 2-preference privacy as a mechanism over 𝑡 .Sequential composition ensures that the theoretical privacy leak-age bound for mechanisms with a preference privacy guarantee increases linearly as the mechanism is repeatedly run on the same underlying data. This is particularly useful for accounting the total privacy cost when training involves multiple epochs. 
+
+Interpretation of privacy semantics. The preference privacy notion implicitly assumes an adversary with complete knowledge of the text content in a DPO training example, i.e., the text of 𝑥 , 𝑦 𝑤 
+
+and 𝑦 𝑙 , who seeks to infer the preference between 𝑦 𝑤 and 𝑦 𝑙 . The privacy implication of such privacy notion is that it theoretically bounds the adversary’s information gain about the underlying hu-man preference after observing the mechanism’s output, formally stated in the following theorem. 
+
+Proposition 3.4 (Privacy Semantics) . Let 𝑏 ∈ { 0, 1} denote the pri-vate preference bit, where 𝑏 = 1 indicates the input is 𝑡 1 = (𝑥, 𝑦 𝑤 , 𝑦 𝑙 )
+
+and 𝑏 = 0 indicates input is 𝑡 0 = (𝑥, 𝑦 𝑙 , 𝑦 𝑤 ). Let M be an 𝜖 -preference private mechanism producing output 𝑅 = M ( 𝑡 𝑏 ).Let A be any adversary that analyzes the mechanism’s output 𝑅 ,and define 𝑆 = A ( 𝑅 ) as the adversary’s observation. Then for any observation 𝑠 , it holds that 
+
+𝑒 −𝜖 ≤ Pr [𝑆 = 𝑠 | 𝑏 = 1]
+
+Pr [𝑆 = 𝑠 | 𝑏 = 0] ≤ 𝑒 𝜖 ,
+
+and therefore for any adversary’s prior belief denoted by 𝑝 adv :=
+
+Pr [𝑏 = 1], we have 
+
+𝑒 −𝜖 𝑝 adv 
+
+1 − 𝑝 adv 
+
+≤ Pr [𝑏 = 1 | 𝑆 = 𝑠 ]
+
+Pr [𝑏 = 0 | 𝑆 = 𝑠 ] ≤ 𝑒 𝜖 𝑝 adv 
+
+1 − 𝑝 adv 
+
+.
+
+Proof sketch. The proof follows the privacy semantics of Puffer-fish privacy [45]. Let the adversary’s randomization be the con-ditional density 𝜇 (𝑠 | 𝑟 ) = Pr [𝑆 = 𝑠 | 𝑅 = 𝑟 ], describing how the mechanism’s output 𝑟 is mapped to the observation 𝑠 . Since M
+
+satisfies 𝜖 -preference privacy, we have 
+
+𝑒 −𝜖 ≤ Pr [𝑅 = 𝑟 | 𝑏 = 1] / Pr [𝑅 = 𝑟 | 𝑏 = 0] ≤ 𝑒 𝜖 
+
+for all 𝑟 . By the law of total probability, averaging these bounds over 𝜇 (𝑠 | 𝑟 ) preserves the inequality, thus 
+
+𝑒 −𝜖 ≤ Pr [𝑆 = 𝑠 | 𝑏 = 1] / Pr [𝑆 = 𝑠 | 𝑏 = 0] ≤ 𝑒 𝜖 .
+
+Applying Bayes’ rule then gives the stated bound. □
+
+𝜖 -preference privacy also implies a dataset-level variant. 
+
+Definition 3.3 (𝜖 -Preference Privacy, Dataset-Level) . A random-ized mechanism cM that takes a dataset as input satisfies dataset-level 
+
+𝜖 -preference privacy if, for any two DPO datasets 𝐷, 𝐷 ′ differing in only one preference annotation (i.e., by flipping the preference of a single triplet 𝑡 ∈ 𝐷 ), and for any subset of outputs O, it holds that 
+
+Pr [ cM ( 𝐷 ) ∈ O] ≤ 𝑒 𝜖 Pr [ cM ( 𝐷 ′) ∈ O] .
+
+Here, cM ( 𝐷 ) denotes the (randomized) output of the mechanism when run on dataset 𝐷 , which in our setting corresponds to the transcript of privatized gradients produced during training. 
+
+Specifically, consider a mechanism cM that adaptively processes the dataset sequentially and outputs a transcript of privatized gradi-ents {M ( 𝑡 𝑖 )} for 𝑡 𝑖 ∈ 𝐷 . Here, adaptive means that each invocation 
+
+M ( 𝑡 𝑖 ) may depend on previously released outputs {M ( 𝑡 𝑗 )} 𝑗 <𝑖 . For neighboring datasets 𝐷, 𝐷 ′ differing in one preference annotation, let 𝑘 be the affected index. Releases before step 𝑘 have identical inputs; at step 𝑘 , the inputs are preference neighbors and the re-lease is 𝜖 -preference private; after step 𝑘 , all remaining examples are unchanged and later releases depend on the flipped preference only through the protected transcript. Therefore, cM ( 𝐷 ) satisfies dataset-level 𝜖 -preference privacy, assuming each example is pro-cessed once in the sequential pass. 
+
+> 4Private Direct Preference Optimization for LLM Alignment
+
+In our algorithm (Section 4.3), each DPO gradient release satisfies 
+
+𝜖 -preference privacy. Therefore, the entire private DPO procedure, which updates model parameters using only such privatized out-puts, also satisfies dataset-level 𝜖 -preference privacy. Finally, note that preference privacy can be viewed as a relaxation of DP. A natural first-cut approach is therefore to apply existing DP mechanisms, such as DP-SGD or randomized preference flipping. However, these methods are not tailored to DPO under preference privacy and suffer from fundamental technical limitations. In partic-ular, they either perturb the entire parameter space unnecessarily or introduce significant bias, leading to degraded alignment perfor-mance. We defer a detailed discussion of these first-cut solutions to Appendix A, and demonstrate their limitations through theoretical and empirical analyses in Sections 4.4 and 5, respectively. 
+
+## 3.2 Threat Model and Applicability 
+
+We next clarify the threat model, scope of protection, and appli-cability of preference privacy, and discuss the settings in which enforcing preference privacy is appropriate. 
+
+Threat model. We consider an adversary who observes trained models and intermediate checkpoints, similar to the canonical privacy-preserving learning framework of DP-SGD [1]. In addi-tion, the adversary knows the prompt and the candidate responses. The adversary’s goal is to infer an individual user’s preference between two candidate responses. Note that preference privacy is not designed as an ad-hoc defense against any particular classes of attacks on LLM training data, such as membership inference [64] or data reconstruction attacks [16]. Instead, it provides an attacker-agnostic, worst-case guarantee via bounding how much additional information about any individual’s preference can be revealed through training. Roughly speaking, 
+
+𝜖 -preference privacy guarantees that the released information can change the adversary’s posterior belief about a preference by at most a multiplicative factor of 𝑒 𝜖 , limiting the incremental leakage attributable to the use of private preference data. 
+
+Applicability. Preference privacy is tailored to DPO-based align-ment workflows in which the human preference signal is sensitive, while prompts and responses are non-sensitive and can be reason-ably assumed to be known to the adversary. As discussed earlier in Section 1.1, this assumption holds in many practical DPO settings. In common DPO datasets, prompts are typically drawn from public, non-proprietary sources, and candidate responses are generated by a pre-trained LLM. For example, in summarization [66] and dialogue alignment benchmarks [5], only the annotator’s preference may reveal sensitive personal judgments or attributes. In such settings, preference privacy captures the dominant privacy risk and provides a more accurate and less conservative guarantee than standard DP. 
+
+Limitations. Preference privacy does not apply to all alignment scenarios. If prompts or responses themselves contain sensitive or proprietary information, then protecting only the preference signal is insufficient. That said, our approach is complementary to existing DP-based methods [1, 8, 49, 79] and is intended for settings in which sensitivity is primarily confined to the preference signal. 
+
+Relation to label DP. Preference privacy is closely related to label DP [33, 51], where features are public and only labels are sensitive. In DPO, the prompt and candidate responses play the role of public features, while the preference annotation is the private label. Thus, our preference-neighboring relation can be viewed as a label-DP-style formulation specialized to DPO preference data. This differs from triplet-level DP, where neighboring datasets may differ in the entire DPO triplet, including the prompt, responses, and preference annotation. Our contribution is not the privacy definition itself, but the mechanism: PrivDPO exploits the DPO objective to perturb a one-dimensional preference-dependent scalar rather than the raw label or the full gradient. 
+
+## 4 Private Direct Preference Optimization 
+
+Off-the-shelf first-cut solutions for protecting preference annota-tions fall into two categories. The first applies standard DP-SGD to the DPO objective, which protects the entire triplet (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ) and therefore gives a strong, triplet-level guarantee but requires high-dimensional gradient perturbation. The second uses randomized response (RR)-based input perturbation to randomize the preference signal before DPO training, which matches the preference-level privacy unit but introduces bias into the DPO optimization. We briefly discuss these baseline solutions in Section 3.1, with details deferred to Appendix A. Both issues severely degrade alignment per-formance even under moderate privacy guarantees. The proposed 
+
+PrivDPO is designed to overcome these limitations by perturbing the intermediate preference-dependent term in the DPO objective, rather than the full gradient or the raw preference label, while offering formal preference privacy. In what follows, we first outline the key intuition behind PrivDPO ,followed by its design details and a formal analysis of its privacy and utility guarantees. 
+
+## 4.1 Rationale 
+
+The design of PrivDPO is motivated by a fundamental observation about how preference information is captured by DPO training gradients. Consider a pair of neighboring DPO training examples, 
+
+𝑡 = (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ) and 𝑡 ′ = (𝑥, 𝑦 𝑙 , 𝑦 𝑤 ), which differ only in their pref-erence signal. For a fixed LLM parameter 𝜋 𝜃 , we define the DPO gradient difference as 
+
+Λ = 𝜕 LDPO (𝑡 ; 𝜋 𝜃 ; 𝜋 ref )
+
+𝜕𝜃 − 𝜕 LDPO (𝑡 ′; 𝜋 𝜃 ; 𝜋 ref )
+
+𝜕𝜃 ∈ R𝑑 .
+
+This DPO gradient difference Λ has a unique geometric structure that can be exploited for privacy-preserving mechanism design. Specifically, Λ lies along a specific axis in parameter space deter-mined by the textual content of the triplet, i.e., 𝑥 , 𝑦 𝑤 , and 𝑦 𝑙 ; we term this the preference axis .This observation reveals a unique pattern of privacy leakage in DPO training. At a high level, privacy requires the algorithm’s output distribution to remain indistinguishable when the sensitive component, i.e., the preference annotation, is flipped. For DPO, such a flip does not arbitrarily change the gradient in the full parameter space; for a fixed prompt and response pair, it only changes the scalar coefficient along the preference axis, while the orthogonal components remain unchanged. Intuitively, this means that the adversary’s ability to infer pref-erence information is limited to this one-dimensional subspace; the remaining orthogonal subspace is free from privacy concerns. This   
+
+> 5Yangfan Jiang, Fei Wei, Ergute Bao, Xiaokui Xiao, Yaliang Li, and Bolin Ding Preference Axis Privacy-Free Subspace DP Leakage Ball
+> DPO Gradient ( ywyl)
+> DPO Gradient ( ywyl)
+> DP-SGD Gradients
+
+Figure 1: Illustration of the privacy leakage surface. 
+
+insight enables a mechanism that injects randomness only along the sensitive preference axis, rather than perturbing the input (i.e., raw preference labels) or the intermediate state (i.e., full gradients). 
+
+## 4.2 Understanding the Privacy Leakage Surface 
+
+We now examine the geometric structure of the preference leakage surface in DPO. Specifically, we analyze how an adversary might exploit the gradient to infer preference information from a DPO training example. Let 𝒗 := ∇𝜃 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 ) −∇ 𝜃 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 ). For a DPO example 𝑡 = (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ), differentiating the DPO objective 
+
+LDPO with respect to the LLM parameter 𝜃 yields 
+
+−𝛽 · 𝜎 
+
+
+
+𝛽 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 )
+
+𝜋 ref (𝑦 𝑙 | 𝑥 ) − 𝛽 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 )
+
+𝜋 ref (𝑦 𝑤 | 𝑥 )
+
+
+
+· 𝒗 ,
+
+where 𝜎 (·) denotes the sigmoid function. For 𝑡 ′ = (𝑥, 𝑦 𝑙 , 𝑦 𝑤 ), the corresponding gradient can be expressed as: 
+
+−𝛽 · 𝜎 
+
+
+
+𝛽 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 )
+
+𝜋 ref (𝑦 𝑤 | 𝑥 ) − 𝛽 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 )
+
+𝜋 ref (𝑦 𝑙 | 𝑥 )
+
+
+
+· (− 𝒗 ).
+
+Since the sigmoid function satisfies 𝜎 (𝑧 ) = 1 − 𝜎 (− 𝑧 ), defining 
+
+𝜓 := 𝜎 
+
+
+
+𝛽 log 𝜋 𝜃 (𝑦 𝑙 |𝑥 )    
+
+> 𝜋 ref (𝑦 𝑙 |𝑥 )
+
+− 𝛽 log 𝜋 𝜃 (𝑦 𝑤 |𝑥 )   
+
+> 𝜋 ref (𝑦 𝑤 |𝑥 )
+
+
+
+, we have 
+
+Λ = − 𝛽𝜓 ·
+
+h
+
+∇𝜃 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 ) − ∇ 𝜃 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 )
+
+i
+
++ 𝛽 (1 − 𝜓 ) · 
+
+h
+
+∇𝜃 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 ) − ∇ 𝜃 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 )
+
+i
+
+= − 𝛽 ·
+
+h
+
+∇𝜃 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 ) − ∇ 𝜃 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 )
+
+i
+
+= −𝛽 𝒗 .
+
+The above expression shows that a preference flip changes the DPO gradient only along the preference axis 𝒗 . This is related to label-DP-style relaxations in its privacy semantics: the text content plays the role of public features, while the preference ordering is the sensitive annotation. The key difference is algorithmic. Gen-eral label-DP mechanisms do not rely on such a gradient struc-ture, whereas in DPO, for a fixed (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ), the two preference-neighboring gradients remain on the same one-dimensional line determined by 𝒗 . This property follows from the algebraic form of the DPO loss, rather than from model architecture, and therefore holds even when 𝜋 𝜃 is a nonlinear LLM. The geometric intuition is illustrated in Figure 1. Compared with standard DP, which perturbs full gradients, and label-DP-style input perturbation, which randomizes the raw preference label, PrivDPO 
+
+exploits the DPO-specific structure above: a preference flip only af-fects the gradient within the one-dimensional subspace spanned by 
+
+𝒗 . This motivates perturbing the intermediate preference-dependent scalar rather than the full gradient or the raw preference label. 
+
+## 4.3 Algorithm Design 
+
+Consider an adversary who has access to the textual content of a DPO training example (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ), and is able to observe its corre-sponding gradient. The adversary’s goal is to infer whether 𝑦 𝑤 ≻ 𝑦 𝑙 
+
+or 𝑦 𝑤 ≺ 𝑦 𝑙 . The only exploitable clue for this inference is the direc-tion of the gradient along the preference axis, which is uniquely defined by the neighboring preference pair 𝒗 := ∇𝜃 log 𝜋 𝜃 (𝑦 𝑤 |
+
+𝑥 ) − ∇ 𝜃 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 ). Intuitively, to prevent the adversary from distinguishing whether the input is (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ) or (𝑥, 𝑦 𝑙 , 𝑦 𝑤 ), it suf-fices to randomize the directional information along the preference axis 𝒗 . This targeted perturbation conceals the preference informa-tion embedded in the gradient while avoiding the excessive utility loss caused by isotropic noise across the full parameter space. However, the magnitude of the gradient along the preference axis encodes valuable alignment information that must be preserved as much as possible for training utility. Specifically, for a given preference 𝑦 𝑤 ≻ 𝑦 𝑙 , the DPO gradient can be expressed as −𝛽𝜓 𝒗 ,where 𝛽 is a DPO hyperparameter, and the scalar 
+
+𝜓 = 𝜎 
+
+
+
+𝛽 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 )
+
+𝜋 ref (𝑦 𝑙 | 𝑥 ) − 𝛽 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 )
+
+𝜋 ref (𝑦 𝑤 | 𝑥 )
+
+
+
+represents how strongly the model currently prefers 𝑦 𝑙 over 𝑦 𝑤 .We refer to 𝜓 as the preference intensity . When the model already assigns relatively higher likelihood to 𝑦 𝑤 than to 𝑦 𝑙 , i.e., log 𝜋 𝜃 (𝑦 𝑤 |
+
+𝑥 ) > log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 ), 𝜓 becomes relatively small, implying only a minor update step for that example. Hence, a desirable privacy-preserving DPO should retain this intensity information as faith-fully as possible while ensuring preference privacy. 
+
+Unbiased intensity perturbation mechanism. To achieve this balance, we devise an unbiased perturbation mechanism on the preference intensity 𝜓 that satisfies 𝜖 -preference privacy while maintaining the expected value of 𝜓 . Unlike RR-based label-DP input perturbation, which randomizes the discrete preference an-notation before computing the loss, our mechanism keeps the DPO objective intact up to the preference-dependent scalar 𝜓 and applies randomness directly to this intermediate quantity. Although the pri-vate annotation is binary, its effect on the DPO gradient appears as one of two scalar coefficients separated by a constant. Specifically, by exploiting the property of the sigmoid function 𝜎 (𝑧 ) = 1−𝜎 (− 𝑧 ),we can verify that the effect of flipping the preference on the DPO gradient can be viewed as shifting the preference intensity from 𝜓 
+
+to 𝜓 − 1. This corresponds to a change in the gradient from −𝛽𝜓 𝒗 to 
+
+−𝛽 (𝜓 − 1)𝒗 . Hence, given the underlying preference axis, the only exploitable information available to an adversary is the magnitude of the preference intensity, which can take exactly two possible values separated by a difference of 1. This unique structure unlocks 
+
+> 6Private Direct Preference Optimization for LLM Alignment
+
+Algorithm 1: Private DPO via Randomized Objective Rescaling 
+
+Input: Dataset 𝐷 = {( 𝑥 (𝑖 ) , 𝑦 (𝑖 ) 
+
+> 𝑤
+
+, 𝑦 (𝑖 ) 
+
+> 𝑙
+
+)} 𝑛 𝑖 =1; policy model 𝜋 𝜃 ; reference model 𝜋 ref ; DPO hyperparameter 𝛽 ; DPO objective function 
+
+LDPO ; privacy parameter 𝜖 ; learning rate 𝜂 .
+
+Output: Model parameters 𝜃 . 
+
+> 1
+
+B := {𝐵 1, ..., 𝐵 𝑘 }; // Randomly permute 𝐷 and partition it into disjoint mini-batches B = {𝐵 1, . . . , 𝐵 𝑘 } 
+
+> 2
+
+foreach 𝐵 ∈ B do  
+
+> 3
+
+foreach triplet 𝑡 = (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ) ∈ 𝐵 do  
+
+> 4
+
+𝜓 ← sg 
+
+h
+
+𝜎 
+
+
+
+𝛽 log 𝜋 𝜃 (𝑦 𝑙 |𝑥 )    
+
+> 𝜋 ref (𝑦 𝑙 |𝑥 )
+
+− 𝛽 log 𝜋 𝜃 (𝑦 𝑤 |𝑥 )   
+
+> 𝜋 ref (𝑦 𝑤 |𝑥 )
+
+i 
+
+; // sg [·] : stop-gradient operator; 𝜎 (·) : sigmoid function  
+
+> 5
+
+Sample 𝑢 uniformly at random from [0, 1]; 
+
+> 6
+
+˜𝑤 ←
+
+(
+
+1 + 1
+
+> 𝜓
+
+
+
+1 − 𝑒 𝜖 −2 
+
+> 𝑒 𝜖 −1
+
+
+
+, if 𝑢 ≤ 𝑒 𝜖   
+
+> 𝑒 𝜖 +1
+
+,
+
+1 − 1
+
+> 𝜓
+
+ 1 + 1 
+
+> 𝑒 𝜖 −1
+
+ , otherwise. ; 
+
+> 7
+
+˜L𝑡 ← ˜𝑤 · L DPO (𝑡 ; 𝜋 𝜃 ; 𝜋 ref ) ; // Rescale DPO objective with the random weight ˜𝑤  
+
+> 8
+
+𝒈 𝑡 ← ∇ 𝜃 ˜L𝑡 ; 
+
+> 9
+
+𝒈 ← 1 
+
+> |𝐵 |
+
+Í𝑡 ∈𝐵 𝒈 𝑡 ; 
+
+> 10
+
+𝜃 ← 𝜃 − 𝜂 𝒈 ; // Update model parameters by gradient descent  
+
+> 11
+
+return 𝜃 ;greater flexibility for designing private yet unbiased mechanisms than is available in the general numeric setting of local differential privacy [25, 73], where inputs range over a continuous interval (see Appendix C). A direct approach would be to ensure the privacy guarantee by bounding the likelihood ratio of outputs within 𝑒 𝜖 , i.e., making the true value 𝜓 at most 𝑒 𝜖 times more likely to be output than any pos-sible alternative value 𝜓 ′ in the output range. However, such a direct approach introduces bias into the perturbed estimates. To address this issue, we design a mechanism that never outputs 𝜓 exactly, but instead samples around it asymmetrically to maintain unbiased-ness. Specifically, with higher probability, it outputs a value slightly larger than 𝜓 , and with lower probability, a value slightly less than 
+
+𝜓 − 1. By carefully calibrating these offsets, we ensure that the expectation of the perturbed output equals 𝜓 , thereby preserving unbiasedness while satisfying 𝜖 -preference privacy. Formally, the mechanism is defined as: 
+
+Munbias (𝜓 ) =
+
+ 𝜓 + 1  
+
+> 𝑒 𝜖 −1
+
+, with probability 𝑒 𝜖   
+
+> 𝑒 𝜖 +1
+
+,𝜓 − 1 − 1  
+
+> 𝑒 𝜖 −1
+
+, with probability 1  
+
+> 𝑒 𝜖 +1
+
+,
+
+where the offset is set to 1  
+
+> 𝑒 𝜖 −1
+
+to ensure unbiasedness. Let Mgrad (𝑡 ) = −𝛽 Munbias (𝜓 )𝒗 denote the randomized gradient generated by this process. It can be verified that (i) E[M unbias (𝜓 )] =
+
+𝜓 , and thus Mgrad is an unbiased estimator of the DPO gradient; and (ii) Mgrad satisfies the indistinguishability requirement in Def-inition 3.2, thereby ensuring 𝜖 -preference privacy. We defer the formal privacy and utility analysis to Section 4.4. A remaining practical concern is that directly applying this per-turbation requires fetching and manipulating each gradient individ-ually. For large-scale LLMs with tens of billions of parameters, this is both computationally and memory intensive: a single-precision gradient for a 32B-parameter model can exceed 100 GB of GPU memory, with additional overhead from model parameters and opti-mizer states, far beyond current GPU capacities. Moreover, modern training frameworks shard models, gradients, and optimizer states across GPUs and therefore do not natively support per-example gradient operations. Implementing per-example operations would require reverting to pure data parallelism, placing all gradients and states onto a single GPU, making training prohibitively slow and impractical for large models. To address these bottlenecks, we next introduce an equivalent but far more efficient approach that ex-ploits the geometric structure of DPO gradients, avoiding explicit per-example gradient manipulation. 
+
+Rescaling the DPO objective. We observe that flipping the pref-erence signal in DPO training data only changes the direction and scale of the resulting gradient. In other words, the pair of corre-sponding gradients are symmetric about the origin, when ignoring their preference intensities. Perturbing the preference intensity 𝜓 is therefore equivalent to applying a randomized rescaling to the DPO objective itself before backpropagation. Formally, when perturbing the preference intensity from 𝜓 to ˜𝜓 , the gradient changes from 
+
+−𝛽𝜓 𝒗 to −𝛽 ˜𝜓 𝒗 , which can be written as: 
+
+−𝛽 ˜𝜓 𝒗 = − ˜𝜓 𝜓 𝜓 𝛽 𝒗 = ˜𝜓 𝜓 ∇𝜃 LDPO = ∇𝜃 
+
+
+
+sg 
+
+h ˜𝜓𝜓 −1 i
+
+LDPO 
+
+
+
+,
+
+where sg [·] denotes the stop-gradient operator. Hence, perturbing the preference intensity of the gradient along the preference axis is equivalent to applying a randomized rescaling to the DPO objective. 
+
+The PrivDPO algorithm. This insight motivates our final private DPO solution, PrivDPO , presented in Algorithm 1. We follow the standard DPO training protocol [61]: the dataset is randomly per-muted and processed sequentially in mini-batches for a single epoch. For each DPO training example 𝑡 = (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ), we first compute its preference intensity 𝜓 (line 4). This step requires only a forward pass and is already performed as part of the DPO objective compu-tation; thus, retrieving 𝜓 only introduces negligible overhead. In our implementation, we detach the preference intensity 𝜓 from the computational graph using a stop-gradient operator ( sg [·] in line 4) to prevent backpropagation through the randomized preference intensity. Next, we sample a random rescaling weight ˜ 𝑤 according to the perturbation mechanism described in line 6, and use ˜ 𝑤 to 
+
+> 7Yangfan Jiang, Fei Wei, Ergute Bao, Xiaokui Xiao, Yaliang Li, and Bolin Ding
+
+rescale the DPO objective before backpropagation. The remainder of training proceeds identically to standard DPO. Intuitively, PrivDPO pushes the model toward the true objective more aggressively than a standard DPO update with probability greater than 1 /2, while with a slightly lower probability it moves in the opposite direction, thereby effectively confusing the poten-tial adversary. Notably, this randomized rescaling process can be performed in a batched manner during the forward pass, making 
+
+PrivDPO a highly practical privacy-preserving alignment method that is both efficient and scalable. 
+
+Remark on noise injection. In line 7 of Algorithm 1, randomness is injected by rescaling the DPO objective, rather than by perturb-ing the raw preference label as in RR-based input perturbation. The perturbed objective is then passed directly to a standard optimizer, avoiding computationally and memory-intensive per-example gra-dient operations such as clipping or gradient perturbation. 
+
+## 4.4 Privacy and Utility Analysis 
+
+We theoretically analyze the privacy and utility guarantees of 
+
+PrivDPO , and present their practical implications. Complete proofs are deferred to Appendix B.1 and B.2. 
+
+Theorem 4.1. Algorithm 1 satisfies 𝜖 -preference privacy. 
+
+Proof sketch. Let T denote the space of DPO triplets. Consider an arbitrary DPO training record 𝑡 = (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ) ∈ T , with 𝑦 𝑤 ≻ 𝑦 𝑙 .Let 𝑡 ′ = (𝑥, 𝑦 𝑙 , 𝑦 𝑤 ) be its neighboring record, differing only in the preference signal, i.e., with 𝑦 𝑤 ≺ 𝑦 𝑙 . Define the mechanism 
+
+M : T ↦ → R which maps a DPO training example to its privatized gradient, corresponding to the randomized sub-process in lines 4-8 of Algorithm 1. By construction, PrivDPO ensures that 
+
+𝑒 −𝜖 ≤ Pr [M ( 𝑡 ) = 𝑟 ]
+
+Pr [M ( 𝑡 ′) = 𝑟 ] ≤ 𝑒 𝜖 
+
+for any 𝑟 ∈ R , thereby establishing the indistinguishability property of M. By the transformation invariance property (Proposition 3.2), Algorithm 1 inherits this guarantee. The theorem follows. □
+
+Remark. Under the single-epoch protocol of Algorithm 1, where the dataset is randomly permuted once and partitioned into dis-joint mini-batches such that each example is used exactly once, Algorithm 1 satisfies dataset-level 𝜖 -preference privacy. All training experiments in this paper use one epoch. For neigh-boring datasets differing in one preference annotation, only the affected mini-batch differs; earlier releases are identical, and later updates are post-processing of the private release and unchanged examples. Thus, no within-epoch composition is needed. This dif-fers from subsampling-based DP-SGD accounting [1, 55], where examples may be selected repeatedly and privacy loss must be accumulated through subsampling and composition. For multiple epochs, the same example may be accessed multiple times, and the privacy cost composes linearly by Proposition 3.3. We use linear composition because our guarantee is pure 𝜖 -preference privacy; tighter accounting for approximate or Rényi DP [54, 55] is not directly applicable in our setting. Beyond satisfying 𝜖 -preference privacy, PrivDPO preserves key properties for maintaining alignment quality. The following lemma shows that the gradient derived from the randomized DPO objective is an unbiased estimator of the original DPO gradient. 
+
+Lemma 4.1 (Unbiasedness) . The gradient computed from the ran-domized DPO objective in line 8 of Algorithm 1 is an unbiased esti-mator of the true DPO gradient: 
+
+E ∇𝜃 ˜L𝑡 
+
+ = ∇𝜃 LDPO (𝑡 ; 𝜋 𝜃 , 𝜋 ref ).
+
+Proof sketch. Note that E [ ˜𝑤 | 𝜓 ] = 1. Therefore, we have 
+
+E[∇ 𝜃 ˜L𝑡 ] = E[ ˜𝑤 ]∇ 𝜃 LDPO (𝑡 ; 𝜋 𝜃 ; 𝜋 ref ) = ∇𝜃 LDPO (𝑡 ; 𝜋 𝜃 ; 𝜋 ref ). □
+
+The unbiasedness property implies that, in expectation, PrivDPO 
+
+performs LLM parameter updates identical to those of standard DPO. Therefore, with an appropriate batch size, the batch-averaged gradient (line 9) concentrates around the non-private DPO gradient. The following theorem formalizes this intuition with a concentra-tion bound on the gradient deviation. 
+
+Theorem 4.2 (Error Bound of PrivDPO ). Let 𝒈 denote the batch-averaged gradient of PrivDPO (line 9 in Algorithm 1) and 𝒈 ∗ the corresponding non-private DPO gradient. For the 𝑖 -th training example 
+
+(𝑥, 𝑦 𝑤 , 𝑦 𝑙 ) in the batch, define 𝒗 𝑖 := ∇𝜃 log 𝜋 𝜃 (𝑦 𝑤 |𝑥 )−∇ 𝜃 log 𝜋 𝜃 (𝑦 𝑙 |𝑥 ).For any unit direction 𝒖 ∈ S𝑑 −1, define the directional deviation as 
+
+Err 𝒖 := |𝒖 ⊤ (𝒈 − 𝒈 ∗)| .
+
+Let 𝑚 be the batch size, then with probability at least 1 − 𝛾 ,
+
+Err 𝒖 ≤ 𝛽 𝑚 
+
+©«vut 2𝑒 𝜖 
+
+(𝑒 𝜖 − 1)2
+
+> 𝑚
+
+∑︁ 
+
+> 𝑖 =1
+
+(𝒖 ⊤𝒗 𝑖 )2
+
+!
+
+log 2
+
+𝛾 
+
++ 𝑒 𝜖 
+
+𝑒 𝜖 − 1 · max 𝑖 {| 𝒖 ⊤𝒗 𝑖 |} 
+
+3 log 2
+
+𝛾 
+
+
+
+.
+
+Proof sketch. For any 𝒖 ∈ S𝑑 −1, the per-example directional error 𝒖 ⊤ (𝒈 𝑖 − 𝒈 ∗ 
+
+> 𝑖
+
+) is a mean-zero random variable whose absolute value and variance are bounded. Applying a special case of Bern-stein’s inequality (Lemma B.1) to the batch-averaged deviation Err 𝒖 
+
+yields the stated bound. □
+
+Theorem 4.2 guarantees that, with high probability, the random-ized gradient in PrivDPO remains close to the original DPO gradient along any fixed direction 𝒖 ∈ S𝑑 −1. Specifically, suppose 
+
+∥∇ 𝜃 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 ) − ∇ 𝜃 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 )∥ 2 ≤ 𝐺 
+
+for some constant 𝐺 . Then for any 𝒖 ∈ S𝑑 −1 we have |𝒖 ⊤𝒗 𝑖 | ≤ 𝐺 .Consequently, with probability at least 1 − 𝛾 , the deviation along 
+
+𝒖 is ˜𝑂 (𝛽𝐺 /( 𝑒 𝜖 − 1)√𝑚 ), where ˜𝑂 (·) suppresses logarithmic fac-tors in 1 /𝛾 . Moreover, since the update is unbiased (Lemma 4.1), Theorem 4.2 further implies that the randomized PrivDPO update concentrates around the true DPO gradient along any direction. We next compare PrivDPO with two first-cut mechanisms. The most direct baseline under preference privacy is RR-based input perturbation, which perturbs the raw preference label before train-ing. We therefore first analyze RR, and then discuss DP-SGD as a stronger but more conservative baseline. Let 𝒈 and 𝒈 ∗ denote the batch-averaged PrivDPO and non-private DPO gradients, respectively. Adapting the proof of Theorem 4.2 in Appendix B.2 and applying a vector Bernstein inequality [35], one can derive a high-probability upper bound of the form 
+
+> 8Private Direct Preference Optimization for LLM Alignment
+
+∥𝒈 − 𝒈 ∗ ∥2 = 𝑂 ©«
+
+𝛽 𝑚 
+
+vut 𝑒 𝜖 
+
+(𝑒 𝜖 − 1)2 𝜆 max 
+
+> 𝑚
+
+∑︁ 
+
+> 𝑡 =1
+
+𝒗 𝑡 𝒗 ⊤
+
+> 𝑡
+
+!ª®¬
+
+= 𝑂 𝛽 𝜖 √︂ 
+
+𝜆 𝑚 
+
+!
+
+, (6) where 𝜆 max (·) and 𝜆 denote the largest eigenvalue of a matrix and 
+
+E[𝒗 𝑡 𝒗 ⊤ 
+
+> 𝑡
+
+], respectively. The second equality follows from the approx-imation Í𝑚 𝑡 =1 𝒗 𝑡 𝒗 ⊤ 
+
+> 𝑡
+
+≈ 𝑚 · E[𝒗 𝑡 𝒗 ⊤ 
+
+> 𝑡
+
+], which holds when the empirical covariance concentrates, and on the fact that √𝑒 𝜖 /( 𝑒 𝜖 −1) = 𝑂 (1/𝜖 )
+
+for small 𝜖 .Together with the unbiasedness in Lemma 4.1, Eq. (6) suggests that the PrivDPO update can remain close to the non-private DPO update under low-effective-rank preference-axis covariance, which helps explain its stable empirical behavior. 
+
+Comparison with RR. The most direct baseline is RR-based in-put perturbation, which keeps the true preference with probability 
+
+𝑝 = 𝑒 𝜖 /( 𝑒 𝜖 + 1) and flips it with probability 𝑞 = 1/( 𝑒 𝜖 + 1). For a training example with non-private DPO gradient −𝛽𝜓 𝑖 𝒗 𝑖 , RR pro-duces −𝛽𝜓 𝑖 𝒗 𝑖 with probability 𝑝 and 𝛽 (1 − 𝜓 𝑖 )𝒗 𝑖 with probability 𝑞 .Applying an analysis similar to Eq. (6), we obtain the batch-level deviation includes an additional generally nonzero bias term: 
+
+∥𝒈 RR − 𝒈 ∗ ∥2 = 𝑂 𝛽 𝜖 √︂ 
+
+𝜆 𝑚 + 𝛽 𝑒 𝜖 + 1
+
+√𝜆 
+
+!
+
+,
+
+where 𝒈 RR denotes the batch gradient obtained under RR-perturbed preferences and 𝒈 ∗ is the non-private DPO gradient. More explicitly, if 𝐵 𝑖 ∼ Bernoulli (𝑞 ) indicates whether the 𝑖 -th preference is flipped, then 𝑔 RR − 𝑔 ∗ = 𝛽 𝑚 
+
+Í𝑖 (𝐵 𝑖 − 𝑞 )𝒗 𝑖 + 𝛽𝑞 ¯𝒗 , where ¯ 𝒗 = 1
+
+> 𝑚
+
+Í𝑖 𝒗 𝑖 . The first term is a zero-mean stochastic deviation, while the second term is the bias introduced by input-level RR. In contrast, PrivDPO is unbiased, and its stochastic deviation decreases with the batch size. This explains why perturbing the in-termediate preference-dependent scalar is preferable to perturbing the raw preference label before DPO optimization. We note that prior work on label DP [13, 30, 33, 42, 51] focuses on supervised learning and is not directly applicable to our setting. These methods can be viewed as extensions of standard RR to deep learning settings, but they rely on assumptions about task structures that do not hold in LLM alignment. We therefore use RR as the canonical input-perturbation baseline and discuss these related label-DP methods in Section 3.2 and Section 6. 
+
+Comparison with DP-SGD. Let ˜ 𝒈 denote the privatized gradient obtained by DP-SGD, where isotropic Gaussian noise N ( 0, 𝜎 2I𝑑 )
+
+with 𝜎 = 𝑂 (√︁ log (1/𝛿 )/ 𝜖 ) is added to the non-private DPO gradi-ent [1, 7, 55]. Applying a standard sub-Gaussian tail bound yields 
+
+∥ ˜𝒈 − 𝒈 ∗ ∥2 = 𝑂 1
+
+𝜖 ·√︁ 𝑑 log (1/𝛿 )
+
+𝑚 
+
+!
+
+. (7) Several properties of DPO-based LLM alignment help explain when this comparison is favorable to PrivDPO . In Eq. (6), the quan-tity 𝜆 = 𝜆 max (Σ), where Σ := E[𝒗 𝑡 𝒗 ⊤ 
+
+> 𝑡
+
+], reflects both directional concentration and gradient magnitude. Therefore, the comparison with DP-SGD in Eq. (7) is most informative when Σ has low effective rank and its leading eigenvalues remain bounded. This condition is consistent with prior observations that LLM fine-tuning gradi-ents often concentrate in low-dimensional intrinsic subspaces [3, 22, 39, 48, 52, 81]. We further verify this behavior empirically on Qwen2.5-3B-Instruct, initialized from the PrivSFT checkpoint de-scribed in Section 4.5, over Anthropic-HH [5] using 32 gradient sam-ples. The top 10 and top 20 components explain 62.5% and 89.2% of the empirical spectral energy, respectively, and 𝜆 max /𝑑 = 1.5 × 10 −4.Under such low-effective-rank behavior, 𝜆 is much smaller than the dimension-dependent factor in Eq. (7). This measurement is intended as representative empirical support for the low-effective-rank behavior observed in our setting, rather than a universal spec-tral guarantee across all models and datasets. 
+
+## 4.5 Private Supervised Fine-Tuning 
+
+In practice, DPO is preceded by a supervised fine-tuning (SFT) stage to improve training stability [61], typically by minimizing the negative log-likelihood of the preferred response 𝑦 𝑤 given the prompt 𝑥 , i.e., − log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 ). This, however, violates preference privacy, as it optimizes exclusively on preferred responses. To address this issue, we propose a modification to the SFT stage. Our key insight is that the role of SFT prior to DPO is not to directly reinforce preferences, but to adapt the LLM to the context of the alignment dataset [31, 61]. This adaptation allows the model to learn the dataset’s semantics and the expected formatting of responses, without incurring any privacy cost regarding user preference. We use a private supervised fine-tuning method, termed as PrivSFT, that fine-tunes equally on both the preferred 𝑦 𝑤 and the non-preferred 𝑦 𝑙 responses for each prompt 𝑥 , preventing prefer-ence leakage in SFT. The resulting PrivSFT loss is defined as: 
+
+LPrivSFT = − 12
+
+h
+
+log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 ) + log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 )
+
+i
+
+.
+
+There is no privacy cost incurred in the private SFT stage, since 𝑦 𝑤 
+
+and 𝑦 𝑙 are public and they are symmetric in the above loss function (no human preference indicated). In our experiments, we first run one epoch of PrivSFT on the base model to obtain the reference model 𝜋 ref , and then apply DPO-based alignment methods on 𝜋 ref .
+
+## 5 Experiments 
+
+This section presents a comprehensive empirical evaluation of 
+
+PrivDPO . We first introduce the experimental setup in Section 5.1, then evaluate different aspects of alignment performance of PrivDPO 
+
+and its competitors from Section 5.2 to Section 5.4, assess the ro-bustness of PrivDPO against an empirical attack in Section 5.5, and finally validate the scalability of PrivDPO in Section 5.6. 
+
+## 5.1 Setup 
+
+All experiments were conducted on a machine with 8 × H20 GPUs, each with 96 GB of GPU memory. We used PyTorch’s Fully Sharded Data Parallel (FSDP) [83] to shard LLM parameters for efficient large-scale training. The implementation of PrivDPO is available at: https://github.com/Yangfan-Jiang/privatedpo. 
+
+Datasets. We use three well-established benchmarks in our experi-ments, all of which are open-ended text generation tasks. 
+
+• Anthropic-HH [5] is a widely used dataset for LLM alignment, collected by Anthropic to train LLMs that are both helpful and harmless. It contains 161k human-LLM dialogue examples, each 
+
+> 9Yangfan Jiang, Fei Wei, Ergute Bao, Xiaokui Xiao, Yaliang Li, and Bolin Ding
+
+consisting of a dialogue context followed by two responses and a human preference label indicating the preferred one. 
+
+• TL;DR Summarization [66] contains 92k pairs of summaries for Reddit posts, with human preferences collected by OpenAI. Each example includes a Reddit post and an instruction to summarize it, along with two candidate summaries. Annotators select the summary that better captures the main points of the post. 
+
+• UltraFeedback-Binarized [20] contains 64k dialogue examples annotated for instruction following, truthfulness, honesty, and helpfulness. Each example consists of a dialogue context and two responses, with a binary label indicating the better response. All datasets provide standard train-test splits; we use the training sets for training and the test sets for evaluating performance. 
+
+Models. We use models from three representative open-weight LLM families: Qwen2.5 [68], Llama3 [24], and Pythia [10], ranging from 3B to 32B parameters. All models are publicly available on the Hugging Face platform. 
+
+Hyperparameters. We follow the hyperparameter settings from the original DPO paper [61]. For all experiments, the learning rate is set to 5 × 10 −7, the DPO hyperparameter 𝛽 to 0 .1, and the batch size to 64, with 150 warm-up steps using a linear learning rate schedule. We do not tune the hyperparameters to favor any particular ex-perimental setting. All models are trained using AdamW with the default settings provided by PyTorch. All experiments use the same single-epoch protocol as Algorithm 1, i.e., one random permutation of the dataset followed by disjoint mini-batch processing, which is also consistent with [61]. 
+
+Metrics. We evaluate alignment performance using two categories of metrics, following standard practices in prior DPO-based LLM alignment work [53, 61]: 
+
+• Reward metrics, including (i) reward margin (RM), the average of 𝛽 log 𝜋 𝜃 (𝑦 𝑤 |𝑥 )    
+
+> 𝜋 ref (𝑦 𝑤 |𝑥 )
+
+− 𝛽 log 𝜋 𝜃 (𝑦 𝑙 |𝑥 )    
+
+> 𝜋 ref (𝑦 𝑙 |𝑥 )
+
+on the test set; (ii) reward accuracy (RA), the proportion of examples where log 𝜋 𝜃 (𝑦 𝑤 |𝑥 )    
+
+> 𝜋 ref (𝑦 𝑤 |𝑥 )
+
+>
+
+log 𝜋 𝜃 (𝑦 𝑙 |𝑥 )    
+
+> 𝜋 ref (𝑦 𝑙 |𝑥 )
+
+; and (iii) the DPO objective value LDPO .
+
+• Generation quality metrics, which compare the overall alignment quality of LLM-generated responses using an LLM-as-a-judge evaluation pipeline. 
+
+Competitors. Existing privacy-preserving RLHF methods [17, 37, 77, 78, 80, 82] typically protect training data with standard DP, effectively reducing to DP-SGD-style training. We therefore include DP-SGD as a standard DP baseline. Under preference privacy, we compare with randomized re-sponse (RR), which randomly flips preference labels and gives biased estimators, and two stronger unbiased scalar perturbation base-lines that replace PrivDPO’s perturbation mechanism with Duchi’s and Piecewise mechanisms [25, 73]. These baselines build on our sensitivity analysis but do not exploit the structure of preference intensity identified in our analysis; details are given in Appendix C. 
+
+Remark on privacy guarantee. Our privacy guarantee applies to the preference annotations used in the DPO training procedure. It does not protect or remove information that may already be encoded in the pretrained or instruction-tuned checkpoint before our training begins. Since all methods in our experiments use the same initialization, datasets, and training pipeline, this limitation does not affect the fairness of the empirical comparison. In addi-tion, because the instruction-tuning mixtures of some open-weight models are not fully disclosed, we cannot rule out partial overlap with public alignment datasets. Our evaluation should therefore be interpreted as comparing private DPO optimization methods under a common initialization, rather than auditing whether the base checkpoint has memorized these datasets. 
+
+## 5.2 Limitations of Existing DP Mechanisms 
+
+We apply DP-SGD [1] to DPO training on Qwen2.5-3B-Instruct with the Anthropic-HH dataset, enforcing (𝜀 = 16 , 𝛿 = 1/10 𝑛 )-DP, where 𝑛 is the number of training examples. Following prior work on DP fine-tuning of LLMs [8, 49, 79], we set the gradient clipping threshold to 1; further details are provided in Appendix D.1. After one epoch, the test set DPO objective is 0 .688 (vs. 0 .693 before training and 0 .62 for non-private DPO). The reward margin drops to 0 .01 (vs. 0 .39 non-private), and reward accuracy decreases to 55% (vs. 64% non-private). Varying the clipping threshold in 
+
+{0.1, 1, 10 , 100 } yields no clear improvement, indicating that DP-SGD fails to capture meaningful preference signals even at the relatively weak privacy level 𝜀 = 16. Besides undesirable alignment performance, DP-SGD suffers from several limitations that significantly limit its practical deploy-ment for large-scale LLM alignment. 
+
+Memory barrier. Existing large-scale training frameworks, such as FSDP [83], shard parameters, gradients, and optimizer states across GPUs, which is incompatible with per-example gradient clipping. Supporting per-example clipping requires pure data paral-lelism, forcing each GPU to hold full model weights, gradients, and optimizer states. For Qwen2.5-3B, this already exceeds 80 GB per GPU, while larger models trigger out-of-memory failures on our hardware. Similar bottlenecks have been reported in prior work on private LLM fine-tuning [8, 67, 81]. 
+
+Low efficiency. DP-SGD also suffers from poor computational effi-ciency. Per-example gradient operation prevents effective batching, substantially increasing training time. On our hardware, DP-SGD training for Qwen2.5-3B takes 6 × longer than standard DPO. Similar results are observed on Llama3.2-3B-Instruct and Pythia-2.8B models, indicating that off-the-shelf DP-SGD is unsuitable for aligning LLMs under current privacy accounting and optimiza-tion techniques. Our subsequent evaluations therefore compare 
+
+PrivDPO mainly with stronger baselines, specifically, variants of 
+
+PrivDPO that also satisfy 𝜖 -preference privacy. 
+
+## 5.3 Main Results 
+
+We compare the alignment performance of PrivDPO against its privacy-preserving competitors, as well as against the standard DPO approach (with standard, non-private SFT) as presented in [61], to evaluate the reward gap between private and standard versions. In each experiment, following common practice in standard DPO training [53, 61], we train the LLM for one epoch on the training set and evaluate the reward metrics on the test set. Due to the scale of the experiments, we mainly evaluate performance using a single random seed, fixed to 0 across all runs. Preliminary experiments with additional seeds show low variability, with standard deviation                
+
+> 10 Private Direct Preference Optimization for LLM Alignment PrivDPO Piecewise Duchi RR DPO 0510 15 0.0 0.1 0.2 0.3 0.4
+> Reward Margin
+> (a) Reward Margin ( ↑)0510 15 57 59 61 63 65
+> Reward Acc. (b) Reward Accuracy ( ↑)0510 15 0.62 0.64 0.66 0.68 0.70
+> DPO Objective (c) DPO Objective ( ↓)
+
+Figure 2: Training dynamics on Anthropic-HH for Qwen2.5-3B-Instruct with privacy budget 𝜖 = 1. The x-axis denotes the number of training samples processed ( ×10 4). Table 1: Performance comparison on Anthropic-HH dataset                                                                                                            
+
+> Privacy Budget Method Pythia-2.8B Qwen2.5-3B-Instruct Llama3.2-3B-Instruct RM (↑)RA (↑)LDPO (↓)RM (↑)RA (↑)LDPO (↓)RM (↑)RA (↑)LDPO (↓)
+> 𝜖 =0.5RR 0.026 54.6% 0.69 0.040 58.6% 0.68 0.045 59.0% 0.68 Duchi 0.068 55.3% 0.69 0.083 56.9% 0.68 0.092 56.6% 0.68 Piecewise 0.038 53.6% 0.69 0.041 56.1% 0.68 0.068 56.5% 0.68
+> PrivDPO 0.108 56.9% 0.67 0.154 59.4% 0.65 0.186 61.1% 0.65
+> 𝜖 =1RR 0.063 58.8% 0.67 0.109 60.3% 0.65 0.143 62.7% 0.64 Duchi 0.103 56.7% 0.68 0.138 59.5% 0.66 0.172 60.9% 0.66 Piecewise 0.082 56.1% 0.68 0.115 59.2% 0.66 0.145 60.6% 0.65
+> PrivDPO 0.156 59.8% 0.65 0.316 63.6% 0.63 0.359 64.9% 0.62
+> Non Private DPO 0.309 62.5% 0.63 0.393 64.8% 0.62 0.487 66.2% 0.60
+
+around 1% for RA and LDPO , and less than 5% for RM, and are there-fore omitted for brevity. We report results under two representative preference privacy budgets, 𝜖 = 0.5 and 𝜖 = 1, which provide strong and practically meaningful privacy guarantees. Figure 2 illustrates the training dynamics on the Anthropic-HH dataset using Qwen2.5-3B-Instruct under a preference privacy budget of 𝜖 = 1. We observe that PrivDPO achieves convergence comparable to the non-private DPO method across all three metrics, while significantly outperforming the privacy-preserving baselines. The evaluation results on all three benchmarks are reported in Tables 1, 8 (in Appendix D.2), and 9 (in Appendix D.2), respec-tively. All three sets of results show similar trends, from which we make the following observations. First, PrivDPO consistently and significantly outperforms all privacy-preserving competitors on all metrics, across different privacy budgets, LLMs, and benchmarks. Specifically, for the most important metric, reward margin, which reflects the degree to which the model prefers human-preferred responses over non-preferred ones, PrivDPO typically achieves a 2-3 × larger margin. This indicates that PrivDPO enables the model to move more effectively toward human-aligned behavior. We also observe clear improvements in reward accuracy and the DPO ob-jective value, suggesting that PrivDPO generally converges more stably and learns human preferences more accurately than compet-ing methods. Second, PrivDPO consistently outperforms both ad-vanced baselines, Duchi and Piecewise, across all evaluated settings; meanwhile, all structured mechanisms substantially outperform the naive RR baseline, which suffers severe utility degradation due to biased perturbation. Third, the performance of PrivDPO is com-parable to that of standard DPO. For a moderate yet strong privacy 
+
+Table 2: Win rate of PrivDPO on Anthropic-HH (%)                    
+
+> PrivDPO vs. Pythia-2.8B Qwen2.5-3B Llama3.2-3B
+> PrivSFT 61.3 74.5 72.8 RR 57.7 69.6 63.5 Duchi 56.1 60.1 58.6 Piecewise 58.3 66.7 58.1 DPO 40.2 48.7 42.7
+
+budget of 𝜖 = 1, PrivDPO achieves results close to the non-private DPO, suggesting that PrivDPO preserves alignment utility while providing meaningful preference privacy protection. For a stricter privacy budget of 𝜖 = 0.5, the results remain competitive, although a small performance gap exists, representing the cost of privacy. Improving utility under such stringent privacy guarantees is an interesting direction for future work. We further evaluate the privacy-utility trade-off on Qwen2.5-3B-Instruct over Anthropic-HH with 𝜖 ∈ { 0.5, 1, 1.5, 2}, as shown in Figure 3. This experiment is limited to one representative model and dataset due to the cost of LLM training. The results show that 
+
+PrivDPO improves steadily as the privacy budget increases and remains consistently stronger than all baselines. 
+
+## 5.4 Comparison of Text Generation Quality 
+
+We evaluate generation quality using LLM-as-a-judge [61, 84] win rates at 𝜖 = 0.5. Responses are sampled with the vLLM frame-work [47] using temperature 0 .7 and repetition penalty 1 .1, and GPT-4.1 judges response pairs following the DPO evaluation pipeline [61]. Each evaluation input consists of a prompt 𝑥 and a pair of responses                
+
+> 11 Yangfan Jiang, Fei Wei, Ergute Bao, Xiaokui Xiao, Yaliang Li, and Bolin Ding PrivDPO Piecewise Duchi RR Non-Priv. 0.5 1.0 1.5 2.0 0.0 0.1 0.2 0.3 0.4
+> Reward Margin
+> (a) Reward Margin ( ↑)0.5 1.0 1.5 2.0 57 60 63 66
+> Reward Acc. (b) Reward Accuracy ( ↑)0.5 1.0 1.5 2.0 0.62 0.64 0.66 0.68
+> DPO Objective (c) DPO Objective ( ↓)
+
+Figure 3: Varying privacy budgets ( 𝜖 ) on Anthropic-HH for Qwen2.5-3B-Instruct. The x-axis denotes the privacy budget. Table 3: Empirical memorization advantage (%)                   
+
+> Methods Anthropic-HH TL;DR UltraFeedback
+> PrivDPO 0.01 0.51 0.85 RR 0.17 0.55 0.87 Duchi 0.21 0.18 0.14 Piecewise 0.15 0.39 0.06 DPO 9.76 7.36 9.58
+
+𝑦 and 𝑦 ′ generated by the LLMs trained with PrivDPO and its com-petitors, respectively. The judge model determines which response is better according to task-specific criteria. For Anthropic-HH, the evaluation focuses on helpfulness and harmlessness; for TL;DR, on precision and conciseness; and for UltraFeedback, on instruction-following, truthfulness, honesty, and overall helpfulness. The win rate comparisons on all three datasets are reported in Tables 2, 5 (in Appendix D.2), and 6 (in Appendix D.2). The observed trends are consistent with the reward-based results presented in the previous section, from which we make the following observa-tions. First, PrivDPO significantly outperforms PrivSFT, indicating that it effectively learns human preferences from the DPO dataset while provably protecting individual preference information. Sec-ond, PrivDPO demonstrates a clear advantage over all competitors, achieving win rate around or above 58% in most cases. Finally, re-sponses generated by LLMs trained by PrivDPO are comparable to those from the standard DPO method, achieving competitive win rates above 47% in most cases and exceeding 40% across all cases. 
+
+## 5.5 Evaluation of Memorization Advantage 
+
+We include a simple empirical attack as a sanity check to evaluate whether alignment training (via DPO or PrivDPO ) makes preference labels more exploitable on training examples. The attacker predicts the preferred response by comparing model-derived scores for the two candidates; implementation details are in Appendix D.3. Since preference signals may be partially inferred even without access to the data, raw attack accuracy is not interpreted as privacy leakage. Instead, we report the memorization advantage (denoted MemAdv) that isolates the attacker’s additional advantage on train-ing pairs beyond prior and generalization. Let 𝜋 𝜃 denote the aligned model and 𝜋 prior a prior model not trained on preference labels (the base pretrained model in our experiments). Let 𝐴 (𝜋, 𝑆 ) be the attack success rate on split 𝑆 ∈ { train , test }. We define MemAdv as 
+
+(𝐴 (𝜋 𝜃 , train ) − 𝐴 (𝜋 prior , train )) − ( 𝐴 (𝜋 𝜃 , test ) − 𝐴 (𝜋 prior , test )) .
+
+Intuitively, the first term captures additional preference informa-tion revealed on seen examples, while the second removes gains attributable to generalization. Thus, a larger MemAdv indicates disproportionate improvement on training pairs, consistent with memorization of private preference signals; a small MemAdv sug-gests limited additional advantage on training pairs beyond what is already achievable by the prior and by generalization. Table 3 reports MemAdv for PrivDPO and its competitors under privacy budget 𝜖 = 0.5; the 𝜖 = 1 results are reported in Table 7 in Appendix D.3. We omit DP-SGD from the table because it is evaluated only as a standard-DP sanity baseline under a different privacy regime and is not competitive or scalable in our DPO setting. Standard DPO shows a clear memorization advantage, whereas all private methods yield substantially smaller values. PrivDPO 
+
+remains near zero across datasets and privacy budgets, suggesting limited additional leakage of training preference labels beyond what is already inferable from the prior model and generalization. RR exhibits similar behavior under the same preference-privacy guarantee, while Duchi and Piecewise sometimes produce smaller MemAdv because they inject stronger scalar perturbations than necessary for our preference-privacy notion. 
+
+## 5.6 Scalability Analysis 
+
+We evaluate scalability in terms of alignment performance and train-ing efficiency, with all experiments conducted on the Anthropic-HH dataset with a fixed privacy budget of 𝜖 = 0.5. To isolate the effect of model size from confounding factors such as model architecture and pre-training data distribution, we perform the scalability anal-ysis using models from the Qwen2.5 family, which share a similar architecture and pre-training corpus [68]. Results for reward metrics and win rates are reported in Table 4 and Figure 4(a), respectively. The results show that PrivDPO scales effectively to models with up to 32B parameters, consistently out-performing the representative RR baseline and achieving win rates above 70% against the PrivSFT method, indicating strong alignment performance and meaningful preference learning. For the training efficiency analysis, we compare the training time of PrivDPO with standard DPO. Since PrivDPO only perturbs the DPO objective, it can serve as a direct drop-in replacement within any accelerated LLM training framework, benefiting from the underlying optimizations. The results in Figure 4(b) demonstrate that PrivDPO achieves preference privacy while introducing only a negligible additional cost in training time. 
+
+> 12 Private Direct Preference Optimization for LLM Alignment
+
+Table 4: Performance on Anthropic-HH across model sizes                                            
+
+> Model Size Method RM (↑)RA (↑)LDPO (↓)3B RR 0.040 58.6% 0.68
+> PrivDPO 0.154 59.4% 0.65
+> 7B RR 0.085 58.9% 0.67
+> PrivDPO 0.383 63.2% 0.64
+> 14B RR 0.081 59.1% 0.67
+> PrivDPO 0.388 65.6% 0.62
+> 32B RR 0.056 55.5% 0.68
+> PrivDPO 0.358 65.2% 0.62 3B 7B 14B 32B
+> Model Size
+> 50 60 70 80 90
+> Win Rate (%)
+> vs PrivSFT vs RR
+> (a) Win Rate of PrivDPO 3B 7B 14B 32B
+> Model Size
+> 10 0
+> 10 1
+> 10 2
+> Training Time
+> DPO PrivDPO (b) Training Time (hours)
+
+Figure 4: Win rate and training time across model sizes. 
+
+## 6 Related Work 
+
+Privacy risks in LLMs have been widely studied [72], and it is now well established that privacy leakage in LLMs is a practical concern. Such risks include membership inference and memorization [14, 16, 36], as well as reconstruction attacks [15, 56]. Recent work has also highlighted privacy issues in LLM alignment [9, 32]. To mitigate these risks, privacy-preserving techniques for LLM training have been extensively studied. However, most existing approaches focus on supervised fine-tuning under DP guarantees [8, 49, 79], rather than on LLM alignment. Recent efforts have also investigated pre-training LLMs with DP [65], but mainly focus on a relatively small-scale model with around 1B parameters. In the context of LLM alignment, only a few recent works study privacy-preserving methods, and most consider DP [17, 34, 38, 77, 78] or theoretical aspects [37, 80, 82]. Existing DP-based align-ment methods [17, 77, 78] are typically applied to small models such as RoBERTa or GPT-2, with million-scale parameters. As our analysis and experiments show, these approaches become overly restrictive and impractical when extended to billion-parameter LLMs. Theoretical works focus on sample complexity [37], lower bounds [80], or convergence [82], offering limited practical insights for large-scale LLM alignment. In addition, some studies aim to en-sure privacy through pre-processing or post-processing rather than during alignment training. For example, Yu et al. [78] generates synthetic alignment datasets with DP guarantees but only for spe-cific instruction-following tasks; Hou et al. [38] uses a DPO-based DP data generator in a federated setting, focusing on synthetic data generation rather than ensuring DP within DPO optimization; and Goel et al. [34] applies model editing at inference time to achieve DP guarantees. These approaches are orthogonal to ours, which develops a fully end-to-end privacy-preserving optimization frame-work for LLM alignment. Overall, existing methods either target narrow task settings or focus on small-scale models, lack strong evidence for more general LLM alignment in practical settings. Several recent works study privacy in preference alignment un-der complementary assumptions. Zhou et al. [85] formulate private preference optimization using the exponential mechanism, which provides a clean theoretical construction but is difficult to instan-tiate directly for billion-parameter LLM training. Weng et al. [76] analyze private and robust alignment under a finite hypothesis class assumption, where the output model is selected from a finite candidate set rather than optimized directly in a large parameter space. Zhang et al. [80] study user-level private PPO-style RLHF, which targets a different alignment paradigm from the DPO set-ting considered here. These works provide important theoretical insights, but are complementary to our goal of designing a scalable DPO optimizer under preference privacy. Another closely related line studies preference-level privacy in alignment [69], proposing a PATE-based framework [51, 60] combined with label-DP mechanisms [13, 30, 33]. However, their method requires multi-stage training that limits scalability. More-over, their pipeline uses a subset of the training data for non-private SFT, which is inconsistent with our definition of preference privacy and does not ensure the same 𝜖 -preference privacy guarantee. In contrast, our approach directly modifies the core DPO optimizer to enforce end-to-end preference privacy, enabling efficient training of production-scale LLMs on large real-world datasets. Finally, several DPO variants have been proposed for LLM align-ment, including KTO [31], IPO [4], and SimPO [53]. Our privacy analysis depends on the exact form of the standard DPO objective and thus does not directly extend to these variants. Developing privacy-preserving mechanisms for these DPO variants would be an interesting direction for future work. 
+
+## 7 Conclusion 
+
+This paper shows that aligning production-scale LLMs via DPO under strong preference privacy guarantees is practical. Across multiple alignment benchmarks and model families, we demon-strate that it is possible to achieve performance comparable to standard non-private DPO while enforcing a strict preference pri-vacy constraint. These results are enabled by PrivDPO , a simple yet effective method that injects carefully calibrated randomness into the DPO process to preserve utility while providing formal prefer-ence privacy. PrivDPO represents a practical step toward deploying privacy-preserving RLHF methods in real-world systems. Several directions remain open. Future work includes extending 
+
+PrivDPO to other alignment objectives and post-training methods, moving from record-level to user-level preference privacy, explor-ing stronger privacy mechanisms and compositions, and adapting preference privacy to multi-turn or interactive feedback settings. 
+
+> 13
+
+Yangfan Jiang, Fei Wei, Ergute Bao, Xiaokui Xiao, Yaliang Li, and Bolin Ding 
+
+## References 
+
+[1] Martin Abadi, Andy Chu, Ian Goodfellow, H Brendan McMahan, Ilya Mironov, Kunal Talwar, and Li Zhang. 2016. Deep learning with differential privacy. In 
+
+CCS . 308–318. [2] Marah Abdin, Jyoti Aneja, Harkirat Behl, Sébastien Bubeck, Ronen Eldan, Suriya Gunasekar, Michael Harrison, Russell J Hewett, Mojan Javaheripi, Piero Kauff-mann, et al. 2024. Phi-4 technical report. arXiv preprint arXiv:2412.08905 (2024). [3] Armen Aghajanyan, Sonal Gupta, and Luke Zettlemoyer. 2021. Intrinsic Dimen-sionality Explains the Effectiveness of Language Model Fine-Tuning. In ACL .7319–7328. [4] Mohammad Gheshlaghi Azar, Zhaohan Daniel Guo, Bilal Piot, Remi Munos, Mark Rowland, Michal Valko, and Daniele Calandriello. 2024. A general theoretical paradigm to understand learning from human preferences. In AISTATS . 4447– 4455. [5] Yuntao Bai, Andy Jones, Kamal Ndousse, Amanda Askell, Anna Chen, Nova DasSarma, Dawn Drain, Stanislav Fort, Deep Ganguli, Tom Henighan, et al. 2022. Training a helpful and harmless assistant with reinforcement learning from human feedback. arXiv preprint arXiv:2204.05862 (2022). [6] Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kernion, Andy Jones, Anna Chen, Anna Goldie, Azalia Mirhoseini, Cameron McKinnon, et al. 2022. Constitutional ai: Harmlessness from ai feedback. arXiv preprint arXiv:2212.08073 (2022). [7] Borja Balle and Yu-Xiang Wang. 2018. Improving the gaussian mechanism for differential privacy: Analytical calibration and optimal denoising. In ICML .394–403. [8] Ergute Bao, Yangfan Jiang, Fei Wei, Xiaokui Xiao, Zitao Li, Yaliang Li, and Bolin Ding. 2025. Unlocking the Power of Differentially Private Zeroth-order Optimization for Fine-tuning LLMs. In USENIX Security . 1569–1588. [9] Federico Barbero, Xiangming Gu, Christopher A Choquette-Choo, Chawin Sitawarin, Matthew Jagielski, Itay Yona, Petar Veličković, Ilia Shumailov, and Jamie Hayes. 2025. Extracting alignment data in open models. arXiv preprint arXiv:2510.18554 (2025). [10] Stella Biderman, Hailey Schoelkopf, Quentin Gregory Anthony, Herbie Bradley, Kyle O’Brien, Eric Hallahan, Mohammad Aflah Khan, Shivanshu Purohit, USVSN Sai Prashanth, Edward Raff, et al. 2023. Pythia: A suite for analyzing large language models across training and scaling. In ICML . 2397–2430. [11] Ralph Allan Bradley and Milton E Terry. 1952. Rank analysis of incomplete block designs: I. the method of paired comparisons. Biometrika 39, 3/4 (1952), 324–345. [12] Sébastien Bubeck, Varun Chandrasekaran, Ronen Eldan, Johannes Gehrke, Eric Horvitz, Ece Kamar, Peter Lee, Yin Tat Lee, Yuanzhi Li, Scott Lundberg, et al. 2023. Sparks of artificial general intelligence: Early experiments with gpt-4. 
+
+arXiv preprint arXiv:2303.12712 (2023). [13] Róbert Istvan Busa-Fekete, Andres Munoz Medina, Umar Syed, and Sergei Vas-silvitskii. 2023. Label differential privacy and private training data release. In 
+
+ICML . 3233–3251. [14] Nicholas Carlini, Daphne Ippolito, Matthew Jagielski, Katherine Lee, Florian Tramèr, and Chiyuan Zhang. 2023. Quantifying memorization across neural language models. In ICLR .[15] Nicholas Carlini, Chang Liu, Úlfar Erlingsson, Jernej Kos, and Dawn Song. 2019. The secret sharer: Evaluating and testing unintended memorization in neural networks. In USENIX Security . 267–284. [16] Nicholas Carlini, Florian Tramèr, Eric Wallace, Matthew Jagielski, Ariel Herbert-Voss, Katherine Lee, Adam Roberts, Tom Brown, Dawn Song, Ulfar Erlingsson, et al. 2021. Extracting training data from large language models. In USENIX Security . 2633–2650. [17] Keyu Chen, Hao Tang, Qinglin Liu, and Yizhao Xu. 2025. Improved Algorithms for Differentially Private Language Model Alignment. arXiv preprint arXiv:2505.08849 
+
+(2025). [18] Paul F Christiano, Jan Leike, Tom B Brown, Miljan Martic, Shane Legg, and Dario Amodei. 2017. Deep reinforcement learning from human preferences. In NeurIPS .4302–4310. [19] Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Marcel Blistein, Ori Ram, Dan Zhang, Evan Rosen, et al. 2025. Gemini 2.5: Pushing the frontier with advanced reasoning, multi-modality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 (2025). [20] Ganqu Cui, Lifan Yuan, Ning Ding, Guanming Yao, Bingxiang He, Wei Zhu, Yuan Ni, Guotong Xie, Ruobing Xie, Yankai Lin, et al. 2024. ULTRAFEEDBACK: Boosting Language Models with Scaled AI Feedback. In International Conference on Machine Learning . PMLR, 9722–9744. [21] Soham De, Leonard Berrada, Jamie Hayes, Samuel L Smith, and Borja Balle. 2022. Unlocking high-accuracy differentially private image classification through scale. 
+
+arXiv preprint arXiv:2204.13650 (2022). [22] Ning Ding, Yujia Qin, Guang Yang, Fuchao Wei, Zonghan Yang, Yusheng Su, Shengding Hu, Yulin Chen, Chi-Min Chan, Weize Chen, et al. 2023. Parameter-efficient fine-tuning of large-scale pre-trained language models. Nature machine intelligence 5, 3 (2023), 220–235. [23] Irit Dinur and Kobbi Nissim. 2003. Revealing information while preserving privacy. In PODS . 202–210. [24] Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. 2024. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 (2024). [25] John C Duchi, Michael I Jordan, and Martin J Wainwright. 2018. Minimax optimal procedures for locally private estimation. J. Amer. Statist. Assoc. 113, 521 (2018), 182–201. [26] Cynthia Dwork, Krishnaram Kenthapadi, Frank McSherry, Ilya Mironov, and Moni Naor. 2006. Our data, ourselves: Privacy via distributed noise generation. In EUROCRYPT . 486–503. [27] Cynthia Dwork, Frank McSherry, Kobbi Nissim, and Adam Smith. 2006. Cali-brating noise to sensitivity in private data analysis. In Theory of cryptography conference . 265–284. [28] Cynthia Dwork and Kobbi Nissim. 2004. Privacy-preserving datamining on vertically partitioned databases. In CRYPTO . 528–544. [29] Úlfar Erlingsson, Vasyl Pihur, and Aleksandra Korolova. 2014. Rappor: Random-ized aggregatable privacy-preserving ordinal response. In CCS . 1054–1067. [30] Hossein Esfandiari, Vahab Mirrokni, Umar Syed, and Sergei Vassilvitskii. 2022. Label differential privacy via clustering. In AISTATS . 7055–7075. [31] Kawin Ethayarajh, Winnie Xu, Niklas Muennighoff, Dan Jurafsky, and Douwe Kiela. 2024. Model alignment as prospect theoretic optimization. In ICML . 12634– 12651. [32] Qizhang Feng, Siva Rajesh Kasa, SANTHOSH KUMAR KASA, Hyokun Yun, Choon Hui Teo, and Sravan Babu Bodapati. 2025. Exposing Privacy Gaps: Mem-bership Inference Attack on Preference Data for LLM Alignment. In AISTATS .5221–5229. [33] Badih Ghazi, Noah Golowich, Ravi Kumar, Pasin Manurangsi, and Chiyuan Zhang. 2021. Deep learning with label differential privacy. In NeurIPS . 27131– 27145. [34] Anmol Goel, Yaxi Hu, Iryna Gurevych, and Amartya Sanyal. 2025. Differentially Private Steering for Large Language Model Alignment. In ICLR .[35] David Gross. 2011. Recovering low-rank matrices from few coefficients in any basis. IEEE Transactions on Information Theory 57, 3 (2011), 1548–1566. [36] Jamie Hayes, Marika Swanberg, Harsh Chaudhari, Itay Yona, Ilia Shumailov, Milad Nasr, Christopher A Choquette-Choo, Katherine Lee, and A Feder Cooper. 2025. Measuring memorization in language models via probabilistic extraction. In NAACL . 9266–9291. [37] Yi He and Xingyu Zhou. 2024. On the Sample Complexity of Differentially Private Policy Optimization. In NeurIPS .[38] Charlie Hou, Mei-Yu Wang, Yige Zhu, Daniel Lazar, and Giulia Fanti. 2025. Private Federated Learning using Preference-Optimized Synthetic Data. In ICML .[39] Edward J Hu, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. 2022. LoRA: Low-Rank Adaptation of Large Language Models. In ICLR .[40] Binyuan Hui, Jian Yang, Zeyu Cui, Jiaxi Yang, Dayiheng Liu, Lei Zhang, Tianyu Liu, Jiajun Zhang, Bowen Yu, Keming Lu, et al. 2024. Qwen2.5-coder technical report. arXiv preprint arXiv:2409.12186 (2024). [41] Albert Q Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, Blanche Savary, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Emma Bou Hanna, Florian Bressand, et al. 2024. Mixtral of experts. arXiv preprint arXiv:2401.04088 (2024). [42] Yangfan Jiang, Xinjian Luo, Yuncheng Wu, Xiaokui Xiao, and Beng Chin Ooi. 2024. Protecting label distribution in cross-silo federated learning. In IEEE S&P .4828–4847. [43] Daniel Kifer and Bing-Rong Lin. 2010. Towards an axiomatization of statistical privacy and utility. In PODS . 147–158. [44] Daniel Kifer and Bing-Rong Lin. 2012. An axiomatic view of statistical privacy and utility. Journal of Privacy and Confidentiality 4, 1 (2012). [45] Daniel Kifer and Ashwin Machanavajjhala. 2014. Pufferfish: A framework for mathematical privacy definitions. TODS 39, 1 (2014), 1–36. [46] Diederik P. Kingma and Jimmy Ba. 2015. Adam: A Method for Stochastic Opti-mization. In ICLR .[47] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph Gonzalez, Hao Zhang, and Ion Stoica. 2023. Efficient memory management for large language model serving with pagedattention. In 
+
+SOSP . 611–626. [48] Chunyuan Li, Heerad Farkhoor, Rosanne Liu, and Jason Yosinski. 2018. Measuring the Intrinsic Dimension of Objective Landscapes. In ICLR .[49] Xuechen Li, Florian Tramèr, Percy Liang, and Tatsunori Hashimoto. 2022. Large Language Models Can Be Strong Differentially Private Learners. In ICLR .[50] Paul Pu Liang, Chiyu Wu, Louis-Philippe Morency, and Ruslan Salakhutdinov. 2021. Towards understanding and mitigating social biases in language models. In ICML . 6565–6576. [51] Mani Malek, Ilya Mironov, Karthik Prasad, Igor Shilov, and Florian Tramèr. 2021. Antipodes of Label Differential Privacy: PATE and ALIBI. In NeurIPS .[52] Sadhika Malladi, Tianyu Gao, Eshaan Nichani, Alex Damian, Jason D Lee, Danqi Chen, and Sanjeev Arora. 2023. Fine-tuning language models with just forward passes. In NeurIPS . 53038–53075. 14 Private Direct Preference Optimization for LLM Alignment 
+
+[53] Yu Meng, Mengzhou Xia, and Danqi Chen. 2024. SimPO: simple preference optimization with a reference-free reward. In NeurIPS . 124198–124235. [54] Ilya Mironov. 2017. Rényi differential privacy. In CSF . 263–275. [55] Ilya Mironov, Kunal Talwar, and Li Zhang. 2019. Rényi Differential Privacy of the Sampled Gaussian Mechanism. arXiv preprint (2019). [56] Milad Nasr, Javier Rando, Nicholas Carlini, Jonathan Hayase, Matthew Jagiel-ski, A Feder Cooper, Daphne Ippolito, Christopher A Choquette-Choo, Florian Tramèr, and Katherine Lee. 2025. Scalable extraction of training data from aligned, production language models. In ICLR .[57] OpenAI. 2025. GPT-5 System Card. https://cdn.openai.com/gpt-5-system-card. pdf. [58] OpenAI. 2025. OpenAI Platform. https://platform.openai.com/docs/guides/direct-preference-optimization. [59] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. 2022. Training language models to follow instructions with human feedback. In 
+
+NeurIPS . 27730–27744. [60] Nicolas Papernot, Shuang Song, Ilya Mironov, Ananth Raghunathan, Kunal Talwar, and Ulfar Erlingsson. 2018. Scalable Private Learning with PATE. In 
+
+ICLR .[61] Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D Manning, and Chelsea Finn. 2023. Direct preference optimization: your language model is secretly a reward model. In NeurIPS . 53728–53741. [62] John Schulman, Sergey Levine, Pieter Abbeel, Michael Jordan, and Philipp Moritz. 2015. Trust region policy optimization. In ICML . 1889–1897. [63] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 2017. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 
+
+(2017). [64] Reza Shokri, Marco Stronati, Congzheng Song, and Vitaly Shmatikov. 2017. Membership inference attacks against machine learning models. In IEEE S&P .3–18. [65] Amer Sinha, Thomas Mesnard, Ryan McKenna, Daogao Liu, Christopher A Choquette-Choo, Yangsibo Huang, Da Yu, George Kaissis, Zachary Charles, Ruibo Liu, et al. 2025. VaultGemma: A Differentially Private Gemma Model. 
+
+arXiv preprint arXiv:2510.15001 (2025). [66] Nisan Stiennon, Long Ouyang, Jeff Wu, Daniel M Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, and Paul Christiano. 2020. Learning to summarize from human feedback. In NeurIPS . 3008–3021. [67] Xinyu Tang, Ashwinee Panda, Milad Nasr, Saeed Mahloujifar, and Prateek Mit-tal. 2025. Private Fine-tuning of Large Language Models with Zeroth-order Optimization. Transactions on Machine Learning Research (2025). [68] Qwen Team. 2024. Qwen2.5 Technical Report. arXiv preprint arXiv:2412.15115 
+
+(2024). [69] Noel Teku, Fengwei Tian, Payel Bhattacharjee, Souradip Chakraborty, Am-rit Singh Bedi, and Ravi Tandon. 2025. Props: Progressively private self-alignment of large language models. arXiv preprint arXiv:2508.06783 (2025). [70] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothée Lacroix, Baptiste Rozière, Naman Goyal, Eric Hambro, Faisal Azhar, et al. 2023. Llama: Open and efficient foundation language models. arXiv preprint arXiv:2302.13971 (2023). [71] Florian Tramer and Dan Boneh. 2021. Differentially Private Learning Needs Better Features (or Much More Data). In ICLR .[72] Florian Tramèr, Gautam Kamath, and Nicholas Carlini. 2024. Position: consider-ations for differentially private learning with large-scale public pretraining. In 
+
+ICML . 48453–48467. [73] Ning Wang, Xiaokui Xiao, Yin Yang, Jun Zhao, Siu Cheung Hui, Hyejin Shin, Junbum Shin, and Ge Yu. 2019. Collecting and analyzing multidimensional data with local differential privacy. In ICDE . 638–649. [74] Tianhao Wang, Jeremiah Blocki, Ninghui Li, and Somesh Jha. 2017. Locally differentially private protocols for frequency estimation. In USENIX Security 17 .729–745. [75] Stanley L Warner. 1965. Randomized response: A survey technique for eliminat-ing evasive answer bias. J. Amer. Statist. Assoc. 60, 309 (1965), 63–69. [76] Wenqian Weng, Yi He, and Xingyu Zhou. 2025. Improved Bounds for Private and Robust Alignment. arXiv preprint arXiv:2512.23816 (2025). [77] Fan Wu, Huseyin A Inan, Arturs Backurs, Varun Chandrasekaran, Janardhan Kulkarni, and Robert Sim. 2024. Privately aligning language models with rein-forcement learning. In ICLR .[78] Da Yu, Peter Kairouz, Sewoong Oh, and Zheng Xu. 2024. Privacy-preserving instructions for aligning large language models. In ICML . 57480–57506. [79] Da Yu, Saurabh Naik, Arturs Backurs, Sivakanth Gopi, Huseyin A Inan, Gautam Kamath, Janardhan Kulkarni, Yin Tat Lee, Andre Manoel, Lukas Wutschitz, et al. 2022. Differentially Private Fine-tuning of Language Models. In ICLR .[80] Jiaming Zhang, Mingxi Lei, Meng Ding, Mengdi Li, Zihang Xiang, Difei Xu, Jinhui Xu, and Di Wang. 2025. Towards user-level private reinforcement learning with human feedback. arXiv preprint arXiv:2502.17515 (2025). [81] Liang Zhang, Bingcong Li, Kiran Koshy Thekumparampil, Sewoong Oh, and Niao He. 2024. DPZero: private fine-tuning of language models without back-propagation. In ICML . 59210–59246. [82] Yizhou Zhang, Kishan Panaganti, Laixi Shi, Juba Ziani, and Adam Wierman. 2025. KL-regularization Itself is Differentially Private in Bandits and RLHF. arXiv preprint arXiv:2505.18407 (2025). [83] Yanli Zhao, Andrew Gu, Rohan Varma, Liang Luo, Chien-Chin Huang, Min Xu, Less Wright, Hamid Shojanazeri, Myle Ott, Sam Shleifer, et al. 2023. PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel. PVLDB 16, 12 (2023), 3848–3860. [84] Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric P Xing, et al. 2023. Judging LLM-as-a-judge with MT-bench and Chatbot Arena. In NeurIPS . 46595–46623. [85] Xingyu Zhou, Yulian Wu, Wenqian Weng, and Francesco Orabona. 2025. Square 
+
+𝜒 PO: Differentially Private and Robust 𝜒 2-Preference Optimization in Offline Direct Alignment. In ICML . 79389–79413. [86] Yuqing Zhu and Yu-Xiang Wang. 2019. Poisson subsampled rényi differential privacy. In ICML . 7634–7642. [87] Daniel M Ziegler, Nisan Stiennon, Jeffrey Wu, Tom B Brown, Alec Radford, Dario Amodei, Paul Christiano, and Geoffrey Irving. 2019. Fine-tuning language models from human preferences. arXiv preprint arXiv:1909.08593 (2019). 
+
+## A First-Cut Solutions 
+
+We present two DP-based first-cut solutions that can be adapted for aligning LLMs using DPO with preference privacy. However, as discussed below, these approaches have fundamental technical limitations, as they were not specifically designed for DPO tasks under preference privacy constraints. 
+
+DP-SGD. The DP-SGD algorithm [1] achieves DP by injecting noise to gradients during training, and has been widely applied in deep learning tasks. In the context of LLMs, prior work [8, 49, 79] has mainly used DP-SGD to fine-tune small models (under 1B parame-ters, e.g., RoBERTa, GPT-2) on relatively simple datasets (e.g., senti-ment classification), which are less representative of production-scale LLM training for open-ended text generation. When applied to practical DPO-based LLM alignment, DP-SGD incurs substantial performance degradation, as shown in our theoretical analysis in Section 4.4 and empirical evaluation in Section 5.2. This is largely due to DP’s pessimistic assumption about the adversary, which enforces an overly strict privacy guarantee and require injecting large noise uniformly across all parameters. Such noise leads to a prohibitive Ω(√𝑑 ) error in the released model parameters [23]. 
+
+Randomized preference flipping. This approach is a label-DP-based solution that traces back to the classical randomized response (RR) technique [75]. For simple counting problems, RR can yield unbiased estimates through post-processing [74]. However, in the DPO setting, the final information revealed to a potential adversary is not a simple aggregate count, but rather the LLM parameters (or gradients) that encode preference information in a highly complex manner. Naively applying input-level RR followed by standard DPO produces biased gradients. Removing this bias requires exploiting the DPO-specific scalar structure, as PrivDPO does, rather than a simple post-processing of the flipped preferences. 
+
+## B Proofs B.1 Proof of Theorem 4.1 
+
+Proof. Denote by T the space of DPO triplets. Consider an arbitrary DPO training example 𝑡 = (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ) ∈ T , and let 𝑡 ′ =
+
+(𝑥, 𝑦 𝑙 , 𝑦 𝑤 ) be the preference neighbor of 𝑡 . We first establish the indistinguishability between the gradients computed on 𝑡 and 𝑡 ′.Let M : T ↦ → R denote the mechanism that maps an input DPO training example to the privatized gradient, corresponding to the 
+
+15 Yangfan Jiang, Fei Wei, Ergute Bao, Xiaokui Xiao, Yaliang Li, and Bolin Ding 
+
+randomized sub-process in lines 4-8 of Algorithm 1. Denote by 
+
+𝒗 := ∇𝜃 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 ) − ∇ 𝜃 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 )
+
+the preference axis associated with the pair of neighboring DPO training records 𝑡 and 𝑡 ′. We partition the output range R := R𝑑 
+
+into three disjoint subsets as follows: 
+
+𝑟 1 :=
+
+
+
+−𝛽 
+
+
+
+𝜓 − 1 − 1
+
+𝑒 𝜖 − 1
+
+
+
+𝒗 
+
+
+
+,𝑟 2 :=
+
+
+
+−𝛽 
+
+
+
+𝜓 + 1 − 𝑒 𝜖 − 2
+
+𝑒 𝜖 − 1
+
+
+
+𝒗 
+
+
+
+,𝑟 3 := R \ ( 𝑟 1 ∪ 𝑟 2) .
+
+We now consider the above output space case-by-case to bound the pdf ratio between M ( 𝑡 ) and M ( 𝑡 ′).
+
+Case 1: M (·) ∈ 𝑟 1. For the input DPO record 𝑡 , we have 
+
+∇𝜃 LDPO (𝑡 ) := ∇𝜃 LDPO (𝑡 ; 𝜋 𝜃 ; 𝜋 ref ) = −𝛽𝜓 𝒗 .
+
+The probability of M ( 𝑡 ) ∈ 𝑟 1 is: Pr 
+
+
+
+M ( 𝑡 ) = −𝛽 
+
+
+
+𝜓 − 1 − 1
+
+𝑒 𝜖 − 1
+
+
+
+𝒗 
+
+
+
+= Pr 
+
+
+
+M ( 𝑡 ) =
+
+
+
+1 − 1
+
+𝜓 (1 + 1
+
+𝑒 𝜖 − 1 )
+
+
+
+(− 𝛽𝜓 𝒗 )
+
+
+
+= Pr 
+
+
+
+M ( 𝑡 ) =
+
+
+
+1 − 1
+
+𝜓 (1 + 1
+
+𝑒 𝜖 − 1 )
+
+
+
+∇𝜃 LDPO (𝑡 )
+
+
+
+= Pr 
+
+
+
+˜𝑤 = 1 − 1
+
+𝜓 (1 + 1
+
+𝑒 𝜖 − 1 )
+
+
+
+= 1
+
+𝑒 𝜖 + 1 . (8) For the neighboring DPO record 𝑡 ′, we have: 
+
+𝜓 ′ = 𝜎 
+
+
+
+𝛽 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 )
+
+𝜋 ref (𝑦 𝑤 | 𝑥 ) − 𝛽 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 )
+
+𝜋 ref (𝑦 𝑙 | 𝑥 )
+
+
+
+= 1 − 𝜓, 
+
+and thus the randomized rescaling weight for input 𝑡 ′ is: ˜𝑤 ′ ←
+
+(
+
+1 + 11−𝜓 
+
+
+
+1 − 𝑒 𝜖 −2 
+
+> 𝑒 𝜖 −1
+
+
+
+, if 𝑢 ≤ 𝑒 𝜖   
+
+> 𝑒 𝜖 +1
+
+,
+
+1 − 11−𝜓 
+
+ 1 + 1 
+
+> 𝑒 𝜖 −1
+
+ , otherwise, where 𝑢 is sampled uniformly at random from [0, 1]. Note that for 
+
+𝑡 ′ = (𝑥, 𝑦 𝑙 , 𝑦 𝑤 ), we have 
+
+∇𝜃 LDPO (𝑡 ′; 𝜋 𝜃 ; 𝜋 ref ) = −𝛽𝜓 ′ (− 𝒗 ) = −𝛽 (1 − 𝜓 )(− 𝒗 ).
+
+Thus, the probability that M ( 𝑡 ′) ∈ 𝑟 1 is: Pr 
+
+
+
+M ( 𝑡 ′) = −𝛽 
+
+
+
+𝜓 − 1 − 1
+
+𝑒 𝜖 − 1
+
+
+
+𝒗 
+
+
+
+= Pr 
+
+
+
+M ( 𝑡 ′) = −𝛽 
+
+
+
+1 − 𝜓 + 1 − 𝑒 𝜖 − 2
+
+𝑒 𝜖 − 1
+
+
+
+(− 𝒗 )
+
+
+
+= Pr 
+
+
+
+M ( 𝑡 ′) =
+
+
+
+1 + 1
+
+𝜓 ′ (1 − 𝑒 𝜖 − 2
+
+𝑒 𝜖 − 1 )
+
+
+
+(− 𝛽 )(− 𝒗 )𝜓 ′
+
+
+
+= Pr 
+
+
+
+M ( 𝑡 ′) =
+
+
+
+1 + 1
+
+𝜓 ′ (1 − 𝑒 𝜖 − 2
+
+𝑒 𝜖 − 1 )
+
+
+
+∇𝜃 LDPO (𝑡 ′)
+
+
+
+= Pr 
+
+
+
+˜𝑤 ′ = 1 + 11 − 𝜓 (1 − 𝑒 𝜖 − 2
+
+𝑒 𝜖 − 1 )
+
+
+
+= 𝑒 𝜖 
+
+𝑒 𝜖 + 1 . (9) 
+
+Case 2: M (·) ∈ 𝑟 2. For the input DPO triple 𝑡 , we have Pr 
+
+
+
+M ( 𝑡 ) = −𝛽 
+
+
+
+𝜓 + 1 − 𝑒 𝜖 − 2
+
+𝑒 𝜖 − 1
+
+
+
+𝒗 
+
+
+
+= Pr 
+
+
+
+M ( 𝑡 ) =
+
+
+
+1 + 1
+
+𝜓 (1 − 𝑒 𝜖 − 2
+
+𝑒 𝜖 − 1 )
+
+
+
+(− 𝛽𝜓 𝒗 )
+
+
+
+= Pr 
+
+
+
+M ( 𝑡 ) =
+
+
+
+1 + 1
+
+𝜓 (1 − 𝑒 𝜖 − 2
+
+𝑒 𝜖 − 1 )
+
+
+
+∇𝜃 LDPO (𝑡 )
+
+
+
+= Pr 
+
+
+
+˜𝑤 = 1 + 1
+
+𝜓 (1 − 𝑒 𝜖 − 2
+
+𝑒 𝜖 − 1 )
+
+
+
+= 𝑒 𝜖 
+
+𝑒 𝜖 + 1 . (10) For 𝑡 ′, we have Pr 
+
+
+
+M ( 𝑡 ′) = −𝛽 
+
+
+
+𝜓 + 1 − 𝑒 𝜖 − 2
+
+𝑒 𝜖 − 1
+
+
+
+𝒗 
+
+
+
+= Pr 
+
+
+
+M ( 𝑡 ′) = −𝛽 
+
+
+
+1 − 𝜓 − 1 − 1
+
+𝑒 𝜖 − 1
+
+
+
+(− 𝒗 )
+
+
+
+= Pr 
+
+
+
+M ( 𝑡 ′) =
+
+
+
+1 − 1
+
+𝜓 ′ (1 + 1
+
+𝑒 𝜖 − 1 )
+
+
+
+(− 𝛽 )(− 𝒗 )𝜓 ′
+
+
+
+= Pr 
+
+
+
+M ( 𝑡 ′) =
+
+
+
+1 − 1
+
+𝜓 ′ (1 + 1
+
+𝑒 𝜖 − 1 )
+
+
+
+∇𝜃 LDPO (𝑡 ′)
+
+
+
+= Pr 
+
+
+
+˜𝑤 ′ = 1 − 11 − 𝜓 (1 + 1
+
+𝑒 𝜖 − 1 )
+
+
+
+= 1
+
+𝑒 𝜖 + 1 . (11) 
+
+Case 3: M (·) ∈ 𝑟 3. It is straightforward to verify that the outputs of M ( 𝑡 ) and M ( 𝑡 ′) never fall into 𝑟 3. Thus, for any 𝑟 ∈ 𝑟 3, we have Pr [M ( 𝑡 ) = 𝑟 ] = Pr [M ( 𝑡 ′) = 𝑟 ] = 0. 
+
+Putting it all together. Combining (8), (9), (10), and (11) yields 
+
+𝑒 −𝜖 ≤ Pr [M ( 𝑡 ) = 𝑟 ]
+
+Pr [M ( 𝑡 ′) = 𝑟 ] ≤ 𝑒 𝜖 
+
+for any 𝑟 ∈ R , which establishes the 𝜖 -preference privacy guar-antee of M. Finally, by the transformation invariance property of preference privacy (Proposition 3.2), Algorithm 1 also satisfies 
+
+𝜖 -preference privacy. This completes the proof. □
+
+## B.2 Proof of Theorem 4.2 
+
+We first present a variant of Bernstein’s inequality. The proof of Theorem 4.2 established on this lemma. 
+
+Lemma B.1 (Bernstein’s Inequality) . Let 𝑍 1, . . . , 𝑍 𝑚 be independent random variables with E[𝑍 𝑖 ] = 0, Í𝑚 𝑖 =1 Var (𝑍 𝑖 ) ≤ 𝑉 , and |𝑍 𝑖 | ≤ 𝑀 .For any 𝛾 ∈ ( 0, 1), we have 
+
+Pr 
+
+" 𝑚 ∑︁ 
+
+> 𝑖 =1
+
+𝑍 𝑖 ≤√︄ 2𝑉 log 2
+
+𝛾 + 𝑀 
+
+3 log 2
+
+𝛾 
+
+#
+
+≥ 1 − 𝛾 . 
+
+Proof. The standard Bernstein’s inequality states that for any 
+
+𝑡 > 0, it holds that Pr 
+
+" 𝑚 ∑︁ 
+
+> 𝑖 =1
+
+𝑍 𝑖 ≥ 𝑡 
+
+#
+
+≤ 2 exp − 
+
+> 12
+
+𝑡 2
+
+Í𝑚 𝑖 =1 E[𝑍 2 
+
+> 𝑖
+
+] + 13 𝑀𝑡 
+
+!
+
+. (12) To enforce the right hand side of (12) less or equal than 𝛾 , it suffices to let 𝑡 satisfy  
+
+> 12
+
+𝑡 2
+
+𝑉 + 13 𝑀𝑡 ≥ log 2
+
+𝛾 .
+
+Note that 𝑡 =√︃ 2𝑉 log 2 
+
+> 𝛾
+
++ 𝑀  
+
+> 3
+
+log 2 
+
+> 𝛾
+
+is a valid choice of 𝑡 that sat-isfies the above inequality. Substituting this choice of 𝑡 into (12) establishes the lemma. □
+
+We now proceed to prove Theorem 4.2. 
+
+> 16 Private Direct Preference Optimization for LLM Alignment
+
+Proof of Theorem 4.2. For the 𝑖 th DPO triplet (𝑥, 𝑦 𝑤 , 𝑦 𝑙 ), let 
+
+𝒗 𝑖 := ∇𝜃 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 ) − ∇ 𝜃 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 ),
+
+and 
+
+𝜓 𝑖 := 𝜎 
+
+
+
+𝛽 log 𝜋 𝜃 (𝑦 𝑙 | 𝑥 )
+
+𝜋 ref (𝑦 𝑙 | 𝑥 ) − 𝛽 log 𝜋 𝜃 (𝑦 𝑤 | 𝑥 )
+
+𝜋 ref (𝑦 𝑤 | 𝑥 )
+
+
+
+.
+
+Then the privatized gradient of the 𝑖 th DPO triplet can be written as 𝒈 𝑖 = −𝛽𝜓 𝑖 ˜𝑤 𝑖 𝒗 𝑖 . Let the aggregate PrivDPO gradients be 𝒈 =
+
+> 1
+> 𝑚
+
+Í𝑚 𝑖 =1 𝒈 𝑖 , and denote by 𝒈 ∗ = − 𝛽 𝑚 
+
+Í𝑚 𝑖 =1 𝜓 𝑖 𝒗 𝑖 the standard, non-private DPO gradient. We will prove the tail bound for the following error in any direction 𝒖 ∈ S𝑑 −1:Err 𝒖 := 𝒖 ⊤ (𝒈 − 𝒈 ∗).
+
+Note that 𝒈 ∗ 
+
+> 𝑖
+
+= E [𝒈 𝑖 | 𝜓 𝑖 , 𝒗 𝑖 ], and it can be verified that the random weight ˜ 𝑤 𝑖 in line 6 of Algorithm 1 satisfies E [ ˜𝑤 𝑖 | 𝜓 𝑖 ] = 1for any 𝑖 . Let 𝑍 𝑖 ∈ R be the random variable defined as 
+
+𝑍 𝑖 := 𝒖 ⊤  𝒈 𝑖 − 𝒈 ∗
+
+> 𝑖
+
+
+
+= 𝒖 ⊤ (𝒈 𝑖 − E [𝒈 𝑖 | 𝜓 𝑖 , 𝒗 𝑖 ]) 
+
+= − 𝛽𝜓 𝑖 ( ˜𝑤 𝑖 − E[ ˜𝑤 𝑖 | 𝜓 𝑖 ]) 𝒖 ⊤𝒗 𝑖 . (13) Then the error of 𝒈 can be written as the average of random vari-ables 𝑍 𝑖 as follows Err 𝒖 = 1
+
+𝑚 
+
+> 𝑚
+
+∑︁ 
+
+> 𝑖 =1
+
+𝑍 𝑖 .
+
+By construction, {𝑍 𝑖 } are independent mean-zero random variables (conditional on {𝜓 𝑖 , 𝒗 𝑖 }) , which implies that 
+
+E [Err 𝒖 ] = 1
+
+𝑚 
+
+> 𝑚
+
+∑︁ 
+
+> 𝑖 =1
+
+E [𝑍 𝑖 ] = 0. (14) Next, we derive the conditional variance of 𝑍 𝑖 . First, by the perturbation rule of ˜ 𝑤 𝑖 , we have Var ( ˜𝑤 | 𝜓 𝑖 ) = 1
+
+𝑒 𝜖 + 1 · 𝑒 𝜖 
+
+𝑒 𝜖 + 1 ·
+
+ 𝑒 𝜖 + 1
+
+𝑒 𝜖 − 1 · 1
+
+𝜓 𝑖 
+
+2
+
+= 𝑒 𝜖 
+
+(𝑒 𝜖 − 1)2 · 1
+
+𝜓 2
+
+> 𝑖
+
+.
+
+Therefore, the variance of 𝑍 𝑖 is given by Var (𝑍 𝑖 | 𝜓, 𝒗 𝑖 ) = 𝛽 2𝜓 2Var ( ˜𝑤 | 𝜓 𝑖 )  𝒖 ⊤𝒗 𝑖 
+
+2
+
+= 𝛽 2 𝑒 𝜖 
+
+(𝑒 𝜖 − 1)2
+
+ 𝒖 ⊤𝒗 𝑖 
+
+2 .
+
+Accordingly, the variance of 𝑍 𝑡 /𝑚 can be derived as 
+
+> 𝑚
+
+∑︁ 
+
+> 𝑖 =1
+
+Var 
+
+ 𝑍 𝑖 
+
+𝑚 𝜓 𝑖 , 𝒗 𝑖 
+
+
+
+= 1
+
+𝑚 2
+
+> 𝑚
+
+∑︁ 
+
+> 𝑖 =1
+
+Var (𝑍 𝑖 | 𝜓 𝑖 , 𝒗 𝑖 )
+
+= 𝛽 2𝑒 𝜖 
+
+𝑚 2 (𝑒 𝜖 − 1)2
+
+> 𝑚
+
+∑︁ 
+
+> 𝑖 =1
+
+ 𝒖 ⊤𝒗 𝑖 
+
+2 . (15) Next, we proceed to bound |𝑍 𝑖 |. By the probability distribution of ˜ 𝑤 𝑖 , we have 
+
+|𝜓 𝑖 ˜𝑤 𝑖 − 𝜓 𝑖 | ≤ max 
+
+
+
+1 − 𝑒 𝜖 − 2
+
+𝑒 𝜖 − 1 , 1 + 1
+
+𝑒 𝜖 − 1
+
+
+
+= 1 + 1
+
+𝑒 𝜖 − 1 .
+
+Therefore, plug the above bound into (13), we have 
+
+|𝑍 𝑖 | = 𝛽 · 𝜓 𝑖 ˜𝑤 𝑖 − 𝜓 𝑖 · 𝒖 ⊤𝒗 𝑖 ≤ 𝛽 
+
+
+
+1 + 1
+
+𝑒 𝜖 − 1
+
+
+
+𝒖 ⊤𝒗 𝑖 . (16) Applying Bernstein’s inequality (Lemma B.1) to the random vari-ables Err 𝒖 = Í𝑚 𝑖 =1 𝑍 𝑖 /𝑚 with values expressed in (15) and (16), we have that conditioned on {𝜓 𝑖 , 𝒗 𝑖 }, with probability at least 1 − 𝛾 , it holds that 
+
+|Err 𝒖 | ≤ 𝛽 𝑚 
+
+vut 2𝑒 𝜖 
+
+(𝑒 𝜖 − 1)2
+
+> 𝑚
+
+∑︁ 
+
+> 𝑖 =1
+
+(𝒖 ⊤𝒗 𝑖 )2
+
+!
+
+log 2
+
+𝛾 
+
++ 𝛽  1 + 1 
+
+> 𝑒 𝜖 −1
+
+ max 𝑖 {| 𝒖 ⊤𝒗 𝑖 |} 
+
+3𝑚 log 2
+
+𝛾 .
+
+This completes the proof. □
+
+## C Variants of PrivDPO 
+
+As shown in Algorithm 1, PrivDPO is a flexible framework that can incorporate various perturbation mechanisms to achieve preference privacy. There exist DP mechanisms that provide unbiased pertur-bation for numerical values, notably Duchi’s mechanism [25] and the Piecewise mechanism [73], which formed the starting point of our design exploration. However, they assume that the inputs lie in a continuous range, implying a fundamentally different adversary model that requires additional output noise. We develop PrivDPO 
+
+variants that replace its core weight perturbation with these mech-anisms, yielding strong competitive baselines. However, applying them in the DPO setting is non-trivial, as ensuring both privacy and unbiasedness requires formal analysis of DPO’s privacy-leakage surface in Section 4.2. 
+
+Duchi’s mechanism [25]. Given the (sensitive) preference inten-sity 𝜓 and privacy budget 𝜖 as the input, Duchi’s mechanism first computes the probability 
+
+𝑝 = 𝑒 𝜖 − 12𝑒 𝜖 + 2 · 𝜓 + 12 .
+
+Then it outputs the value 𝑒 𝜖 +1  
+
+> 𝑒 𝜖 −1
+
+with probability 𝑝 , and − 𝑒 𝜖 +1  
+
+> 𝑒 𝜖 −1
+
+with probability 1 − 𝑝 .
+
+Piecewise mechanism [73]. Given the preference intensity 𝜓 and the privacy budget 𝜖 , it defines: 
+
+𝐶 = 𝑒 𝜖 /2 + 1
+
+𝑒 𝜖 /2 − 1 , ℓ = 𝐶 + 12 · 𝜓 − 𝐶 − 12 , 𝑟 = ℓ + 𝐶 − 1.
+
+Then with probability 𝑒 𝜖 /2 
+
+> 𝑒 𝜖 /2+1
+
+, it outputs a value sampled uniformly at random from [ℓ, 𝑟 ]. With the remaining probability, it samples output uniformly from [− 𝐶, 𝐶 ] \ [ ℓ, 𝑟 ].
+
+Remark on privacy semantics. While these two mechanisms ensure unbiasedness, they implicitly assume that by altering the preference signal in the input DPO example, the preference inten-sity 𝜓 can change within [− 1, 1] arbitrarily, rather than only taking values in {𝜓,𝜓 − 1}. This essentially leads to a somewhat stronger privacy guarantee than 𝜖 -preference privacy, yet weaker than stan-dard DP. In contrast, our PrivDPO accurately satisfies 𝜖 -preference privacy without introducing unnecessary perturbation, thus out-performs all baselines under the same level of privacy budget. 
+
+> 17 Yangfan Jiang, Fei Wei, Ergute Bao, Xiaokui Xiao, Yaliang Li, and Bolin Ding
+
+Table 5: Win rate of PrivDPO on TL;DR summarization (%)                    
+
+> PrivDPO vs. Pythia-2.8B Qwen2.5-3B Llama3.2-3B
+> PrivSFT 76.7 72.2 86.3 RR 67.4 59.1 78.9 Duchi 56.9 55.6 54.7 Piecewise 63.1 57.7 57.4 DPO 48.8 43.2 47.2
+
+Table 6: Win rate of PrivDPO on UltraFeedback (%)                    
+
+> PrivDPO vs. Pythia-2.8B Qwen2.5-3B Llama3.2-3B
+> PrivSFT 61.3 72.2 71.5 RR 55.5 66.0 66.7 Duchi 54.8 55.7 56.5 Piecewise 57.5 56.3 56.4 DPO 49.1 49.3 49.6
+
+Table 7: Empirical memorization advantage ( 𝜖 = 1)                  
+
+> Methods Anthropic-HH TL;DR UltraFeedback
+> PrivDPO 0.58 0.62 1.02 RR 0.98 0.68 1.21 Duchi 0.85 0.54 0.62 Piecewise 0.56 0.61 0.53 DPO 9.76 7.36 9.58
+
+## D Details of Experimental Evaluation D.1 DP-SGD Setup 
+
+We present detailed privacy accounting and results analysis. Since each training example is used exactly once in our setup (which is also the common practice in standard DPO [31, 53, 61]), there is no composition or subsampling-based privacy amplification; we therefore adopt the analytical Gaussian framework [7] for tight noise accounting instead of subsampled Rényi-DP approach [1, 55, 86], resulting in a Gaussian noise standard deviation of 𝜎 = 0.37. 
+
+## D.2 Additional Experimental Results 
+
+Tables 8 and 9 present the experimental results on reward-based metrics for the TL;DR summarization and UltraFeedback bench-marks. These results are consistent with the findings in Section 5.3, showing that PrivDPO significantly and consistently outperforms all baselines across configurations. Tables 5 and 6 report win-rate comparisons on the TL;DR sum-marization and UltraFeedback benchmarks. The results align with the conclusions in Section 5.4. Table 7 reports MemAdv for PrivDPO 
+
+and all privacy-preserving baselines under privacy budget 𝜖 = 1. 
+
+## D.3 Attack 
+
+This subsection describes the empirical attack used to compute the memorization advantage reported in Section 5.5. 
+
+Attacker’s knowledge. The attacker is given a prompt 𝑥 and two candidate responses (𝑦 1, 𝑦 2) and aims to predict which response is preferred in the underlying dataset. This attacker corresponds to the natural inference task considered in label-DP-style settings, where features are public and only the label is sensitive. 
+
+Attack intuition. The intuition behind the attack is that alignment training increases the relative likelihood of preferred responses com-pared to non-preferred ones. If a model has learned and potentially memorized preference labels from training examples, this informa-tion may be reflected in the model’s scoring of the two responses, making the preferred response easier to identify. By comparing how strongly an aligned model distinguishes between the two can-didates relative to a prior model that has not seen preference labels, the attack probes whether training introduces additional, example-specific preference information beyond what is already inferable from public text or generalization. 
+
+The attack pipeline. For an aligned model 𝜋 𝜃 trained with DPO or 
+
+PrivDPO , we use the model’s implicit reward w.r.t. the pre-trained base 𝜋 base model to score each candidate response, denoted by 
+
+𝑟 𝜃 = log 𝜋 𝜃 (𝑦 | 𝑥 ) − log 𝜋 base (𝑦 | 𝑥 ).
+
+The attacker predicts 𝑦 1 ≻ 𝑦 2 if 𝑟 𝜃 (𝑥, 𝑦 1) > 𝑟 𝜃 (𝑥, 𝑦 2), and vice versa. For the prior model 𝜋 prior (which has no associated reference or base model), we use the raw log-likelihood as the attack score 
+
+𝑠 prior = log 𝜋 base (𝑦 | 𝑥 ),
+
+and predict preference by comparing 𝑠 prior (𝑥, 𝑦 1) and 𝑠 prior (𝑥, 𝑦 2).
+
+Attack metric and interpretation. Attack performance is mea-sured using accuracy, i.e., the fraction of examples for which the attacker correctly predicts the dataset preference. Note that this attack is not intended to represent a worst-case adversary. Rather, it serves as a concrete lower-bound sanity check that complements the formal 𝜖 -preference-privacy guarantee. In particular, high raw attack accuracy does not necessarily imply privacy leakage, as preferences may be inferable from public information alone. The MemAdv metric reported in Section 5.5 isolates the incremental advantage introduced by training and is therefore more informative for measuring memorization of private preference labels. 
+
+> 18 Private Direct Preference Optimization for LLM Alignment
+
+Table 8: Performance comparison on TL;DR summarization dataset 
+
+Privacy Budget Method Pythia-2.8B Qwen2.5-3B-Instruct Llama3.2-3B-Instruct RM (↑) RA (↑) LDPO (↓) RM (↑) RA (↑) LDPO (↓) RM (↑) RA (↑) LDPO (↓)
+
+𝜖 = 0.5RR 0.049 59.2% 0.68 0.068 63.8% 0.66 0.094 64.9% 0.65 Duchi 0.091 58.8% 0.67 0.215 64.9% 0.63 0.261 65.6% 0.62 Piecewise 0.034 55.8% 0.69 0.175 63.7% 0.64 0.238 65.2% 0.62 
+
+PrivDPO 0.174 61.6% 0.66 0.303 65.7% 0.61 0.394 67.7% 0.60 
+
+𝜖 = 1RR 0.107 61.3% 0.66 0.154 66.2% 0.64 0.194 66.8% 0.62 Duchi 0.178 61.4% 0.66 0.302 65.3% 0.63 0.394 67.1% 0.61 Piecewise 0.141 61.1% 0.67 0.268 65.1% 0.63 0.363 66.7% 0.61 
+
+PrivDPO 0.236 62.3% 0.65 0.396 67.1% 0.60 0.456 68.9% 0.59 
+
+Non Private DPO 0.291 62.5% 0.65 0.497 67.5% 0.60 0.516 70.1% 0.57 
+
+Table 9: Performance comparison on UltraFeedback dataset 
+
+Privacy Budget Method Pythia-2.8B Qwen2.5-3B-Instruct Llama3.2-3B-Instruct RM (↑) RA (↑) LDPO (↓) RM (↑) RA (↑) LDPO (↓) RM (↑) RA (↑) LDPO (↓)
+
+𝜖 = 0.5RR 0.061 58.7% 0.67 0.123 67.4% 0.64 0.111 65.9% 0.65 Duchi 0.198 60.9% 0.66 0.286 67.5% 0.61 0.326 65.6% 0.63 Piecewise 0.152 59.1% 0.67 0.265 66.7% 0.62 0.242 65.1% 0.63 
+
+PrivDPO 0.282 62.8% 0.63 0.502 68.2% 0.58 0.486 67.3% 0.60 
+
+𝜖 = 1RR 0.153 64.5% 0.64 0.218 70.4% 0.61 0.219 68.2% 0.61 Duchi 0.291 63.1% 0.64 0.395 68.8% 0.59 0.401 66.7% 0.61 Piecewise 0.276 63.9% 0.63 0.398 68.9% 0.59 0.362 67.6% 0.61 
+
+PrivDPO 0.357 65.8% 0.61 0.538 70.8% 0.57 0.578 68.8% 0.58 
+
+Non Private DPO 0.488 66.0% 0.60 0.684 71.8% 0.55 0.703 71.5% 0.55

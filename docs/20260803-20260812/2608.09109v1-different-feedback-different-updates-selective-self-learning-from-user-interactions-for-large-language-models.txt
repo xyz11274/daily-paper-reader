@@ -1,0 +1,1434 @@
+Title: Different Feedback, Different Updates: Selective Self-Learning from User Interactions for Large Language Models
+
+URL Source: https://arxiv.org/pdf/2608.09109v1
+
+Published Time: Tue, 11 Aug 2026 01:50:27 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# Different Feedback, Different Updates: Selective Self-Learning from User Interactions for Large Language Models 
+
+## Xuancheng Li ∗
+
+lixuancheng23@mails.tsinghua.edu.cn DCST, Tsinghua University Beijing, China 
+
+## Haitao Li 
+
+liht22@mails.tsinghua.edu.cn DCST, Tsinghua University Beijing, China 
+
+## Yujia Zhou 
+
+zhouyujia@mail.tsinghua.edu.cn DCST, Tsinghua University Beijing, China 
+
+## Qingyi Pan 
+
+panqingyi19@gmail.com DCST, Tsinghua University Beijing, China 
+
+## Heng Wang 
+
+ryzeewang@tencent.com Tencent Beijing, China 
+
+## Yiqun Liu 
+
+yiqunliu@tsinghua.edu.cn DCST, Tsinghua University Beijing, China 
+
+## Min Zhang 
+
+z-m@tsinghua.edu.cn DCST, Tsinghua University Beijing, China 
+
+## Qingyao Ai 
+
+aiqingyao@gmail.com DCST, Tsinghua University Beijing, China 
+
+## Abstract 
+
+User feedback offers natural supervision for persistent LLM im-provement, but a single message may support multiple behav-ioral changes with different scopes of generalization. We introduce 
+
+SLIFT , a selective self-learning framework built on a task-relative view of user feedback. SLIFT decomposes each feedback message into atomic components and interprets each component relative to the original task as Fix, Spec, or Null: requirements for task validity, compatible condition-specific refinements, or content with no reliable positive update direction. To incorporate each change at the appropriate scope, SLIFT trains two complementary LoRA adapters on a shared frozen backbone: a Generalist that consol-idates Fix requirements into default behavior through feedback-conditioned self-distillation, and a Specialist that observes only the task and Generalist response to supply residual guidance for applicable, unmet Spec refinements. Null components induce no positive update. Across backbones, SLIFT achieves strong perfor-mance on both MemoryBench and WildFB, with targeted analyses further examining its underlying mechanisms. 1
+
+## CCS Concepts 
+
+• Computing methodologies → Natural language processing ;
+
+Learning from critiques ; Learning from implicit feedback .
+
+> ∗This work was done during an internship at Tencent.
+> 1We release our code at https://anonymous.4open.science/r/SLIFT. Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+> Conference acronym ’XX, Woodstock, NY
+> © 2018 Copyright held by the owner/author(s). Publication rights licensed to ACM. ACM ISBN 978-1-4503-XXXX-X/2018/06 https://doi.org/XXXXXXX.XXXXXXX
+
+ACM Reference Format: 
+
+Xuancheng Li, Haitao Li, Yujia Zhou, Qingyi Pan, Heng Wang, Yiqun Liu, Min Zhang, and Qingyao Ai. 2018. Different Feedback, Different Updates: Selective Self-Learning from User Interactions for Large Language Models. In Proceedings of Make sure to enter the correct conference title from your rights confirmation email (Conference acronym ’XX). ACM, New York, NY, USA, 18 pages. https://doi.org/XXXXXXX.XXXXXXX 
+
+## 1 Introduction 
+
+Large language models (LLMs) are increasingly deployed in in-teractive systems, where users respond to model outputs across turns. These responses often reveal errors, unmet requirements, or other shortcomings in the preceding outputs, implicitly signaling how the model should have responded instead. Recent studies have shown that feedback embedded in interaction histories provides useful supervision for model improvement [5, 25, 28]. As user–LLM interactions continue to scale, interaction logs are becoming an increasingly important source of such supervision. Models can often exploit this supervision within the interaction in which it appears. When user feedback provides an actionable signal, a model can identify problems in its preceding response and produce a more appropriate revision [3]. This suggests that models can interpret the feedback in context and adjust their behavior accordingly. However, without a persistent update, this adaptation remains confined to the current dialogue and is not retained once the feedback is no longer available [32]. This motivates the prob-lem of transforming interaction-specific hindsight into persistent behavioral improvements that appropriately generalize to future interactions [15]. Realizing this objective first requires determining what behav-ioral change, if any, is supported by each feedback message. This is challenging because natural user feedback rarely takes the form of explicit structured supervision [5]. Real-world user feedback is highly diverse [36, 37]: a single feedback may itself combine corrections, preferences, and new requests [16]. Because these com-ponents may warrant different behavioral changes, treating the entire feedback as a single supervision signal can obscure what arXiv:2608.09109v1 [cs.AI] 10 Aug 2026 Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xuancheng Li, Haitao Li, Yujia Zhou, Qingyi Pan, Heng Wang, Yiqun Liu, Min Zhang, and Qingyao Ai 
+
+Figure 1: Illustration of task-relative feedback decomposition. A composite feedback message is decomposed into atomic Fix, Spec, and Null components relative to the original task. 
+
+should be learned and how broadly it should generalize. Learning from user feedback therefore requires distinguishing these compo-nents. Existing approaches to learning from user feedback broadly pursue persistent adaptation through two routes: non-parametric memory and parametric updates. Non-parametric methods store interaction-derived experience outside model parameters and re-trieve it for context-dependent reuse [9, 31], whereas parametric methods encode interaction-derived behavioral changes directly into model parameters. Within parametric methods, a central chal-lenge is converting raw feedback into a trainable signal, since feed-back often specifies neither a complete target response nor an ex-plicit scalar reward. Some approaches convert feedback into scalar rewards or preference-based objectives [12, 19, 20], while a separate approach distills a hindsight policy conditioned on the full feed-back message [10]. These approaches preserve different amounts of feedback structure. Scalar rewards and preference objectives compress rich verbal feedback into coarse outcome or comparative signals, which may obscure fine-grained guidance [12]. By contrast, hindsight distillation retains the full feedback message but may provide weak supervision when the model cannot reliably interpret and act on it [10]. Another challenge is deciding how broadly each feedback-driven change should generalize. Some feedback identifies a property needed to satisfy the original task and may therefore support a reusable change to default behavior. Other feedback expresses a compatible refinement whose relevance depends on the task or the response already produced. Generalizing such refinements as default behavior could propagate a context-specific change to un-supported contexts [26]. A subsequent user feedback may also contain unrelated requests, conflicting instructions, or ambiguous content that provides no reliable positive target. Because a signal’s learning role depends on its relation to the original task rather than its surface form, the model must decide whether the supported change should be consolidated, remain conditional, or drive no positive update. Together, these challenges require determining what should be learned from each feedback component and how broadly the result-ing change should generalize. We therefore ask: How can a model achieve continual self-improvement from user interactions while in-corporating each feedback-supported change within its appropriate scope? 
+
+To address this question, we introduce SLIFT (Self-Learning from Interaction Feedback via Task-Relative Specialization), a se-lective self-learning framework built on a task-relative view of user feedback. Under this view, the original task defines the task-valid region and serves as the semantic reference for interpreting sub-sequent feedback. As illustrated in Figure 1, the three feedback roles are defined by how each component relates to this region. Operationally, SLIFT uses its frozen backbone to decompose each subsequent user turn into atomic components and assigns each component a role using a fixed three-way rubric. A Fix specifies a property that every response in the task-valid region must satisfy; a Spec specifies a compatible refinement that selects a condition-specific subregion within it; and a Null provides no reliable positive update direction for the original task. Together, these roles distin-guish requirements of task validity, condition-specific refinements among task-valid responses, and content that should not drive a positive update. Because these roles support changes with different scopes, SLIFT maps them to complementary learning pathways rather than a single undifferentiated update. Applying Spec supervision through the same pathway as Fix could turn conditional evidence into de-fault behavior and extend it beyond relevant contexts [26]. Inspired by functional specialization in complementary learning systems [18], we instantiate two LoRA [7] adapters on a shared frozen backbone. The Generalist learns from Fix components through feedback-conditioned self-distillation, consolidating task-necessary changes into its default behavior. The Specialist observes only the task and the Generalist response; using targets constructed from Spec components, it learns whether a compatible refinement ap-plies and remains unmet and what residual guidance is needed. Null components provide no positive update. Together, these path-ways separate default-behavior consolidation from the selective refinement of otherwise task-valid responses. Supervision for both pathways is constructed by the frozen backbone using the cor-responding feedback components, without requiring a stronger teacher or explicit reward model. Our contributions are threefold. First, we introduce a task-relative formulation that decomposes feedback into atomic Fix, Spec, and Null components. Second, we propose SLIFT, whose frozen back-bone constructs supervision for two pathways: the Generalist con-solidates Fix requirements into default behavior, while the Specialist supplies residual guidance only for applicable, unmet Spec refine-ments. Third, across backbones, SLIFT achieves strong performance on both MemoryBench [2] and WildFB [20], while targeted analyses further probe its mechanisms. 
+
+## 2 Related Work 2.1 User Feedback as a Learning Resource 
+
+Large-scale corpora such as LMSYS-Chat-1M [37] and WildChat [36] provide naturally occurring user–LLM interaction logs, where feed-back is often implicit, composite, and noisy [16]. Recent resources convert such logs into training signals: WildFeedback [25] con-structs preference pairs, WildFB [20] provides ordinal satisfaction labels, and MemoryBench [2] offers simulated explicit and implicit feedback for training and held-out evaluation. These resources generally preserve feedback at the turn level or reduce it to an Different Feedback, Different Updates: Selective Self-Learning from User Interactions for Large Language Models Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+aggregate signal. We instead decompose each feedback turn into atomic, task-relative components that distinguish task-necessary changes, conditional refinements, and content that should not drive a positive update. 
+
+## 2.2 Continual Learning from User Feedback 
+
+Continual learning from interaction feedback follows two routes: non-parametric memory and parametric updates. MemoryOS [9], A-Mem [31], MemOS [13], and ReMem [30] store interaction-derived experience externally for later retrieval or refinement. Parametric methods instead turn logs into persistent updates: ReSpect [5] learns retrospectively, IEvoAgent [4] estimates feedback-based rewards, WildReward [20] learns ordinal satisfaction signals, and SDPO [10] distills a feedback-conditioned hindsight distribution. In verifiable domains, SEAM [11] optimizes structured guidance through ex-ecutor rollouts, while MulFeRL [12] learns from feedback-guided regeneration. FCP [17] conditions generation on desired verbal feedback, which remains an input at test time, while C3PO [26] learns where a predefined high-level feedback rule should apply. In contrast, SLIFT decomposes naturally occurring feedback into atomic, task-relative components and maps them to consolidation into default behavior, conditional refinement, or no positive update. 
+
+## 3 Method 3.1 Problem Formulation 
+
+Consider a language model 𝑀 0 and a collection of 𝑁 logged inter-actions: 
+
+D = {𝑑 𝑖 }𝑁 𝑖 =1 , 𝑑 𝑖 =
+
+
+
+𝑥 𝑖 , 𝑦 log  
+
+> 𝑖
+
+, 𝑢 𝑖 
+
+
+
+, (1) where 𝑥 𝑖 denotes the user task, including any preceding context needed to specify the user’s request; 𝑦 log  
+
+> 𝑖
+
+is the logged assistant response; and 𝑢 𝑖 is the subsequent user turn, which may contain feedback on that response. When 𝑢 𝑖 is available in context, a model may infer how to im-prove its preceding response. However, this improvement is not retained once the feedback is removed. Moreover, a single user turn may imply multiple behavioral changes that apply under different task conditions, or may provide no reliable basis for persistent adap-tation. The problem is therefore not only what should be learned from an interaction, but also under which conditions each learned change should apply. This leads to our central research question: 
+
+How can a model achieve continual self-improvement from user inter-actions while incorporating each feedback-supported change within its appropriate scope? 
+
+Given D, we seek an updated model 𝑀 Θ that retains feedback-supported behavioral changes on future interactions within their appropriate scope, while avoiding unsupported changes outside that scope. We next realize this objective by recovering task-relative learning signals and incorporating them through selective updates. 
+
+## 3.2 Method Overview 
+
+To realize the objective above, we introduce SLIFT ( Self-Learning from Interaction Feedback via Task-Relative Specialization ). As il-lustrated in Figure 2, SLIFT proceeds in two stages: task-relative feedback processing and selective learning. In the first stage, follow-ing the task-relative view introduced in § 1, the frozen backbone decomposes each subsequent user feedback into atomic compo-nents and assigns each a role relative to the original task: Fix for task-necessary properties, Spec for compatible but non-necessary refinements, and Null when no reliable positive behavioral target can be recovered. In the second stage, these roles determine the form of adaptation. A Fix specifies a requirement shared by all task-valid responses, al-lowing the Generalist to consolidate the corresponding change into its default behavior. A Spec, by contrast, selects among otherwise task-valid responses: whether it applies depends on the observable task context, while whether it still requires action depends on the Generalist response. Consolidating Spec supervision through the same pathway would turn conditional evidence into default be-havior and risk applying a locally supported refinement outside its appropriate context [26]. The Specialist therefore learns from the task–response pair whether a refinement is needed and, if so, what remains to be changed. Null components provide no positive learning target. Inspired by the functional specialization of complementary learn-ing systems [18], we instantiate separate Generalist and Specialist LoRA adapters on a shared frozen backbone. This separation pro-vides an inductive bias over update scope. The Generalist learns Fix-derived task requirements through feedback-conditioned self-distillation, consolidating them into its default behavior. The Spe-cialist is trained via supervised fine-tuning on (𝑥 𝑖 , 𝑦 𝐺 𝑖 ), where 𝑦 𝐺 𝑖 
+
+is the frozen Generalist’s response and the corresponding Spec components are used to construct the target: KEEP if no applica-ble refinement remains unmet, or APPLY with residual guidance otherwise. At inference time, the Generalist produces a default response. The Specialist either preserves it or generates residual guidance; only in the latter case does the frozen Generalist perform a single residual-guided integration pass. 
+
+## 3.3 Task-Relative Feedback Processing 
+
+The first stage separates what a feedback turn expresses from how its content should update the model. Using the frozen backbone 𝑀 0,SLIFT first decomposes the user feedback into atomic components and then interprets each component relative to the original task as supporting a reusable update to default behavior, a conditional refinement, or no positive update. 
+
+Atomic feedback extraction. A user feedback 𝑢 𝑖 may combine distinct signals, such as a correction and a separate request [5, 16, 25]. We use 𝑀 0 to decompose it into minimal, self-contained components: 
+
+C𝑖 = Extract 𝑀 0
+
+
+
+𝑥 𝑖 , 𝑦 log  
+
+> 𝑖
+
+, 𝑢 𝑖 
+
+
+
+=  𝑐 𝑖 1, . . . , 𝑐 𝑖𝑚 𝑖 
+
+ . (2) Each component captures one candidate learning signal; its role is determined only in the next step. If no self-contained signal can be isolated, then C𝑖 = ∅.
+
+Task-relative interpretation. The original task anchors this in-terpretation by defining the space of fully valid responses. As il-lustrated in Figure 1, let V ( 𝑥 𝑖 ) denote the responses that fully satisfy the requirements inferable from 𝑥 𝑖 . We first check whether a component names a specific, compatible property of the requested deliverable. Components that do not are labeled Null—for example, Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xuancheng Li, Haitao Li, Yujia Zhou, Qingyi Pan, Heng Wang, Yiqun Liu, Min Zhang, and Qingyao Ai 
+
+Figure 2: Illustration of SLIFT. 
+
+those that are ambiguous, irrelevant, conflicting, or that raise a separate request. For each remaining component, define: 
+
+V ( 𝑥 𝑖 ; 𝑐 𝑖 𝑗 ) = 𝑦 ∈ V ( 𝑥 𝑖 ) | 𝑦 |= 𝑐 𝑖 𝑗 , (3) where 𝑦 |= 𝑐 𝑖 𝑗 means that 𝑦 satisfies the property expressed by 𝑐 𝑖 𝑗 .The omission criterion then distinguishes the two positive learn-ing roles. If V ( 𝑥 𝑖 ; 𝑐 𝑖 𝑗 ) = V ( 𝑥 𝑖 ), every fully valid response must satisfy the component; omitting it precludes full task validity, so it is assigned Fix. If ∅ ≠ V ( 𝑥 𝑖 ; 𝑐 𝑖 𝑗 ) ⊊ V ( 𝑥 𝑖 ), the component selects a compatible subregion of otherwise task-valid responses; omitting it may preserve full validity, so it is assigned Spec. Thus, a Fix iden-tifies a condition of task validity, whereas a Spec refines the choice among task-valid responses. In Figure 1, the factual correction and length constraint are Fix, the kitchen analogy is Spec, and the un-related poem request is Null. Treating a Spec as default behavior could extend a locally supported refinement beyond its appropriate context [26]. Prior work similarly shows that implicit feedback signals can be recognized from interactions and that in-situ user feedback can be identified and classified from conversation logs [5, 25]. Opera-tionally, we present (𝑥 𝑖 , 𝑐 𝑖 𝑗 ) to 𝑀 0 with a fixed three-way rubric implementing these criteria. Because extraction has already isolated a single candidate signal, role assignment becomes a constrained classification task rather than open-ended feedback discovery. Fix components supervise the Generalist’s default behavior, Spec com-ponents are used to construct response-conditioned Specialist tar-gets, and Null components provide no positive behavioral target. 
+
+## 3.4 Generalist Learning from Fix Components 
+
+As discussed in §3.2, the Generalist consolidates Fix-derived task re-quirements into its default behavior, whereas the Specialist handles optional refinements through selective intervention. For each interaction 𝑑 𝑖 , we concatenate all components 𝑐 𝑖 𝑗 ∈ C 𝑖 
+
+assigned Fix relative to the task 𝑥 𝑖 in their original order. We denote the resulting sequence by 𝐶 𝐹 𝑖 . Interactions with 𝐶 𝐹 𝑖 ≠ ∅ form the Generalist training set D𝐹 .Because 𝐶 𝐹 𝑖 specifies task-validity requirements rather than a complete target response, synthesizing a full revision would require an additional generation pass and turn incidental rewriting choices into token-level supervision. Model-based rewriting is also prone to over-editing content that should remain unchanged [1, 34]. For example, correcting a factual error may unnecessarily alter orga-nization, detail, or style, thereby biasing learning toward proper-ties unsupported by the observed feedback. We therefore adapt Self-Distillation Policy Optimization (SDPO) [8, 10], a feedback-conditioned self-distillation method. This converts the identified requirements into dense token-level supervision while avoiding revised-response construction and the need for an external teacher or explicit reward model. SDPO was originally formulated as an on-policy algorithm: the current policy samples a response, receives feedback, and then re-evaluates the same response through a feedback-conditioned self-teacher [8]. However, user interaction data are often available as pre-collected logs, where responses already exist and need not have been generated by the policy being optimized [10]. Building on the offline extension of SDPO to logged interactions, we tailor it to selective Fix learning by treating 𝑦 log  
+
+> 𝑖
+
+as a fixed rollout and using only 𝐶 𝐹 𝑖 as hindsight context. At each prefix 𝑦 log  
+
+> 𝑖, <𝑡
+
+, the frozen backbone produces the hindsight distribution 𝑀 0 (· | 𝑥 𝑖 , 𝐶 𝐹 𝑖 , 𝑦 log  
+
+> 𝑖, <𝑡
+
+),which the Generalist learns to reproduce without observing 𝐶 𝐹 𝑖 .2
+
+Replacing on-policy rollouts with logged responses yields an off-policy variant of SDPO. To avoid altering behavior unrelated to the identified Fix requirements, we add a feedback-free behavioral anchor. Let 𝑀 𝐺 = 𝑀 0 ⊕𝐴 𝐺 , where 𝑀 0 is the frozen backbone and 𝐴 𝐺 
+
+is a trainable LoRA adapter. At each logged prefix, let 𝑝 𝐺 𝑖,𝑡 = 𝑀 𝐺 (· | 
+
+𝑥 𝑖 , 𝑦 log  
+
+> 𝑖, <𝑡
+
+), 𝑝 𝐻 𝑖,𝑡 = 𝑀 0 (· | 𝑥 𝑖 , 𝐶 𝐹 𝑖 , 𝑦 log  
+
+> 𝑖, <𝑡
+
+), and 𝑝 𝐵 𝑖,𝑡 = 𝑀 0 (· | 𝑥 𝑖 , 𝑦 log  
+
+> 𝑖, <𝑡
+
+)
+
+denote the Generalist, hindsight, and feedback-free distributions, respectively. We minimize: 
+
+L𝐺 (𝐴 𝐺 ) = E𝑑 𝑖 ∼D 𝐹 
+
+1
+
+|𝑦 log  
+
+> 𝑖
+
+| 
+
+> |𝑦 log
+> 𝑖 |
+
+∑︁  
+
+> 𝑡 =1
+
+h
+
+𝐷 KL 
+
+
+
+𝑝 𝐺 𝑖,𝑡 𝑝 𝐻 𝑖,𝑡 
+
+
+
++ 𝜆 𝐵 𝐷 KL 
+
+
+
+𝑝 𝐺 𝑖,𝑡 𝑝 𝐵 𝑖,𝑡 
+
+i 
+
+.
+
+(4)  
+
+> 2We provide a theoretical justification for this offline approximation in § A.6. Different Feedback, Different Updates: Selective Self-Learning from User Interactions for Large Language Models Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+The first term distills the Fix-conditioned hindsight distribution, while the 𝜆 𝐵 -weighted second term anchors the Generalist to its feedback-free behavior. We normalize the loss by response length and update only 𝐴 𝐺 ; the resulting 𝑀 𝐺 is then frozen to generate the default response 𝑦 𝐺 𝑖 .
+
+## 3.5 Specialist Learning from Spec Components 
+
+The two pathways separate changes that should become default behavior from refinements that should remain conditional. As described in § 3.4, the Generalist learns to reproduce feedback-conditioned behavior without observing the feedback, thereby in-corporating the induced change into its default behavior. This is appropriate for task-necessary Fix requirements. A Spec, however, supports a refinement for the observed task–response pair but does not directly specify when it should transfer to future tasks or whether a future response already satisfies it. Training Spec com-ponents through the same pathway would therefore risk extending a locally supported change beyond its appropriate scope [26]. To make these decisions, the Specialist acts after the General-ist produces its default response 𝑦 𝐺 𝑖 , using only the observable task–response pair (𝑥 𝑖 , 𝑦 𝐺 𝑖 ). From this pair, it predicts whether any supported refinement both applies to the current task and remains unmet in the response. It outputs KEEP when no such refinement requires action; otherwise, it outputs APPLY with residual guidance only for the unmet refinements. For interaction 𝑖 , let 𝐶 𝑆 𝑖 denote the possibly empty ordered se-quence of Spec components assigned in § 3.3. During offline target construction, the frozen backbone receives (𝑥 𝑖 , 𝑦 𝐺 𝑖 , 𝐶 𝑆 𝑖 ), with 𝐶 𝑆 𝑖 
+
+used only as privileged information. It constructs a target action 
+
+𝑎 ★ 
+
+> 𝑖
+
+∈ { KEEP , APPLY } and, for APPLY , residual guidance 𝛿 ★ 
+
+> 𝑖
+
+describing only the compatible changes that are still missing from 𝑦 𝐺 𝑖 . The resulting targets supervise the Specialist from (𝑥 𝑖 , 𝑦 𝐺 𝑖 ) alone. As in § 3.4, we implement the Specialist by attaching a separate trainable LoRA adapter 𝐴 𝑆 to the frozen backbone: 𝑀 𝑆 = 𝑀 0 ⊕ 𝐴 𝑆 .Each structured target 𝑧 ★ 
+
+> 𝑖
+
+= (𝑎 ★ 
+
+> 𝑖
+
+, 𝛿 ★ 
+
+> 𝑖
+
+) is serialized as: ser (𝑧 ★ 
+
+> 𝑖
+
+) =
+
+(
+
+KEEP , 𝑎 ★ 
+
+> 𝑖
+
+= KEEP ,
+
+APPLY ∥ 𝛿 ★ 
+
+> 𝑖
+
+, 𝑎 ★ 
+
+> 𝑖
+
+= APPLY , (5) where ∥ denotes sequence concatenation. Following prior work [27], we balance the two action classes through resampling, producing the balanced training set D𝑆 . Let 𝑁 𝑆 = Í𝑖 ∈ D 𝑆 | ser (𝑧 ★ 
+
+> 𝑖
+
+)| be the total number of target tokens. We then train 𝐴 𝑆 with the following completion-only supervised fine-tuning objective: 
+
+L𝑆 (𝐴 𝑆 ) = −𝑁 −1
+
+> 𝑆
+
+∑︁ 𝑖 ∈ D 𝑆 
+
+log 𝑀 𝑆 
+
+
+
+𝑧 ★ 
+
+> 𝑖
+
+| 𝑥 𝑖 , 𝑦 𝐺 𝑖 
+
+
+
+. (6) Here, the sequence log-likelihood sums over the target tokens in 
+
+𝑧 ★ 
+
+> 𝑖
+
+. This objective jointly trains the Specialist to decide whether a refinement is needed and, following APPLY , to generate the residual guidance. 
+
+## 4 Experiments 4.1 Experimental Setup 
+
+4.1.1 Datasets and Metrics. We evaluate SLIFT in two comple-mentary settings: simulated feedback on MemoryBench [2] and real-user feedback on WildFB [20]. MemoryBench evaluates continual learning from feedback logs. Following its LLM-as-user protocol, we use Qwen3.6-Plus [21] as the feedback simulator and generate separate training logs from each backbone’s own responses. Following the official evaluation pipeline, we evaluate held-out requests in the four input–output length partitions and report the sample-weighted min–max nor-malized score (Norm-Score) and Z-score. WildFB contains feedback instances curated from real-world human–LLM conversations. We randomly sample 15,000 instances from its training split. For in-domain evaluation, we report the win rate of the adapted model’s responses over the original logged responses on the WildFB test set, as judged by WildReward-8B [20]. We additionally report prompt-level strict accuracy on IFEval [38], length-controlled win rate on AlpacaEval 2.0 [6], and accuracy under chain-of-thought prompting on MMLU-Pro [29]. 
+
+4.1.2 Baselines. We compare SLIFT against the unadapted back-bone (Base) and three baseline families. They differ in how infor-mation from historical interactions is retained and reused: through retrieved sessions in the inference context, structured memory, or persistent parameter updates. (i) Direct-retrieval methods retrieve relevant interaction sessions as additional context at inference time, without first converting them into structured memory. We include BM25 [24] for sparse lex-ical retrieval and Qwen3-Embedding-0.6B [35] for dense semantic retrieval. (ii ) Memory-system methods maintain interaction-derived infor-mation through an explicit memory layer that is queried during inference. A-Mem [31] organizes memories as an evolving network of notes. MemoryOS [9] uses a hierarchy of short-, mid-, and long-term memory, while MemOS [13] provides unified management of heterogeneous memory representations. ReMem [30] couples task execution with continual memory refinement. (iii ) Parametric adaptation methods retain log-derived supervi-sion through persistent parameter updates. We include SFT [19] and DPO [23]. Because interaction logs lack explicit target responses or preference pairs, we construct chosen–rejected pairs as described in § B.7; SFT uses the chosen responses, whereas DPO uses the full pairs. For SDPO [10], we use its off-policy formulation for logged interactions, distilling the follow-up-conditioned hindsight distribution into the policy along logged response prefixes. We evaluate all three baseline families on MemoryBench, whose purpose is to benchmark how LLM systems exploit accumulated feedback through both parametric and non-parametric memory. For models trained on WildFB, we compare Base and parametric adaptation methods only. IFEval, AlpacaEval 2.0, and MMLU-Pro were constructed to characterize model-level instruction following, response quality, and knowledge-and-reasoning, respectively, while our WildReward evaluation likewise compares response quality on held-out user queries. Retrieval and external-memory methods would instead evaluate a model–memory system’s ability to reuse stored interactions at inference, which constitutes a different evalu-ation target. Meanwhile, we exclude methods such as MulFeRL [12], WildReward-DPO [20], and FCP [17], whose protocols respectively require task-specific verifiable rewards, reward-model supervision Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xuancheng Li, Haitao Li, Yujia Zhou, Qingyi Pan, Heng Wang, Yiqun Liu, Min Zhang, and Qingyao Ai 
+
+from our final evaluator, and a desired feedback condition at infer-ence. These requirements are unavailable in our setting or would compromise train–evaluation separation. 
+
+4.1.3 Implementation Details. We conduct experiments with Qwen3-8B [33] in non-thinking mode and Ministral3-14B-Instruct [14]. For each backbone, all methods share the same training set, context-length budget, and decoding configuration. 3 For Qwen3-8B, the extracted training components have Fix/Spec/Null proportions of 23.6/50.8/25.6% on MemoryBench and 19.4/42.9/37.7% on WildFB. The corresponding proportions for Ministral3-14B are 22.3/51.9/25.7% and 18.2/43.9/38.0%, respectively. 4
+
+## 4.2 Main Results 
+
+Results after MemoryBench training. As shown in Table 1, SLIFT achieves the highest mean Norm-Score and Z-score on all four input–output length partitions for both backbones. The gains are therefore not confined to either tested backbone or to a single length regime. Their consistency on held-out requests indicates that SLIFT can recover useful supervision from backbone-specific inter-action trajectories and convert it into improvements that remain available on subsequent tasks. These results establish the overall effectiveness of the complete framework; the contributions of its main components are examined in the ablation study. 
+
+Results after WildFB training. As shown in Figure 3, SLIFT improves IFEval and AlpacaEval 2.0 for both backbones, yields a modest positive gain in WildReward win rate on held-out WildFB queries, and maintains comparable performance on MMLU-Pro. The first two gains indicate that supervision from real interaction logs transfers to held-out evaluations of instruction adherence and open-ended response quality. The stable MMLU-Pro results further suggest that these behavioral gains do not come with a material loss on the evaluated knowledge-and-reasoning benchmark. Because WildFB is derived from WildChat [36], its logged assis-tant responses were produced by GPT-family models rather than the evaluated backbones. WildReward thus provides a cross-policy comparison against an external logged policy. Even in this setting, SLIFT modestly improves the win rate over Base. As analyzed be-low, the larger share of WildFB components without reliable update targets may partly account for the limited in-domain gain. Overall, SLIFT converts real interaction feedback into persistent behavioral gains while maintaining comparable MMLU-Pro performance. 
+
+Comparison with Other Methods. Non-parametric baselines yield smaller consistent gains on MemoryBench, indicating that retaining interaction-derived information outside the model does not by itself ensure transfer to held-out requests. Across both set-tings, no parametric baseline matches SLIFT consistently. These methods construct supervision from entire-response targets, pref-erence pairs, or follow-up-conditioned distributions. In contrast, SLIFT decomposes feedback into atomic components and distin-guishes task-necessary corrections, conditional refinements, and components without reliable update targets before adaptation. This performance pattern is consistent with our central hypothesis that 
+
+> 3Further implementation details are provided in § B.
+> 4Role-assignment evaluation is reported in § C.6.
+
+composite feedback should not be treated as a single undifferenti-ated supervision unit. The following ablation study further tests this explanation. 
+
+## 4.3 Ablation Study 
+
+Table 2 evaluates five central design choices in SLIFT. w/o Atomic Extraction assigns a single role to the complete feedback turn, while 
+
+w/o Task Context for Roles removes the original task from role as-signment. w/o Separate Pathways sends both Fix and Spec through the Generalist, while continuing to exclude Null. w/o Specialist ,corresponding to SLIFT-Gen, discards Spec supervision and re-tains only the Generalist. w/o KEEP Supervision trains the Specialist only on APPLY targets. Removing atomic extraction lowers perfor-mance across all three evaluations, while assigning roles without the original task produces the largest drops on MemoryBench and AlpacaEval 2.0. Composite feedback must therefore be separated into atomic signals, and each signal must be interpreted relative to the task when distinguishing Fix, Spec, and Null. The pathway variants show that Spec should neither be consolidated through the default Generalist pathway nor discarded. Both alternatives un-derperform the complete model, supporting a separate pathway for response-conditioned refinement. Removing KEEP supervision is especially harmful on IFEval: without explicit supervision for when not to intervene, the Specialist risks over-applying refinements and disrupting already satisfied instruction constraints. 
+
+## 5 Analysis 5.1 Task Composition and Feedback Usability 
+
+We analyze the first feedback opportunity for each root training task. A Qwen3.7-Max annotator [22] labels the task operation from the task context and evaluates the feedback using the logged re-sponse along four dimensions: response relevance, diagnostic sup-port, specificity, and actionability. Feedback satisfying all four cri-teria is considered fully usable. For the standardized estimates, we stratify tasks by operation and verifiability and reweight both train-ing logs to the same equal-source distribution over shared strata. 
+
+> 5
+
+The training logs cover different task distributions. Figure 4a shows that MemoryBench is concentrated in generation and creation (53.4%) and analysis and reasoning (32.7%). Its training logs and test tasks are drawn from separate splits of the same underlying datasets, yielding close alignment between the training and test task distributions. WildFB instead contains larger shares of code and implementation (22.6%), information seeking and question answer-ing (17.4%), and editing and transformation (13.6%). This mixture is better aligned with the user-facing assistant behaviors evaluated by IFEval and AlpacaEval 2.0, but provides little direct coverage of the knowledge-intensive reasoning tasks in MMLU-Pro. The task alignment therefore helps explain why training on MemoryBench transfers strongly to its test partitions, while training on WildFB improves IFEval and AlpacaEval 2.0 but leaves MMLU-Pro largely unchanged. 
+
+Simulated feedback is denser and more usable. As shown in Fig-ure 4b, fully usable feedback is present in 97.0% of MemoryBench 
+
+> 5Full annotation and standardization details are provided in § C.7.
+
+Different Feedback, Different Updates: Selective Self-Learning from User Interactions for Large Language Models Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+Table 1: Comparison under four input–output length partitions. Each partition reports the sample-weighted Norm-Score and Z-score. Results are averaged over five runs, with standard deviations shown in parentheses. SLIFT-Gen denotes the Generalist-only variant of SLIFT. 
+
+Model Type Method Name Short-Short Short-Long Long-Short Long-Long Average Norm-Score Z-Score Norm-Score Z-Score Norm-Score Z-Score Norm-Score Z-Score Norm-Score Qwen3-8B 
+
+– Base 59.72 (.51) -1.03 (.05) 53.68 (.50) -1.41 (.04) 36.55 (.40) -0.48 (.03) 46.74 (.46) -0.64 (.03) 49.17 (.28) 
+
+RAG Embedding 59.89 (.51) -0.97 (.05) 52.21 (.62) -1.48 (.05) 37.44 (.51) -0.43 (.03) 45.78 (.52) -0.72 (.03) 48.83 (.33) 
+
+BM25 60.16 (.49) -0.97 (.05) 53.59 (.47) -1.41 (.04) 37.65 (.57) -0.43 (.04) 44.41 (.53) -0.73 (.03) 48.95 (.31) 
+
+Memory MemOS 53.49 (.57) -1.27 (.05) 51.74 (.63) -1.51 (.04) 36.98 (.59) -0.63 (.04) 42.81 (.58) -0.82 (.03) 46.26 (.36) 
+
+ReMem 58.05 (.71) -1.07 (.05) 51.14 (.58) -1.57 (.04) 33.52 (.53) -0.59 (.03) 43.03 (.74) -0.83 (.04) 46.44 (.39) 
+
+A-Mem 57.68 (.64) -1.10 (.05) 50.10 (.75) -1.65 (.06) 37.76 (.67) -0.47 (.04) 44.31 (.59) -0.76 (.04) 47.46 (.40) 
+
+MemoryOS 57.93 (.62) -1.06 (.06) 54.18 (.76) -1.42 (.05) 28.77 (.76) -0.76 (.05) 31.16 (.80) -1.32 (.04) 43.01 (.44) 
+
+Training DPO 59.62 (.54) -1.11 (.05) 49.91 (.64) -1.66 (.05) 35.98 (.50) -0.54 (.03) 45.73 (.69) -0.71 (.03) 47.81 (.36) 
+
+SFT 61.44 (.66) -0.99 (.06) 49.25 (.71) -1.69 (.06) 37.82 (.46) -0.51 (.03) 46.02 (.51) -0.68 (.03) 48.63 (.36) 
+
+SDPO 62.31 (.64) -0.84 (.06) 55.17 (.74) -1.32 (.06) 38.61 (.50) -0.47 (.03) 42.14 (.54) -0.85 (.03) 49.56 (.37) 
+
+SLIFT-Gen 65.25 (.49) -0.66 (.05) 55.33 (.39) -1.26 (.03) 43.20 (.49) -0.17 (.03) 43.72 (.48) -0.64 (.03) 51.88 (.28) 
+
+SLIFT 70.49 (.43) -0.45 (.03) 58.00 (.37) -1.15 (.03) 45.22 (.40) -0.10 (.03) 49.68 (.45) -0.50 (.03) 55.85 (.25) 
+
+> Ministral3-14B
+
+– Base 61.20 (.46) -1.17 (.04) 37.86 (.46) -2.54 (.04) 45.46 (.41) -0.04 (.02) 54.71 (.45) -0.22 (.03) 49.81 (.27) 
+
+RAG Embedding 61.46 (.63) -1.10 (.06) 36.28 (.72) -2.63 (.06) 46.37 (.57) 0.01 (.03) 53.58 (.74) -0.31 (.04) 49.42 (.40) 
+
+BM25 61.73 (.53) -1.09 (.05) 37.54 (.67) -2.52 (.05) 46.71 (.49) 0.03 (.03) 52.26 (.68) -0.33 (.04) 49.56 (.36) 
+
+Memory MemOS 55.32 (.64) -1.42 (.06) 35.74 (.75) -2.66 (.05) 45.91 (.56) -0.18 (.04) 50.87 (.75) -0.41 (.04) 46.96 (.41) 
+
+ReMem 59.58 (.55) -1.22 (.05) 35.16 (.75) -2.70 (.06) 42.18 (.60) -0.15 (.04) 50.76 (.71) -0.43 (.04) 46.92 (.39) 
+
+A-Mem 59.06 (.68) -1.25 (.06) 34.39 (.60) -2.78 (.04) 46.83 (.62) -0.03 (.04) 52.12 (.74) -0.34 (.04) 48.10 (.40) 
+
+MemoryOS 59.19 (.75) -1.23 (.06) 38.52 (.65) -2.56 (.05) 37.31 (.63) -0.32 (.04) 38.72 (.79) -0.86 (.05) 43.44 (.43) 
+
+Training DPO 60.98 (.57) -1.25 (.05) 34.21 (.69) -2.81 (.05) 44.83 (.51) -0.10 (.04) 53.61 (.61) -0.30 (.04) 48.41 (.36) 
+
+SFT 63.04 (.49) -1.11 (.05) 33.23 (.52) -2.85 (.04) 46.79 (.62) -0.08 (.04) 53.96 (.76) -0.27 (.04) 49.26 (.36) 
+
+SDPO 63.40 (.61) -1.01 (.05) 38.03 (.53) -2.52 (.04) 43.50 (.65) -0.14 (.04) 49.82 (.67) -0.41 (.03) 48.69 (.37) 
+
+SLIFT-Gen 64.23 (.51) -0.76 (.05) 39.20 (.59) -2.37 (.05) 46.61 (.47) 0.01 (.03) 55.62 (.54) -0.18 (.03) 51.42 (.32) 
+
+SLIFT 67.81 (.45) -0.57 (.04) 39.22 (.58) -2.36 (.04) 48.75 (.53) 0.10 (.03) 57.09 (.47) -0.12 (.03) 53.22 (.31) Base SFT DPO SDPO SLIFT-Gen SLIFT    
+
+> 64 67 70 80 83 86
+> Accuracy (%)
+> IFEval (Prompt-Strict)
+> Base SFT DPO SDPO SLIFT-Gen SLIFT
+> 42 45 48 61 64 67
+> LC Win-Rate (%)
+> AlpacaEval 2.0 (LC Win-Rate)
+> Base SFT DPO SDPO SLIFT-Gen SLIFT
+> 50 51 52 60 61 62
+> Accuracy (%)
+> MMLU-Pro
+> Base SFT DPO SDPO SLIFT-Gen SLIFT
+> 76 78 80
+> Win-Rate (%)
+> WildReward (Win-Rate)
+> Qwen3-8B Ministral3-14B SLIFT-Gen (ours) SLIFT (ours)
+
+Figure 3: Results on WildFB across four metrics and two backbones. 
+
+root tasks, compared with 50.4% of WildFB root tasks. After match-ing task operation and verifiability, the rates remain 96.7% and 54.0%, respectively. In these training logs, simulated users therefore provide denser and more directly usable supervision than naturally occurring real-user feedback. Together, task coverage shapes where the learned changes transfer, while feedback usability shapes the strength of that transfer. 
+
+## 5.2 Stage-wise Contributions 
+
+We compare Base, SLIFT-Gen, and the complete SLIFT to separate the gains introduced by the Generalist and Specialist. 
+
+The Generalist provides broad gains. Training the Generalist on MemoryBench improves all four test partitions. For models trained on WildFB, it improves IFEval, AlpacaEval 2.0, and WildReward, while MMLU-Pro remains nearly unchanged. Thus, consolidating Fix components transfers improvements from the training logs to unseen test tasks. 
+
+The Specialist adds targeted gains with sparse edits. Across Mem-oryBench, the Specialist improves the macro-average and benefits three of the four length partitions, while leaving Short–Long un-changed. For models trained on WildFB logs, it further improves IFEval, AlpacaEval 2.0, and WildReward, but has no additional effect on MMLU-Pro. Edit rates remain below 20% across all test sets, with the Specialist nearly inactive on Short–Long and entirely inactive on MMLU-Pro. These results indicate that the Specialist contributes through sparse, task-dependent refinements rather than uniform editing. Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xuancheng Li, Haitao Li, Yujia Zhou, Qingyi Pan, Heng Wang, Yiqun Liu, Min Zhang, and Qingyao Ai 
+
+Table 2: Ablation study on Ministral3-14B. The Memory-Bench column uses models trained on MemoryBench logs, and the remaining columns use models trained on WildFB logs. We report means over five runs, with standard devia-tions in parentheses. 
+
+Method MemoryBench 
+
+Avg. Norm-Score 
+
+IFEval 
+
+Prompt-Strict 
+
+AlpacaEval 2.0 
+
+LC Win Rate 
+
+SLIFT 53.22 (.31) 69.71 (1.02) 66.35 (.21) 
+
+w/o Atomic Extraction 51.30 (.34) 67.89 (.91) 65.22 (.19) 
+
+w/o Task Context for Roles 50.74 (.36) 67.34 (.74) 63.98 (.22) 
+
+w/o Separate Pathways 51.05 (.33) 67.62 (.86) 64.61 (.18) 
+
+w/o Specialist (SLIFT-Gen) 51.42 (.32) 67.28 (.79) 64.27 (.17) 
+
+w/o KEEP Supervision 50.86 (.44) 57.63 (1.36) 64.06 (.28) 0% 10% 20% 30% 40% 50% 60%  
+
+> Share of root tasks
+> Generation & creation Analysis & reasoning Explanation & summarization Editing & transformation Advice & planning Information seeking & QA Other / mixed / uncertain Code & implementation
+> MemoryBench WildFB
+
+(a) Task-operation distribution. Response relevant Relevant & diagnostically supported Relevant & specific Fully usable  
+
+> Usability criteria
+> 50% 60% 70% 80% 90% 100%
+> Share of root tasks
+> MemoryBench WildFB Observed Standardized 23 pp 43 pp
+
+(b) Feedback Usability. 
+
+Figure 4: Task composition and feedback usability in the MemoryBench and WildFB training logs. Standardized rates match the two logs over shared task-operation and verifia-bility strata. Table 3: Stage-wise gains on Ministral3-14B. ΔG and ΔS denote the absolute point changes from Base to SLIFT-Gen and from SLIFT-Gen to SLIFT on each evaluation’s main metric. 
+
+Eval. #Tasks ΔG APPLY (%) Edit (%) ΔS
+
+Trained on MemoryBench 
+
+Short–Short 150 +3.03 19.33 18.00 +3.58 
+
+Short–Long 143 +1.34 1.40 1.40 +0.02 
+
+Long–Short 150 +1.15 10.67 10.00 +2.14 
+
+Long–Long 275 +0.91 9.09 8.36 +1.47 
+
+Trained on WildFB 
+
+IFEval 541 +1.36 14.23 13.12 +2.43 
+
+AlpacaEval 2.0 805 +0.45 12.80 11.80 +2.08 
+
+MMLU-Pro 12,032 −0.11 0.00 0.00 +0.00 
+
+WildReward 4,929 +0.77 2.50 2.19 +0.31 
+
+Note: #Tasks is the number of test tasks. APPLY is the Specialist’s apply-decision rate, and Edit is the rate at which the final response differs from the Generalist response. 
+
+## 5.3 Online Evolution 
+
+We evenly split the MemoryBench training set into two disjoint batches. In the first iteration, each method is trained on the pre-collected logs from the first batch. The resulting model is then deployed on the second-batch tasks, where the MemoryBench User Simulator generates feedback conditioned on its responses. These newly collected on-policy logs are used for a second incremental 0 1 2
+
+> Iteration
+> 48 50 52 54 56
+> Macro Norm-Score
+> Shared Base
+> SFT SDPO SLIFT-Gen
+> SLIFT
+
+Figure 5: Online evolution on MemoryBench (Qwen3-8B). 0 2 4 6 8
+
+Parameter-update cost (GPU-hours) 
+
+> DPO SFT SLIFT SLIFT-Gen SDPO MemoryOS A-Mem ReMem MemOS BM25 Embedding
+> No parameter-update stage No parameter-update stage
+
+Offl ine parameter-update cost     
+
+> Signal construction Training
+> 6.7 5.6
+> 4.8 3.9
+> 2.3
+> 0123
+
+Relative inference cost ( × Base) 
+
+> Base
+
+Per-query inference cost 
+
+> 1.02 ×
+> 1.01 ×
+> 1.33 ×
+> 1.02 ×
+> 1.03 ×
+> 2.70 ×
+> 1.87 ×
+> 1.81 ×
+> 1.45 ×
+> 2.01 ×
+> 1.87 ×
+
+Figure 6: Offline parameter-update and per-query inference costs on Qwen3-8B. Parameter-update cost includes signal construction and model training, while inference cost is mea-sured per query and normalized to Base. 
+
+update. We evaluate all models after each iteration on the same fixed MemoryBench test set. As shown in Figure 5, all methods improve after the first training round and continue to benefit from the on-policy logs collected in the second round. SLIFT achieves the highest Norm-Score at both iterations and further increases its lead over the baselines after the second update. SLIFT-Gen follows the same trend but remains below the complete model, showing that the Specialist contributes complementary gains throughout sequential training. Overall, SLIFT extracts greater gains from both pre-collected and on-policy feedback, indicating that its selective updates remain effective as the training logs shift toward interactions generated by the current model. 
+
+## 5.4 Efficiency 
+
+Figure 6 compares the offline parameter-update and per-query infer-ence costs of different methods. SLIFT incurs additional preprocess-ing for feedback decomposition and Specialist target construction, but avoids generating full revised targets. The Generalist distills Fix-conditioned distributions, while the Specialist learns to output either KEEP , with no residual guidance, or APPLY together with com-pact residual guidance. This keeps the total parameter-update cost below SFT and DPO, although SDPO remains cheaper. The small gap between SLIFT-Gen and SLIFT shows that Specialist training adds limited overhead. At inference time, SLIFT does not retrieve the training logs. After the Generalist produces a response, the Specialist performs a single constrained generation over the two output forms. A KEEP output contains no guidance and returns the Different Feedback, Different Updates: Selective Self-Learning from User Interactions for Large Language Models Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+Generalist response directly, whereas an APPLY output includes residual guidance and triggers one integration pass. The low APPLY 
+
+and edit rates in Table 3 show that this integration pass is required for only a small subset of test tasks, allowing the Specialist to add targeted gains with limited average overhead. Its average inference cost is therefore higher than that of single-pass SFT, DPO, and SDPO, but lower than that of the retrieval and external-memory methods. Because the learned changes are stored in parameters, its per-query cost does not grow with the size of the training log. 
+
+## 6 Conclusion 
+
+We introduced SLIFT, a selective self-learning framework that con-verts interaction feedback into persistent behavioral improvements through a task-relative view. It decomposes feedback into atomic Fix, Spec, and Null components, corresponding to task-necessary requirements, compatible refinements, and no reliable positive up-date. The Generalist consolidates Fix-derived requirements into default behavior, while the Specialist uses the task and Generalist response to supply residual guidance for applicable, unmet Spec refinements. Both pathways use supervision from the frozen back-bone, without a stronger teacher or explicit reward model. Across backbones, SLIFT achieves strong performance on both Memory-Bench and WildFB, highlighting the importance of learning both the supported behavioral change and its appropriate scope. 
+
+## References 
+
+[1] Griffin Adams, Han-Chin Shing, Qing Sun, Christopher Winestock, Kathleen McKeown, and Noémie Elhadad. 2022. Learning to Revise References for Faithful Summarization. In Findings of the Association for Computational Lin-guistics: EMNLP 2022 . Association for Computational Linguistics, 4009–4027. doi:10.18653/v1/2022.findings-emnlp.296 [2] Qingyao Ai, Yichen Tang, Changyue Wang, Jianming Long, Weihang Su, and Yiqun Liu. 2026. MemoryBench: A Benchmark for Memory and Continual Learning in LLM Systems. arXiv:2510.17281 [cs.LG] https://arxiv.org/abs/2510. 17281 [3] Afra Feyza Akyurek, Ekin Akyurek, Ashwin Kalyan, Peter Clark, Derry Tanti Wijaya, and Niket Tandon. 2023. RL4F: Generating Natural Language Feedback with Reinforcement Learning for Repairing Model Outputs. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . Association for Computational Linguistics, Toronto, Canada, 7716–7733. doi:10.18653/v1/2023.acl-long.427 [4] Yichen Cai, Jiayang Li, Junyuan Qiu, Jingya Guo, Weitao You, Changyuan Yang, Lingyun Sun, and Pei Chen. 2026. IEvoAgent: Evolving Conversational Agent based on User Implicit Feedback. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . Association for Computational Linguistics, San Diego, California, United States, 9725–9743. doi:10.18653/v1/2026.acl-long.441 [5] Zizhao Chen, Mustafa Omer Gul, Yiwei Chen, Gloria Geng, Anne Wu, and Yoav Artzi. 2025. Retrospective Learning from Interactions. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . Association for Computational Linguistics, Vienna, Austria, 24580–24606. doi:10.18653/v1/2025.acl-long.1200 [6] Yann Dubois, Balázs Galambosi, Percy Liang, and Tatsunori B. Hashimoto. 2025. Length-Controlled AlpacaEval: A Simple Way to Debias Automatic Evaluators. arXiv:2404.04475 [cs.LG] https://arxiv.org/abs/2404.04475 [7] Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2021. LoRA: Low-Rank Adaptation of Large Language Models. arXiv:2106.09685 [cs.CL] https://arxiv.org/abs/2106.09685 [8] Jonas Hübotter, Frederike Lübeck, Lejs Behric, Anton Baumann, Marco Bagatella, Daniel Marta, Ido Hakimi, Idan Shenfeld, Thomas Kleine Buening, Carlos Guestrin, and Andreas Krause. 2026. Reinforcement Learning via Self-Distillation. 
+
+arXiv preprint arXiv:2601.20802 (2026). doi:10.48550/arXiv.2601.20802 [9] Jiazheng Kang, Mingming Ji, Zhe Zhao, and Ting Bai. 2025. Memory OS of AI Agent. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing . Association for Computational Linguistics, Suzhou, China, 25961–25970. doi:10.18653/v1/2025.emnlp-main.1318 [10] Thomas Kleine Buening, Jonas Hübotter, Barna Pásztor, Idan Shenfeld, Giorgia Ramponi, and Andreas Krause. 2026. Aligning Language Models from User Interactions. arXiv preprint arXiv:2603.12273 (2026). https://arxiv.org/abs/2603. 12273 [11] Xuancheng Li, Haitao Li, Yujia Zhou, Yiqun Liu, and Qingyao Ai. 2026. Be-yond Experience Retrieval: Learning to Generate Utility-Optimized Structured Experience for Frozen LLMs. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . Association for Computational Linguistics, San Diego, California, United States, 39467–39482. doi:10.18653/v1/2026.acl-long.1831 [12] Xuancheng Li, Haitao Li, Yujia Zhou, YiqunLiu, and Qingyao Ai. 2026. MulFeRL: Enhancing Reinforcement Learning with Verbal Feedback in a Multi-turn Loop. arXiv:2601.22900 [cs.AI] https://arxiv.org/abs/2601.22900 [13] Zhiyu Li, Shichao Song, Chenyang Xi, Hanyu Wang, Chen Tang, Simin Niu, et al. 2025. MemOS: A Memory OS for AI System. arXiv preprint arXiv:2507.03724 
+
+(2025). doi:10.48550/arXiv.2507.03724 [14] Alexander H. Liu, Kartik Khandelwal, Sandeep Subramanian, Victor Jouault, Abhinav Rastogi, et al. 2026. Ministral 3. arXiv preprint arXiv:2601.08584 (2026). https://arxiv.org/abs/2601.08584 [15] Hao Liu, Carmelo Sferrazza, and Pieter Abbeel. 2023. Chain of Hindsight Aligns Language Models with Feedback. arXiv:2302.02676 [cs.LG] https://arxiv.org/abs/ 2302.02676 [16] Yuhan Liu, Michael JQ Zhang, and Eunsol Choi. 2025. User Feedback in Human-LLM Dialogues: A Lens to Understand Users But Noisy as a Learning Signal. In 
+
+Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing . Association for Computational Linguistics, Suzhou, China, 2666–2681. doi:10.18653/v1/2025.emnlp-main.133 [17] Renjie Luo, Zichen Liu, Xiangyan Liu, Chao Du, Min Lin, Wenhu Chen, Wei Lu, and Tianyu Pang. 2025. Language Models Can Learn from Verbal Feedback Without Scalar Rewards. arXiv:2509.22638 [cs.CL] https://arxiv.org/abs/2509. 22638 [18] James L. McClelland, Bruce L. McNaughton, and Randall C. O’Reilly. 1995. Why There Are Complementary Learning Systems in the Hippocampus and Neocortex: Insights from the Successes and Failures of Connectionist Models of Learning and Memory. Psychological Review 102, 3 (1995), 419–457. doi:10.1037/0033-295X.102.3.419 [19] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul F. Christiano, Jan Leike, and Ryan Lowe. 2022. Train-ing Language Models to Follow Instructions with Human Feedback. In Advances in Neural Information Processing Systems , Vol. 35. 27730–27744. [20] Hao Peng, Yunjia Qi, Xiaozhi Wang, Zijun Yao, Lei Hou, and Juanzi Li. 2026. WildReward: Learning Reward Models from In-the-Wild Human Interactions. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . Association for Computational Linguistics, San Diego, California, United States, 18932–18948. doi:10.18653/v1/2026.acl-long.864 [21] Qwen Team. 2026. Qwen3.6-Plus: Towards Real World Agents. https://qwen.ai/ blog?id=qwen3.6 [22] Qwen Team. 2026. Qwen3.7: The Agent Frontier. https://qwen.ai/blog?id=qwen3. 7[23] Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D. Manning, and Chelsea Finn. 2024. Direct Preference Optimization: Your Language Model is Secretly a Reward Model. arXiv:2305.18290 [cs.LG] https://arxiv.org/ abs/2305.18290 [24] Stephen E. Robertson and Hugo Zaragoza. 2009. The Probabilistic Relevance Framework: BM25 and Beyond. Foundations and Trends in Information Retrieval 
+
+3, 4 (2009), 333–389. doi:10.1561/1500000019 [25] Taiwei Shi, Zhuoer Wang, Longqi Yang, Ying-Chun Lin, Zexue He, Mengting Wan, Pei Zhou, Sujay Kumar Jauhar, Sihao Chen, Shan Xia, Hongfei Zhang, Jieyu Zhao, Xiaofeng Xu, Xia Song, and Jennifer Neville. 2026. WildFeedback: Aligning LLMs With In-situ User Interactions And Feedback. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . Association for Computational Linguistics, San Diego, California, United States, 36701–36725. doi:10.18653/v1/2026.acl-long.1701 [26] Moritz Pascal Stephan, Alexander Khazatsky, Eric Mitchell, Annie S Chen, Sh-eryl Hsu, Archit Sharma, and Chelsea Finn. 2024. RLVF: Learning from Verbal Feedback without Overgeneralization. In Proceedings of the 41st International Con-ference on Machine Learning (Proceedings of Machine Learning Research, Vol. 235) .PMLR, 46625–46656. https://proceedings.mlr.press/v235/stephan24a.html [27] Zhengyang Tang, Ziniu Li, Zhenyang Xiao, Tian Ding, Ruoyu Sun, Benyou Wang, Dayiheng Liu, Fei Huang, Tianyu Liu, Bowen Yu, and Junyang Lin. 2025. Self-Evolving Critique Abilities in Large Language Models. arXiv:2501.05727 [cs.CL] https://arxiv.org/abs/2501.05727 [28] Aaron David Tucker, Kianté Brantley, Adam Cahall, and Thorsten Joachims. 2024. Coactive Learning for Large Language Models using Implicit User Feedback. In 
+
+Proceedings of the 41st International Conference on Machine Learning (Proceedings of Machine Learning Research, Vol. 235) . PMLR, 48809–48822. https://proceedings. mlr.press/v235/tucker24a.html Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xuancheng Li, Haitao Li, Yujia Zhou, Qingyi Pan, Heng Wang, Yiqun Liu, Min Zhang, and Qingyao Ai 
+
+[29] Yubo Wang, Xueguang Ma, Ge Zhang, Yuansheng Ni, Abhranil Chandra, Shiguang Guo, Weiming Ren, Aaran Arulraj, Xuan He, Ziyan Jiang, Tianle Li, Max Ku, Kai Wang, Alex Zhuang, Rongqi Fan, Xiang Yue, and Wenhu Chen. 2024. MMLU-Pro: A More Robust and Challenging Multi-Task Language Understanding Benchmark. In Advances in Neural Information Processing Systems , Vol. 37. 95266–95290. https://proceedings.neurips.cc/ paper_files/paper/2024/hash/ad236edc564f3e3156e1b2feafb99a24-Abstract-Datasets_and_Benchmarks_Track.html [30] Tianxin Wei, Noveen Sachdeva, Benjamin Coleman, Zhankui He, Yuanchen Bei, Xuying Ning, Mengting Ai, Yunzhe Li, Jingrui He, Ed H. Chi, Chi Wang, Shuo Chen, Fernando Pereira, Wang-Cheng Kang, and Derek Zhiyuan Cheng. 2025. Evo-Memory: Benchmarking LLM Agent Test-Time Learning with Self-Evolving Memory. arXiv preprint arXiv:2511.20857 (2025). doi:10.48550/arXiv.2511.20857 [31] Wujiang Xu, Zujie Liang, Kai Mei, Hang Gao, Juntao Tan, and Yongfeng Zhang. 2025. A-MEM: Agentic Memory for LLM Agents. arXiv:2502.12110 [cs.CL] https://arxiv.org/abs/2502.12110 [32] Jianhao Yan, Yun Luo, and Yue Zhang. 2024. RefuteBench: Evaluating Refuting Instruction-Following for Large Language Models. In Findings of the Association for Computational Linguistics: ACL 2024 . Association for Computational Linguis-tics, Bangkok, Thailand, 13775–13791. doi:10.18653/v1/2024.findings-acl.818 [33] An Yang et al. 2025. Qwen3 Technical Report. arXiv preprint arXiv:2505.09388 
+
+(2025). doi:10.48550/arXiv.2505.09388 [34] Yiming Zeng, Jinghan Cao, Zexin Li, Wanhao Yu, Zhankai Ye, Dawei Xiang, Ting Hua, Xin Liu, Shangqian Gao, and Tingting Yu. 2026. HyperEdit: Unlocking Instruction-based Text Editing in LLMs via Hypernetworks. In Findings of the As-sociation for Computational Linguistics: ACL 2026 . Association for Computational Linguistics, 466–480. doi:10.18653/v1/2026.findings-acl.22 [35] Yanzhao Zhang, Mingxin Li, Dingkun Long, Xin Zhang, Huan Lin, Baosong Yang, Pengjun Xie, An Yang, Dayiheng Liu, Junyang Lin, Fei Huang, and Jingren Zhou. 2025. Qwen3 Embedding: Advancing Text Embedding and Reranking Through Foundation Models. arXiv preprint arXiv:2506.05176 (2025). doi:10.48550/arXiv. 2506.05176 [36] Wenting Zhao, Xiang Ren, Jack Hessel, Claire Cardie, Yejin Choi, and Yun-tian Deng. 2024. WildChat: 1M ChatGPT Interaction Logs in the Wild. arXiv:2405.01470 [cs.CL] https://arxiv.org/abs/2405.01470 [37] Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Tianle Li, Siyuan Zhuang, Zhang-hao Wu, Yonghao Zhuang, Zhuohan Li, Zi Lin, Eric P. Xing, Joseph E. Gonzalez, Ion Stoica, and Hao Zhang. 2024. LMSYS-Chat-1M: A Large-Scale Real-World LLM Conversation Dataset. arXiv:2309.11998 [cs.CL] https://arxiv.org/abs/2309.11998 [38] Jeffrey Zhou, Tianjian Lu, Swaroop Mishra, Siddhartha Brahma, Sujoy Basu, Yi Luan, Denny Zhou, and Le Hou. 2023. Instruction-Following Evaluation for Large Language Models. arXiv preprint arXiv:2311.07911 (2023). https: //arxiv.org/abs/2311.07911 
+
+## A Algorithmic Details of SLIFT 
+
+This section provides the complete offline training and inference procedures for SLIFT. All feedback-processing and target-construction operations are performed by the frozen backbone 𝑀 0. During opti-mization, only the Generalist adapter 𝐴 𝐺 or the Specialist adapter 
+
+𝐴 𝑆 is updated at its corresponding stage. 
+
+## A.1 Offline Feedback Processing 
+
+For each logged interaction 𝑑 𝑖 = (𝑥 𝑖 , 𝑦 log  
+
+> 𝑖
+
+, 𝑢 𝑖 ), the frozen backbone first extracts an ordered sequence of atomic components: 
+
+C𝑖 = Extract 𝑀 0
+
+
+
+𝑥 𝑖 , 𝑦 log  
+
+> 𝑖
+
+, 𝑢 𝑖 
+
+
+
+=  𝑐 𝑖 1, . . . , 𝑐 𝑖𝑚 𝑖 
+
+ . (7) Each component is then assigned a task-relative role: 
+
+𝑟 𝑖 𝑗 = Assign 𝑀 0
+
+ 𝑥 𝑖 , 𝑐 𝑖 𝑗 
+
+ ∈ { FIX , SPEC , NULL } . (8) The assignment prompt implements the actionability, compatibility, and omission criteria described in § 3.3. We serialize the components assigned to each positive role while preserving their original order and boundaries: 
+
+𝐶 𝐹 𝑖 = Serialize 
+
+ 𝑐 𝑖 𝑗 
+
+ 
+
+> 𝑗 :𝑟 𝑖 𝑗 =FIX
+
+
+
+, (9) 
+
+𝐶 𝑆 𝑖 = Serialize 
+
+ 𝑐 𝑖 𝑗 
+
+ 
+
+> 𝑗 :𝑟 𝑖 𝑗 =SPEC
+
+
+
+. (10) Either sequence may be empty. The Generalist training set is defined as: 
+
+D𝐹 = 𝑑 𝑖 ∈ D | 𝐶 𝐹 𝑖 ≠ ∅ . (11) 
+
+## A.2 Generalist Optimization 
+
+Let 𝑀 𝐺 = 𝑀 0 ⊕ 𝐴 𝐺 , where 𝐴 𝐺 is the trainable Generalist adapter. For interaction 𝑖 and logged position 𝑡 , define: 
+
+𝑝 𝐺 𝑖,𝑡 = 𝑀 𝐺 
+
+
+
+· | 𝑥 𝑖 , 𝑦 log 
+
+> 𝑖, <𝑡
+
+
+
+, (12) 
+
+𝑝 𝐻 𝑖,𝑡 = 𝑀 0
+
+
+
+· | 𝑥 𝑖 , 𝐶 𝐹 𝑖 , 𝑦 log 
+
+> 𝑖, <𝑡
+
+
+
+, (13) 
+
+𝑝 𝐵 𝑖,𝑡 = 𝑀 0
+
+
+
+· | 𝑥 𝑖 , 𝑦 log 
+
+> 𝑖, <𝑡
+
+
+
+. (14) Both 𝑝 𝐻 𝑖,𝑡 and 𝑝 𝐵 𝑖,𝑡 are detached because 𝑀 0 is frozen. The Generalist is optimized by teacher forcing over the logged prefixes: 
+
+L𝐺 (𝐴 𝐺 ) = E𝑑 𝑖 ∼D 𝐹 
+
+1
+
+𝑇 𝑖 𝑇 𝑖 ∑︁  
+
+> 𝑡 =1
+
+h
+
+𝐷 KL 
+
+
+
+𝑝 𝐺 𝑖,𝑡 𝑝 𝐻 𝑖,𝑡 
+
+
+
++𝜆 𝐵 𝐷 KL 
+
+
+
+𝑝 𝐺 𝑖,𝑡 𝑝 𝐵 𝑖,𝑡 
+
+i 
+
+, 𝑇 𝑖 = 𝑦 log  
+
+> 𝑖
+
+.
+
+(15) The response-level normalization prevents longer logged responses from receiving proportionally larger weight. After optimizing 𝐴 𝐺 , we freeze the resulting Generalist 𝑀 𝐺 . For every processed interaction, including those without a Fix, we then generate: 
+
+𝑦 𝐺 𝑖 ∼ 𝑀 𝐺 (· | 𝑥 𝑖 ) , (16) using the fixed decoding configuration specified in the experimental setup. 
+
+## A.3 Specialist Target Construction 
+
+After Generalist training, we freeze 𝑀 𝐺 and generate a default response 𝑦 𝐺 𝑖 for each processed training interaction. Let 𝐶 𝑆 𝑖 denote the possibly empty ordered sequence of Spec components assigned in § 3.3. During offline target construction, 𝐶 𝑆 𝑖 is provided to the frozen backbone as privileged information, while the Specialist uses only (𝑥 𝑖 , 𝑦 𝐺 𝑖 ) as input. Let Δ+ denote the set of nonempty residual-guidance sequences. The structured target space is 
+
+T𝑆 = {( KEEP , ∅)} ∪ (APPLY , 𝛿 ) | 𝛿 ∈ Δ+ . (17) A KEEP target is paired with an empty guidance field, whereas an 
+
+APPLY target contains nonempty residual guidance. For 𝐶 𝑆 𝑖 ≠ ∅, the frozen backbone constructs both fields in one structured call: 
+
+ 𝑎 ★ 
+
+> 𝑖
+
+, 𝛿 ★
+
+> 𝑖
+
+ = Target 𝑀 0
+
+
+
+𝑥 𝑖 , 𝑦 𝐺 𝑖 , 𝐶 𝑆 𝑖 
+
+
+
+∈ T 𝑆 . (18) It returns (KEEP , ∅) when no supported Spec refinement both ap-plies to the current task and remains unmet in 𝑦 𝐺 𝑖 . Otherwise, it returns  APPLY , 𝛿 ★
+
+> 𝑖
+
+, where 𝛿 ★ 
+
+> 𝑖
+
+describes only the compatible refine-ments that remain unmet in 𝑦 𝐺 𝑖 .When 𝐶 𝑆 𝑖 = ∅, we directly set 
+
+ 𝑎 ★ 
+
+> 𝑖
+
+, 𝛿 ★
+
+> 𝑖
+
+ = (KEEP , ∅) . (19) For training, we serialize  𝑎 ★ 
+
+> 𝑖
+
+, 𝛿 ★
+
+> 𝑖
+
+ as a single completion 𝑧 ★ 
+
+> 𝑖
+
+:a KEEP action is serialized as KEEP , whereas an APPLY action is Different Feedback, Different Updates: Selective Self-Learning from User Interactions for Large Language Models Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+serialized as APPLY followed by 𝛿 ★ 
+
+> 𝑖
+
+. The resulting candidate pool is 
+
+eD𝑆 =
+
+n 
+
+𝑥 𝑖 , 𝑦 𝐺 𝑖 , 𝑧 ★
+
+> 𝑖
+
+o 𝑁 𝑖 =1 . (20) Following the 1:1 balancing used in prior LLM critic training [27], we upsample KEEP candidates to match the number of APPLY can-didates, yielding the balanced training set D𝑆 .
+
+## A.4 Specialist Optimization 
+
+We obtain 𝑀 𝑆 = 𝑀 0 ⊕ 𝐴 𝑆 by attaching a trainable LoRA adapter 
+
+𝐴 𝑆 to the frozen backbone, initialized independently of 𝐴 𝐺 . Each example uses (𝑥 𝑖 , 𝑦 𝐺 𝑖 ) as the prompt and 𝑧 ★ 
+
+> 𝑖
+
+as the completion. Let 
+
+𝑇 𝑖 = |𝑧 ★ 
+
+> 𝑖
+
+| and 𝑁 𝑆 = Í𝑖 ∈ D 𝑆 𝑇 𝑖 denote the completion length and the total number of target tokens, respectively. We optimize: 
+
+L𝑆 (𝐴 𝑆 ) = −𝑁 −1
+
+> 𝑆
+
+∑︁ 𝑖 ∈ D 𝑆 
+
+> 𝑇 𝑖
+
+∑︁ 
+
+> 𝑡 =1
+
+log 𝑀 𝑆 
+
+
+
+𝑧 ★ 
+
+> 𝑖,𝑡
+
+| 𝑥 𝑖 , 𝑦 𝐺 𝑖 , 𝑧 ★
+
+> 𝑖, <𝑡
+
+
+
+. (21) The loss is computed over the completion tokens in 𝑧 ★ 
+
+> 𝑖
+
+. It jointly trains the Specialist to select KEEP or APPLY and, following APPLY ,to generate the residual guidance. At inference time, the Specialist receives (𝑥 𝑖 , 𝑦 𝐺 𝑖 ) and generates one output constrained to T𝑆 . A KEEP output returns 𝑦 𝐺 𝑖 unchanged. An APPLY output provides nonempty residual guidance 𝛿 𝑖 , which the frozen Generalist incorporates through a single residual-guided integration pass. 
+
+## A.5 Inference 
+
+At inference time, the two adapters and the backbone remain frozen. The Generalist first generates its default response: 
+
+𝑦 𝐺 = Decode 𝑀 𝐺 (𝑥 ). (22) Using only (𝑥, 𝑦 𝐺 ), the Specialist then performs one structured de-coding call constrained to the target space defined in Equation (17): 
+
+(𝑎, 𝛿 ) = StructuredDecode 𝑀 𝑆 
+
+
+
+T𝑆 | 𝑥, 𝑦 𝐺 
+
+∈ T 𝑆 . (23) The constraint is applied to the complete structured output rather than to an isolated action. Consequently, the single Specialist output is either (KEEP , ∅) or (APPLY , 𝛿 ) with 𝛿 ∈ Δ+.If 𝑎 = KEEP , the structured-output constraint guarantees 𝛿 = ∅,and the Generalist response is returned unchanged. If 𝑎 = APPLY ,the same output contains nonempty residual guidance 𝛿 , and the frozen Generalist performs one integration pass: 
+
+𝑦 final = Integrate 𝑀 𝐺 
+
+
+
+𝑥, 𝑦 𝐺 , 𝛿 
+
+
+
+. (24) The fixed integration instruction asks the model to implement only the changes specified by 𝛿 and preserve unaffected parts of 𝑦 𝐺 . No second Specialist generation or iterative editing is performed. 
+
+## A.6 Logged-Prefix Self-Distillation 
+
+The Generalist is trained on prefixes of logged responses, which need not have been generated by the current Generalist. We there-fore make explicit the relation between Equation (15) and the cor-responding on-policy objective. Let 𝜃 denote the parameters of 𝐴 𝐺 and write 𝜋 𝜃 = 𝑀 0 ⊕ 𝐴 𝐺 . For interaction 𝑖 and an arbitrary response prefix ℎ, define the fixed 
+
+Algorithm 1 SLIFT inference 
+
+Require: User task 𝑥 ; frozen 𝑀 𝐺 and 𝑀 𝑆 
+
+Ensure: Final response 𝑦 final  
+
+> 1:
+
+𝑦 𝐺 ← Decode 𝑀 𝐺 (𝑥 ) 
+
+> 2:
+
+(𝑎, 𝛿 ) ← StructuredDecode 𝑀 𝑆 (T 𝑆 | 𝑥, 𝑦 𝐺 ) 
+
+> 3:
+
+if 𝑎 = KEEP then  
+
+> 4:
+
+𝑦 final ← 𝑦 𝐺  
+
+> 5:
+
+else  
+
+> 6:
+
+𝑦 final ← Integrate 𝑀 𝐺 (𝑥, 𝑦 𝐺 , 𝛿 ) 
+
+> 7:
+
+end if  
+
+> 8:
+
+return 𝑦 final 
+
+target distributions: 
+
+𝑞 𝐻 𝑖 (· | ℎ) = 𝑀 0
+
+
+
+· | 𝑥 𝑖 , 𝐶 𝐹 𝑖 , ℎ 
+
+
+
+, (25) 
+
+𝑞 𝐵 𝑖 (· | ℎ) = 𝑀 0 (· | 𝑥 𝑖 , ℎ ) , (26) We also define the per-prefix loss: 
+
+ℓ𝜃 (𝑖, ℎ ) = 𝐷 KL 
+
+
+
+𝜋 𝜃 (· | 𝑥 𝑖 , ℎ ) 𝑞 𝐻 𝑖 (· | ℎ)
+
+
+
++ 𝜆 𝐵 𝐷 KL 
+
+
+
+𝜋 𝜃 (· | 𝑥 𝑖 , ℎ ) 𝑞 𝐵 𝑖 (· | ℎ)
+
+
+
+.
+
+(27) Let 𝜈 log be the distribution obtained by sampling 𝑑 𝑖 ∼ D 𝐹 , sam-pling a token position uniformly from its logged response, and returning the corresponding prefix. The resulting logged-prefix objective is: 
+
+L𝐺 (𝜃 ) = E(𝐼,𝐻 )∼ 𝜈 log [ℓ𝜃 (𝐼, 𝐻 )] , (28) which is the off-policy logged-interaction surrogate of SDPO [10], specialized to Fix context and augmented with the behavioral an-chor. For comparison, at optimization iterate 𝜃 𝑘 , an on-policy version would sample responses from 𝜋 𝜃 𝑘 and induce a prefix distribution 
+
+𝜈 𝜃 𝑘 . With the rollout distribution detached during the update, its gradient is given by: 
+
+𝑔 on (𝜃 𝑘 ) = E(𝐼,𝐻 )∼ 𝜈 𝜃 𝑘 [∇ 𝜃 ℓ𝜃 (𝐼, 𝐻 )] 𝜃 =𝜃 𝑘 
+
+, (29) whereas the logged-prefix update is given by: 
+
+𝑔 log (𝜃 𝑘 ) = E(𝐼,𝐻 )∼ 𝜈 log [∇ 𝜃 ℓ𝜃 (𝐼, 𝐻 )] 𝜃 =𝜃 𝑘 
+
+. (30) If ∥∇ 𝜃 ℓ𝜃 (𝑖, ℎ )| 𝜃 =𝜃 𝑘 ∥ ≤ 𝐺 on the support of both prefix distributions, then the following bound holds: 
+
+𝑔 log (𝜃 𝑘 ) − 𝑔 on (𝜃 𝑘 ) ≤ 2𝐺 𝐷 TV 
+
+ 𝜈 log , 𝜈 𝜃 𝑘 
+
+ . (31) This follows directly by writing the difference as an integral against 
+
+𝑑𝜈 log − 𝑑𝜈 𝜃 𝑘 and applying the triangle inequality. Exact correction would require logging-policy or prefix-density ratios, which are unavailable for the interaction logs. Accordingly, SLIFT optimizes the unweighted surrogate in Equation (28). The behavioral anchor regularizes changes at observed prefixes. 
+
+## B Implementation Details B.1 Backbones and Data Construction 
+
+We use the instruction-tuned checkpoints Qwen3-8B and Ministral3-14B-Instruct as 𝑀 0. Qwen3-8B is run with its official non-thinking chat template. For a given backbone, the same frozen checkpoint Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xuancheng Li, Haitao Li, Yujia Zhou, Qingyi Pan, Heng Wang, Yiqun Liu, Min Zhang, and Qingyao Ai 
+
+Atomic-component extraction        
+
+> SYSTEM Decompose the later user turn into an ordered list of minimal, self-contained feedback components. INPUT Original task: [TASK] Logged assistant response: [LOGGED RESPONSE] Later user turn: [USER TURN] INSTRUCTIONS –Extract each explicit correction, criticism, clarification, constraint, preference, desired answer property, or separate new request. – Each component must express exactly one point and remain understandable on its own. – Preserve the user’s meaning and original order. – Do not infer requirements that are not stated. – Do not assign FIX/SPEC/NULL. – If no listed signal is present, return an empty list. Return JSON only: {"components": ["...", "..."]}
+
+Figure 7: Prompt for atomic feedback-component extraction. 
+
+is used for atomic-component extraction, task-relative role assign-ment, the two Generalist teacher distributions, and offline Specialist-target construction. Thus, none of these stages introduces a stronger teacher model. The Generalist and Specialist LoRA adapters are ini-tialized independently from 𝑀 0; they are never stacked in a single forward pass. For MemoryBench, we generate a separate interaction log from each backbone’s own responses, while Qwen3.6-Plus is used only as the user simulator under the benchmark’s interaction protocol. For WildFB, we use the 15,000 training interactions sampled as described in the main text. Dataset identifiers, satisfaction labels, evaluation metadata, and test-set information are excluded from all prompts and training targets. All offline structured generations used to construct SLIFT supervision use deterministic decoding. Baseline-specific stochastic operations follow their original protocols, as described in § B.7. 
+
+## B.2 Prompt Templates 
+
+The bracketed fields below are replaced verbatim and wrapped with the native chat template of the corresponding backbone. All struc-tured calls request JSON only and do not request chain-of-thought. Extraction observes the complete logged interaction, whereas role assignment observes only the original task and one extracted com-ponent, matching the information boundaries defined in the main method. 
+
+Atomic-component extraction. The extractor may return an empty list. A separate new request is still extracted as a component and is handled by role assignment. 
+
+Task-relative role assignment. The following prompt is applied independently to every extracted component. 
+
+Generalist serializations. For 𝐶 𝐹 𝑖 = (𝑐 𝑖 1, . . . , 𝑐 𝑖𝑚 ), we preserve component order and number the components without paraphras-ing them. The Generalist student and feedback-free anchor use the task-only serialization in Figure 9 in separate forward passes. The hindsight teacher uses Figure 10. In all three passes, the same logged prefix 𝑦 log 
+
+𝑖, <𝑡 is appended by teacher forcing. Task-relative role assignment 
+
+> SYSTEM Classify one feedback component relative to the original task. Use only the TASK and COMPONENT. INPUT Task: [TASK] Component: [COMPONENT] RUBRIC 1. Return NULL if the component does not specify a compatible property of an answer to TASK. This includes ambiguity, irrelevance, conflict with TASK, pure reaction without a requested change, and a separate deliverable. 2. Otherwise return FIX iff every fully valid answer to TASK must satisfy the component; omitting it would make the answer incorrect or incomplete. 3. Otherwise return SPEC: the component is compatible with TASK, but a fully valid answer may omit it. The fact that a later user stated the component is not evidence that it was required by TASK. When the criteria cannot be applied reliably, return NULL. Return JSON only: {"role": "FIX"}, {"role": "SPEC"}, or {"role": "NULL"}.
+
+Figure 8: Prompt for task-relative role assignment. 
+
+Generalist student and feedback-free anchor 
+
+> STUDENT / FEEDBACK-FREE ANCHOR System: Answer the user’s task. User: [TASK]
+
+Figure 9: Task-only serialization used by the Generalist stu-dent and frozen feedback-free anchor in separate forward passes. 
+
+Generalist hindsight teacher          
+
+> HINDSIGHT TEACHER System: Answer the user’s task. The task-necessary requirements below were recovered from later feedback. Treat them as requirements of the original task, but do not mention the feedback. User: [TASK] Task-necessary requirements: 1. [FIX COMPONENT 1] 2. [FIX COMPONENT 2] ...
+
+Figure 10: Feedback-conditioned serialization used by the frozen hindsight teacher. 
+
+Offline Specialist-target construction. This is the only Specialist-related prompt that receives 𝐶 𝑆 𝑖 . The Spec components are privi-leged offline information and are not included in the Specialist’s training or test-time input. 
+
+Specialist input and target serialization. After offline target con-struction, the Specialist receives only the task and Generalist re-sponse. The action is constrained to {KEEP , APPLY }, and residual guidance is generated only after APPLY .
+
+Residual integration. This prompt is used only after an APPLY 
+
+decision. The frozen Generalist performs one integration pass. Different Feedback, Different Updates: Selective Self-Learning from User Interactions for Large Language Models Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+Offline Specialist-target construction 
+
+> SYSTEM Construct one training target for a Specialist. SPEC components are privileged offline information used to define candidate refinements; they are unavailable to the Specialist. INPUT Task: [TASK] Generalist response: [GENERALIST RESPONSE] SPEC components, in original order: [SPEC COMPONENTS] INSTRUCTIONS – For each SPEC component, separate the candidate refinement from evidence that it applies: the component defines the candidate, but only TASK and GENERALIST RESPONSE may justify its applicability. – Retain a candidate only when observable cues in TASK or GENERALIST RESPONSE make it relevant without assuming an unobserved user preference. Do not use the fact that it appeared in feedback as such a cue. – Do not retain concrete conditions or details whose relevance is supported only by the SPEC component. – Among the retained candidates, keep only those that are compatible with all explicit task constraints, mutually compatible, and not already realized in meaning by the Generalist response. – If no candidate remains both observably applicable and unmet, return KEEP with no guidance. – Otherwise return APPLY and state only the minimal residual changes needed for the retained, unmet refinements, preserving their original order. – Do not write a replacement response. Return JSON only, using one of these schemas: {"action": "KEEP", "guidance": []} {"action": "APPLY", "guidance": ["...", "..."]}
+
+Figure 11: Prompt for constructing offline Specialist targets. 
+
+Specialist input and target serialization 
+
+> SYSTEM Given a task and a Generalist response, decide whether an observably applicable learned refinement remains unmet. Use only the task and response, and do not assume an unobserved user preference. Do not rewrite the response. INPUT Task: [TASK] Generalist response: [GENERALIST RESPONSE] OUTPUT Return JSON only: {"action": "KEEP", "guidance": []} or {"action": "APPLY", "guidance": ["minimal residual change", "..."]}
+
+Figure 12: Prompt observed by the Specialist during training and inference. 
+
+## B.3 Optimization 
+
+Each training run uses four GPUs and bfloat16 precision. For train-able methods, results reported over five runs use five fixed training seeds; within a run, all compared trainable variants use the same data manifest, training seed, and generation seed. Base has no train-ing seed; its five runs independently restart the complete evaluation under identical greedy decoding and fixed seeds, so the resulting variation reflects multi-GPU inference/runtime nondeterminism rather than sampling. We use AdamW and apply LoRA to the atten-tion 𝑞 /𝑘 /𝑣 /𝑜 projections and the MLP gate/up/down projections. Table 4 reports the settings shared across backbones and training sources. The Generalist uses logged prefixes only; it does not generate a revised target response or use preference pairs or rewards. Both KL terms are computed from complete next-token distributions and Residual integration           
+
+> SYSTEM Revise the Generalist response once so that it implements the residual guidance. INPUT Task: [TASK] Generalist response: [GENERALIST RESPONSE] Residual guidance: [GUIDANCE] INSTRUCTIONS – Implement only the changes in GUIDANCE. – Preserve all unaffected content, claims, structure, formatting, and level of detail. – Do not add requirements not supported by TASK or GUIDANCE. – Return the complete final response only.
+
+Figure 13: Prompt for the frozen Generalist’s single residual-integration pass. Table 4: Shared training configuration. “Mean” denotes length normalization in the corresponding objective. 
+
+Setting Generalist Specialist 
+
+Trainable parameters 𝐴 𝐺 only 𝐴 𝑆 only LoRA rank / scale 64 /128 16 /32 
+
+LoRA dropout 0.05 0.05 
+
+Learning rate 2 × 10 −5 2 × 10 −5
+
+Training epochs 2 2
+
+Behavioral anchor 𝜆 𝐵 = 0.5 –Effective batch size 64 32 
+
+Sampling all 𝐶 𝐹 𝑖 ≠ ∅ 1:1 KEEP /APPLY 
+
+Loss normalization response mean completion-token mean Teacher supervision detached distributions offline targets 
+
+averaged over response positions. The Specialist loss is computed over all completion tokens in the balanced structured targets and normalized by their total count. The Specialist adapter is initialized independently from the frozen backbone, not from the trained Generalist adapter. Source-specific context limits and the remaining optimizer fields, including the scheduler, warmup, weight decay, optimizer-step count, and token budget, are recorded in the released run configu-rations. No benchmark score is used in either training objective. 
+
+## B.4 Generation and Inference 
+
+For a fixed backbone and training source, all compared methods use the same chat template, context budget, output budget, and decoding configuration. Qwen3-8B remains in non-thinking mode throughout. WildFB-trained models use greedy decoding (temperature = 0, top_p = 1) for Base, Generalist, Specialist, and residual-integration calls. MemoryBench uses the official genera-tion configuration and partition-specific output limits. Specialist action decoding is constrained to {KEEP , APPLY }. A KEEP result re-turns 𝑦 𝐺 unchanged; an APPLY result triggers one frozen Generalist integration call and no iterative editing. 
+
+## B.5 Cost Measurement 
+
+The training-cost panel in Figure 6 reports GPU-hours for training-signal construction and parameter optimization. For retrieval and Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xuancheng Li, Haitao Li, Yujia Zhou, Qingyi Pan, Heng Wang, Yiqun Liu, Min Zhang, and Qingyao Ai 
+
+Table 5: Official implementations used for evaluation.      
+
+> Benchmark Official resource
+> MemoryBench https://github.com/THUIR/MemoryBench WildFB and WildReward-8B https://github.com/THU-KEG/WildReward IFEval https://github.com/google-research/google-research/tree/master/instruction_following_eval AlpacaEval 2.0 https://github.com/tatsu-lab/alpaca_eval MMLU-Pro https://github.com/TIGER-AI-Lab/MMLU-Pro
+
+external-memory systems, the panel marks that no parameter-update stage is performed; it should not be interpreted as zero cost for memory writing or index construction. Test-time cost is measured end to end per test task and normalized by Base. It in-cludes all retrieval, memory access, module selection, Specialist, and model generation calls required by each method. All methods are measured with the same Qwen3-8B deployment and decoding budgets. 
+
+## B.6 Official Evaluation Implementations 
+
+We use the official evaluation and scoring implementations without modifying their benchmark definitions. The corresponding public resources are listed in Table 5. 
+
+## B.7 Baseline Implementations 
+
+Common protocol. For each backbone and dataset, all baselines receive exactly the same training split. We represent each training interaction as 𝑆 𝑖 = (𝑥 𝑖 , 𝑦 log  
+
+> 𝑖
+
+, 𝑢 𝑖 ), where 𝑥 𝑖 is the original task and its available task context, 𝑦 log  
+
+> 𝑖
+
+is the logged model response, and 
+
+𝑢 𝑖 is the subsequent user turn. Retrieval indices, memory states, preference data, and parameter updates are constructed only from the training split. They are fixed before evaluation, and responses generated for one test request are not written back to the state used by later requests. All methods use the same backbone, system prompt, chat tem-plate, context-length budget, and maximum output length. Qwen3-8B is evaluated in non-thinking mode. Following the benchmark-specific evaluation protocol, MemoryBench uses the official gen-eration configuration, including temperature 0 .1 and its partition-specific output limits, whereas WildFB and the general-purpose evaluation sets use greedy decoding. Base directly applies the corre-sponding unadapted backbone and receives no historical interaction information. 
+
+Direct retrieval. We treat each complete training interaction as one retrievable entry. The original task 𝑥 𝑖 , rather than the feedback turn alone, is used as the retrieval key, while the corresponding task, logged response, and subsequent user turn are jointly retained as the retrieved content. Given a test request, BM25 [24] ranks the training interactions by sparse lexical relevance. The dense variant encodes the training tasks and the test request using Qwen3-Embedding-0.6B [35] and ranks sessions by embedding similarity. Neither variant uses an additional reranker. For both retrievers, the top-5 training interactions are serialized in descending retrieval order and prepended to the current request as historical examples. If the resulting input exceeds the model context window, we reserve the current request and generation budget and use a bisection-based truncation procedure to reduce only the retrieved portion. Thus, both retrieval methods use the same number and format of candidate sessions and differ only in their retrieval function. 
+
+Memory systems. All memory-system baselines receive the same training-interaction stream in its original order. Each training in-teraction is inserted once, after which the resulting memory state is frozen for evaluation. We retain each method’s official extraction, consolidation, linking, and update operations rather than replacing them with a shared memory representation. Whenever a method exposes a retrieval-depth parameter, we use the top-5 memory entries, matching the retrieval budget above across all methods. For A-Mem [31], each training interaction is converted into a structured note and processed by its official note-linking and memory-evolution operations. For MemoryOS [9], training interac-tions are sequentially written into its short-, mid-, and long-term hierarchy, with the official promotion and consolidation procedure applied during memory construction. We follow the corresponding MemoryBench configurations for these two systems. For MemOS [13], we use its official memory-writing and re-trieval interfaces but replace its default response generator, when necessary, with the same backbone used by all other methods. For ReMem [30], we apply its released memory refinement procedure to the training interactions and retain the evolved memory for sub-sequent test requests. In every case, retrieved memories are passed to the common backbone through the method’s official prompt tem-plate, and the final response is generated under the shared decoding configuration. 
+
+Preference-data construction. SFT and DPO require target re-sponses or preference pairs that are not present in raw interaction logs. We therefore apply the following preprocessing protocol. For each training interaction, the corresponding frozen backbone dis-tills actionable information from (𝑥 𝑖 , 𝑦 log  
+
+> 𝑖
+
+, 𝑢 𝑖 ) into a semi-structured rule set 𝑅 𝑖 ; interactions with no non-empty rule set are discarded. The same backbone then revises the logged response conditioned on 𝑢 𝑖 and 𝑅 𝑖 to produce 𝑦 + 
+
+> 𝑖
+
+, while the logged response is retained as 𝑦 − 
+
+> 𝑖
+
+= 𝑦 log  
+
+> 𝑖
+
+. This yields 
+
+Dpref = (𝑥 𝑖 , 𝑦 + 
+
+> 𝑖
+
+, 𝑦 − 
+
+> 𝑖
+
+) . (32) The same pairs are used by SFT and DPO. SFT and DPO do not receive the feedback, rule set, or Fix/Spec/Null labels as model inputs. 
+
+SFT and DPO. SFT [19] trains one global LoRA adapter on {( 𝑥 𝑖 , 𝑦 + 
+
+> 𝑖
+
+)} 
+
+using completion-only negative log-likelihood. DPO [23] trains one global adapter on the complete chosen–rejected pairs, with the unadapted backbone serving as the frozen reference policy and 
+
+𝛽 = 0.1. Each trains a single global adapter and retains no external state at inference time. Both methods use LoRA rank 64 and dropout 0 .05. We train for eight epochs with a learning rate of 5 × 10 −4 and a cosine schedule. Training uses bfloat16 , per-device batch size 1 on four GPUs, and gradient accumulation over eight steps, giving an effective batch size of 32. We use Adam coefficients (𝛽 1, 𝛽 2) = (0.9, 0.98 ), 𝜖 = 10 −8,weight decay 10 −4, no learning-rate warm-up, and gradient-norm Different Feedback, Different Updates: Selective Self-Learning from User Interactions for Large Language Models Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+clipping at 1 .0. The maximum sequence length is replaced with the same backbone- and benchmark-specific context budget used by the other methods. For each run, we select the epoch with the lowest validation cross-entropy on the chosen responses. At inference time, the selected adapter generates directly from the task input without access to the training logs or constructed preference data. 
+
+SDPO. For SDPO [10], we use its offline, off-policy formulation for logged user interactions. Each training interaction provides a tuple (𝑥 𝑖 , 𝑦 log  
+
+> 𝑖
+
+, 𝑢 𝑖 ). At every logged response position 𝑡 , the stu-dent distribution observes only the original task and logged prefix, whereas the stop-gradient hindsight distribution additionally ob-serves the subsequent user turn: 
+
+𝑞 𝑖,𝑡 = 𝜋 𝜃 
+
+
+
+· | 𝑥 𝑖 , 𝑦 log 
+
+> 𝑖, <𝑡
+
+
+
+, (33) 
+
+𝑝 fb  
+
+> 𝑖,𝑡
+
+= sg 
+
+h
+
+𝜋 𝜃 
+
+
+
+· | 𝑥 𝑖 , 𝑢 𝑖 , 𝑦 log 
+
+> 𝑖, <𝑡
+
+i 
+
+. (34) The adapter minimizes 
+
+LSDPO = 1
+
+|D| ∑︁ 𝑖 
+
+1
+
+|𝑦 log  
+
+> 𝑖
+
+| 
+
+> |𝑦 log
+> 𝑖 |
+
+∑︁ 
+
+> 𝑡 =1
+
+𝐷 KL 
+
+
+
+𝑞 𝑖,𝑡 𝑝 fb 
+
+> 𝑖,𝑡
+
+
+
+. (35) The logged response supplies all scored prefixes, so SDPO does not sample new responses, construct chosen–rejected pairs, or invoke a reward model. For parameter-count comparability, we apply this objective through one LoRA adapter with rank 64 and dropout 0 .05. Following the original logged-interaction experiments, we use a learning rate of 2 × 10 −6, an effective batch size of 32, two epochs, a 5% warm-up ra-tio, a cosine learning-rate schedule, and an 8-bit AdamW optimizer. We replace the original fixed prompt and completion limits with our shared context and output budgets so that long-context Mem-oryBench instances are evaluated without an additional baseline-specific truncation. 
+
+## C Additional Experiments C.1 Analysis Settings 
+
+Judge protocol. The task/feedback analysis and the audits below use a fixed, source-blind qwen3.7-max snapshot [22], independent of the two evaluated backbones. We use deterministic decoding, re-quest JSON only, and hide the training source, backbone, benchmark name, dataset labels, downstream model output, and evaluation re-sult. Malformed outputs are retried with the same prompt; records with incomplete provider output after retry are excluded. 
+
+Task and feedback analysis. We select the first feedback opportu-nity for each root training task. MemoryBench provides backbone-specific response and feedback logs; a fixed seed assigns each root task to one of the two backbone logs so that each task contributes one observation. WildFB contributes one shared real-user log per root task. Three annotation calls preserve the information bound-ary: the task call receives the task context 𝐻 ; the response call receives (𝐻, 𝑦 log  
+
+> 𝑖
+
+); and the feedback call receives (𝐻, 𝑦 log  
+
+> 𝑖
+
+, 𝑢 𝑖 ). The four reported feedback criteria are response relevance; relevance plus diagnostic support; relevance plus specificity; and full usability, which additionally requires actionability. For standardized comparisons, we stratify root tasks by task operation and objective verifiability, retain strata with at least 20 tasks from each source, and reweight both sources to the equal-weight average of their distributions over shared strata. We use 2,000 root-task bootstrap replicates and report percentile 95% con-fidence intervals. 
+
+## C.2 Complete Evaluation Protocol 
+
+MemoryBench. We evaluate 150/143/150/275 held-out requests in the Short–Short (SS), Short–Long (SL), Long–Short (LS), and Long–Long (LL) partitions, respectively. We retain each constituent dataset’s native scorer and the fixed normalization statistics dis-tributed with the official harness [2]. Raw scores are normalized within each constituent dataset and then aggregated over test in-stances. We report the resulting sample-weighted min–max score (Norm-Score, multiplied by 100) and Z-score. The Average column is the unweighted mean of the four partition-level Norm-Scores. The official generation limits are 2,048 new tokens for SS, SL, and LS and 12,000 for LL. All compared methods use identical test keys, prompts, output limits, and evaluator configurations. 
+
+WildFB and capability evaluations. All formal generations use the common greedy configuration specified in § B. IFEval is eval-uated on all 541 official prompts; a prompt receives prompt-level strict credit only when every verifiable instruction attached to it passes the corresponding checker [38]. AlpacaEval 2.0 uses all 805 official instructions, the official GPT-4-Turbo reference responses and weighted auto-annotator, and reports the length-controlled (LC) win rate [6]. MMLU-Pro uses all 12,032 test questions with the official five-shot chain-of-thought protocol and reports exact accuracy after extracting the final A–J choice [29]. For the in-domain comparison, 4,929 held-out WildFB interac-tions remain after common structural validity checks. WildReward-8B scores the generated and logged responses under the same task context and query. For ordinal logits ℓ𝑖𝑘 , its scalar score is 
+
+𝑟 𝑖 = 1 +∑︁ 
+
+> 𝑘
+
+𝜎 (ℓ𝑖𝑘 ). (36) We report 100 𝑁 −1 Í𝑖 1[𝑟 gen  
+
+> 𝑖
+
+> 𝑟 log  
+
+> 𝑖
+
+]; exact ties are non-wins. This is a paired cross-policy comparison against the logged response, rather than an absolute measure of response quality. No WildFB satisfaction label is used in generation, scoring, target construction, or threshold selection. 
+
+## C.3 Complete WildFB Results 
+
+Across both backbones, SLIFT obtains the highest IFEval, AlpacaE-val 2.0, and WildReward scores among the compared methods. The largest gains occur on instruction following and open-ended re-sponse quality, while MMLU-Pro remains within 0 .17 points of Base for Qwen3-8B and 0 .11 points for Ministral3-14B. 
+
+## C.4 Full Ablation Results 
+
+The expanded results use the same five variants as Table 2. w/o Atomic Extraction assigns one role to the complete feedback turn. 
+
+w/o Task Context for Roles removes 𝑥 𝑖 from role assignment. w/o Separate Pathways sends both Fix and Spec through the Generalist while continuing to exclude Null. w/o Specialist discards Spec Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xuancheng Li, Haitao Li, Yujia Zhou, Qingyi Pan, Heng Wang, Yiqun Liu, Min Zhang, and Qingyao Ai 
+
+Table 6: Expanded ablation results across two backbones. The first five columns report MemoryBench Norm-Score, while the last four report IFEval Prompt-Strict, AlpacaEval 2.0 LC win rate, MMLU-Pro accuracy, and WildReward win rate after training on WildFB logs. All entries are means over five runs, with standard deviations in parentheses. 
+
+MemoryBench-trained WildFB-trained Variant SS SL LS LL Avg. IFEval Alpaca MMLU-Pro WildReward Qwen3-8B SLIFT 70.49 (.43) 58.00 (.37) 45.22 (.40) 49.68 (.45) 55.85 (.25) 86.44 (.94) 47.68 (.24) 62.15 (.10) 78.76 (.17) 
+
+w/o Atomic Extraction 67.31 (.52) 56.84 (.48) 44.07 (.47) 43.58 (.55) 52.95 (.31) 83.78 (.86) 45.51 (.23) 62.04 (.09) 78.08 (.21) 
+
+w/o Task Context for Roles 65.42 (.58) 53.87 (.54) 43.06 (.56) 41.93 (.63) 51.07 (.35) 83.01 (.94) 44.31 (.25) 61.92 (.11) 77.71 (.24) 
+
+w/o Separate Pathways 66.72 (.55) 55.46 (.46) 45.08 (.53) 41.86 (.60) 52.28 (.33) 82.94 (.89) 44.63 (.22) 62.19 (.08) 77.84 (.22) 
+
+w/o Specialist (SLIFT-Gen) 65.25 (.49) 55.33 (.39) 43.20 (.49) 43.72 (.48) 51.88 (.28) 84.40 (.83) 47.02 (.22) 62.15 (.11) 77.46 (.19) 
+
+w/o KEEP Supervision 64.49 (.66) 54.43 (.58) 42.71 (.69) 43.33 (.72) 51.24 (.43) 72.18 (1.28) 46.38 (.31) 59.47 (.18) 74.63 (.30) 
+
+Ministral3-14B SLIFT 67.81 (.45) 39.22 (.58) 48.75 (.53) 57.09 (.47) 53.22 (.31) 69.71 (1.02) 66.35 (.21) 52.20 (.08) 81.10 (.14) 
+
+w/o Atomic Extraction 65.74 (.55) 39.08 (.66) 45.29 (.59) 55.09 (.61) 51.30 (.34) 67.89 (.91) 65.22 (.19) 52.08 (.10) 80.61 (.18) 
+
+w/o Task Context for Roles 63.88 (.61) 38.94 (.70) 47.37 (.57) 52.77 (.67) 50.74 (.36) 67.34 (.74) 63.98 (.22) 51.94 (.12) 80.54 (.21) 
+
+w/o Separate Pathways 64.57 (.58) 39.11 (.62) 46.32 (.60) 54.20 (.64) 51.05 (.33) 67.62 (.86) 64.61 (.18) 52.27 (.09) 80.43 (.20) 
+
+w/o Specialist (SLIFT-Gen) 64.23 (.51) 39.20 (.59) 46.61 (.47) 55.62 (.54) 51.42 (.32) 67.28 (.79) 64.27 (.17) 52.20 (.09) 80.79 (.16) 
+
+w/o KEEP Supervision 63.54 (.67) 38.68 (.73) 45.79 (.68) 55.43 (.64) 50.86 (.44) 57.63 (1.36) 64.06 (.28) 49.38 (.19) 75.81 (.29) 
+
+Table 7: Complete results for models trained on WildFB, un-derlying Figure 3. All methods use the common generation and evaluation protocol in § C.2. Results are means over five runs, with standard deviations in parentheses. Base has no training seed; its five runs independently restart the com-plete fixed-seed greedy evaluation. 
+
+Method IFEval 
+
+Prompt-Strict 
+
+AlpacaEval 2.0 
+
+LC win rate 
+
+MMLU-Pro 
+
+Accuracy 
+
+WildReward 
+
+Win rate 
+
+Qwen3-8B 
+
+Base 82.55 (.17) 44.51 (.26) 62.32 (.12) 77.36 (.18) 
+
+SFT 81.81 (.74) 43.37 (.28) 61.68 (.14) 76.88 (.23) 
+
+DPO 82.03 (.69) 43.84 (.25) 61.92 (.16) 77.13 (.21) 
+
+SDPO 79.82 (.91) 41.76 (.31) 60.47 (.19) 75.68 (.27) 
+
+SLIFT-Gen 84.40 (.83) 47.02 (.22) 62.15 (.11) 77.46 (.19) 
+
+SLIFT 86.44 (.94) 47.68 (.24) 62.15 (.10) 78.76 (.17) 
+
+Ministral3-14B 
+
+Base 65.92 (.43) 63.83 (.20) 52.31 (.10) 80.02 (.16) 
+
+SFT 64.73 (.68) 62.47 (.25) 51.63 (.13) 79.68 (.21) 
+
+DPO 65.03 (.72) 62.93 (.23) 51.84 (.14) 79.83 (.19) 
+
+SDPO 63.51 (.88) 60.76 (.29) 50.47 (.17) 78.17 (.26) 
+
+SLIFT-Gen 67.28 (.79) 64.27 (.17) 52.20 (.09) 80.79 (.16) 
+
+SLIFT 69.71 (1.02) 66.35 (.21) 52.20 (.08) 81.10 (.14) 
+
+supervision, and w/o KEEP Supervision trains the Specialist only on 
+
+APPLY targets. The two-backbone results match the main ablation trends. Re-moving the task context from role assignment produces the largest MemoryBench average and AlpacaEval 2.0 losses on both back-bones. Sending Fix and Spec through one Generalist or discarding Spec both underperform the complete model. Removing KEEP su-pervision produces the largest IFEval loss on both backbones. 
+
+## C.5 Full Online Evolution Results 
+
+We split the MemoryBench training tasks into two equal, disjoint batches and keep the test set fixed. Iteration 0 is the shared Qwen3-8B Base. At iteration 1, each method is trained on the pre-collected logs from batch 1. The resulting model is then deployed on batch 2, 
+
+Table 8: Online evolution on MemoryBench with Qwen3-8B. Each entry is the macro-average Norm-Score over SS/SL/LS/LL. Iteration columns report five-run means with standard deviations in parentheses; delta columns report paired changes between adjacent iterations. 
+
+Method Iter. 0 Iter. 1 Iter. 2 Δ0→1 Δ1→2
+
+SFT 49.17 (.28) 49.75 (.35) 50.08 (.37) +0.58 (.22) +0.33 (.19) 
+
+SDPO 49.17 (.28) 50.05 (.38) 50.55 (.40) +0.88 (.25) +0.50 (.21) 
+
+SLIFT-Gen 49.17 (.28) 52.72 (.30) 54.34 (.32) +3.55 (.17) +1.62 (.19) 
+
+SLIFT 49.17 (.28) 53.08 (.27) 54.86 (.30) +3.91 (.16) +1.78 (.18) 
+
+where the MemoryBench User Simulator generates method-specific on-policy feedback. Iteration 2 applies the corresponding incremen-tal update. All methods improve after both training rounds. SLIFT obtains the highest score at each trained iteration and the largest increment in each round, while SLIFT-Gen remains below the complete model. 
+
+## C.6 Feedback Processing and Specialist-Target Audit 
+
+Extraction and role assignment. The extractor observes (𝑥 𝑖 , 𝑦 log  
+
+> 𝑖
+
+, 𝑢 𝑖 )
+
+and returns an ordered list of minimal components, possibly empty. Role assignment is a separate call that observes only (𝑥 𝑖 , 𝑐 𝑖 𝑗 ). It assigns Fix when every fully valid response to 𝑥 𝑖 must satisfy the component, Spec when the component is task-compatible but omis-sible, and Null when no reliable positive update is supported. The extraction audit samples 300 processed root tasks per source, split evenly across the Qwen3-8B and Ministral3-14B processing pipelines. The independent judge receives the logged interaction and extracted list, but not component roles or downstream results, and checks coverage, faithfulness, and atomicity. The role audit samples 500 components from each assigned role and source, split evenly across the two processing backbones. The judge receives only (𝑥 𝑖 , 𝑐 𝑖 𝑗 ) and independently assigns a Fix-like, Spec-like, Null-like, or uncertain label. Different Feedback, Different Updates: Selective Self-Learning from User Interactions for Large Language Models Conference acronym ’XX, June 03–05, 2018, Woodstock, NY 
+
+Table 9: Source-blind extraction audit. Values are percent-ages of sampled root tasks ( 𝑛 = 300 per source); “All” requires coverage, faithfulness, and atomic/self-contained decompo-sition. 
+
+Source 𝑛 Coverage Faithful Atomic All 
+
+MemoryBench 300 96.3 98.7 95.0 92.7 WildFB 300 89.0 95.3 90.0 84.0 
+
+Table 10: Source-blind role audit ( 𝑛 = 500 per assigned-role/source cell). Counts show the independent judge’s task-relative label; “Support” is the diagonal percentage. 
+
+Source Assigned role FIX-like SPEC-like NULL-like Uncer-tain Support (%) 
+
+MemoryBench Fix 461 23 10 6 92.2 Spec 22 463 9 6 92.6 Null 17 36 439 8 87.8 WildFB Fix 422 44 22 12 84.4 Spec 45 416 23 16 83.2 Null 29 33 426 12 85.2 
+
+Case Study  
+
+> 1. Benchmark input (verbatim)
+> phrase an email to my manager kindly asking for feedback for a dashboard I sent him for his use, and also ask him if I should publish this dashboard to the team, and if there’s a certain way he wants me to publish it, or certain orientation to emphasis when publishing
+> 2. Generalist response
+
+𝑦 𝐺 
+
+> Subject: Feedback and Guidance on Dashboard Sharing
+> Hi [Manager’s Name], I hope you’re doing well. I’m following up on the dashboard I sent for your use and would appreciate your feedback on its clarity, usefulness, and any areas that could be improved. I’d also like to ask whether you think I should publish it to the team. If so, please let me know whether you have a preferred channel or format for sharing it and whether there are particular findings or an overall orientation you would like me to emphasize. I’m happy to make any adjustments before sharing it. Thank you for your guidance. Best, [Name]
+> 3. Specialist output
+> {"action": "APPLY", "guidance": ["Make the email easier for a busy manager to scan: shorten the opening and present the publication-channel and emphasis questions as two brief bullets. Preserve the professional tone and every requested decision."]}
+> 4. Integrated response Subject: Feedback and Guidance on Dashboard Sharing
+> Hi [Manager’s Name], Could you please share your feedback on the dashboard I sent, particularly anything that should be improved or clarified? If you think it should be shared with the team, could you also advise:
+
+• which channel or format I should use; and 
+
+• which findings or overall orientation I should emphasize? I’m happy to revise it before sharing. Thank you for your guidance. Best, [Name] 
+
+> 5. Pairwise evaluation outcome
+> The pairwise evaluator prefers the integrated response over the Generalist response.
+
+Figure 14: An observed APPLY trace on AlpacaEval 2.0. The Generalist response already satisfies every explicit request, while the Specialist adds a compatible, nonessential refine-ment that improves concision and presentation. 
+
+Specialist targets. For each source, we sample 250 target-KEEP 
+
+and 250 target-APPLY states, split evenly across the two backbone 
+
+Table 11: Source-blind Specialist-target audit. “Target-consistent” requires an independently supported action and, for APPLY , grounded, complete, residual-only guidance. Cells report counts with percentages in parentheses. 
+
+Metric MemoryBench WildFB Pooled 
+
+KEEP /APPLY 250/250 250/250 500/500 
+
+KEEP supported 236/250 (94.4) 221/250 (88.4) 457/500 (91.4) 
+
+APPLY supported 228/250 (91.2) 217/250 (86.8) 445/500 (89.0) Action consistent 464/500 (92.8) 438/500 (87.6) 902/1,000 (90.2) Guidance faithful 233/250 (93.2) 226/250 (90.4) 459/500 (91.8) Target consistent 449/500 (89.8) 420/500 (84.0) 869/1,000 (86.9) 
+
+Table 12: Full stage endpoints on Ministral3-14B. Base, Gener-alist, and Full are the scores used in Table 3. APPLY and Edited are recorded counts. 
+
+Evaluation 𝑁 Base Gener-alist Full APPLY Edited MemoryBench training log 
+
+SS 150 61.20 64.23 67.81 29 27 SL 143 37.86 39.20 39.22 2 2LS 150 45.46 46.61 48.75 16 15 LL 275 54.71 55.62 57.09 25 23 
+
+WildFB training log 
+
+IFEval 541 65.92 67.28 69.71 77 71 AlpacaEval 2.0 805 63.83 64.27 66.35 103 95 MMLU-Pro 12,032 52.31 52.20 52.20 0 0WildReward 4,929 80.02 80.79 81.10 123 108 
+
+Table 13: qwen3.7-max -judged feedback yields. Values are per-centages of first feedback opportunities, with root-task boot-strap 95% confidence intervals shown as subscripts. Stan-dardized estimates reweight both training logs to an equal-source pooled distribution over task-operation and verifia-bility strata. 
+
+Signal yield Log Observed Standardized WF −MB 
+
+Response-relevant MB 98 .1[97 .1, 99 .0] 97 .6[96 .4, 98 .9] −23 .3[− 25 .6, −21 .3]
+
+WF 73 .2[72 .5, 73 .9] 74 .3[72 .6, 75 .9]
+
+Relevant and supported MB 97 .4[96 .3, 98 .4] 97 .1[95 .8, 98 .5] −29 .9[− 32 .4, −27 .7]
+
+WF 64 .0[63 .2, 64 .8] 67 .1[65 .3, 68 .9]
+
+Relevant and specific MB 97 .7[96 .6, 98 .7] 97 .3[96 .0, 98 .6] −39 .5[− 41 .9, −37 .3]
+
+WF 54 .9[54 .1, 55 .7] 57 .8[56 .0, 59 .6]
+
+Fully usable MB 97 .0[95 .8, 98 .1] 96 .7[95 .4, 98 .1] −42 .8[− 45 .2, −40 .5]
+
+WF 50 .4[49 .5, 51 .2] 54 .0[52 .2, 55 .8]
+
+pipelines. The judge receives (𝑥 𝑖 , 𝑦 𝐺 𝑖 , 𝐶 𝑆 𝑖 ) but not the constructed tar-get. It independently determines whether the current task–response state supports a missing compatible refinement and therefore calls for KEEP or APPLY . For APPLY states, a separate pass checks whether the guidance is grounded in 𝐶 𝑆 𝑖 , covers the missing compatible changes, and remains residual rather than replacing the response. This audit evaluates the offline targets rather than the trained Spe-cialist itself. The audits show higher agreement on MemoryBench than on WildFB, in line with the feedback-usability analysis. Across both sources, the results support the intended atomic decomposition, Conference acronym ’XX, June 03–05, 2018, Woodstock, NY Xuancheng Li, Haitao Li, Yujia Zhou, Qingyi Pan, Heng Wang, Yiqun Liu, Min Zhang, and Qingyao Ai 
+
+Table 14: Task-operation distribution inferred from 𝐻 alone. Values are percentages of analyzed root training tasks.                   
+
+> Task operation MemoryBench WildFB
+> Generation and creation 53.4 25.5 Editing and transformation 5.8 13.6 Explanation and summarization 6.0 6.9 Analysis and reasoning 32.7 7.5 Information seeking and QA 1.0 17.4 Code and implementation 0.0 22.6 Advice and planning 1.1 5.2 Other/mixed/uncertain 0.1 1.4
+
+task-relative role assignment, and response-conditioned Specialist targets. 
+
+## C.7 Full Task Composition and Feedback Usability Results 
+
+Let 𝐻 denote the task context up to and including the original user request, before the logged assistant response. The analysis manifest contains 845 MemoryBench and 14,094 WildFB root tasks. Complete outputs are available for 834 and 13,866 tasks, respectively; incomplete provider output is the only exclusion. The standardized comparison uses seven shared task-operation by verifiability strata, covering 790 MemoryBench and 5,599 WildFB root tasks. The standardized results therefore describe the shared-support task distribution rather than the full WildFB training distribution. These details yield the values reported in Figure 4. 
+
+## C.8 Stage-wise Contributions 
+
+Subtracting adjacent endpoints reproduces all ΔG and ΔS values in Table 3. The corresponding decision counts also recover the reported APPLY and edit rates. Edited never exceeds APPLY ; MMLU-Pro is the all-KEEP case and shows no Specialist increment. 
+
+## C.9 Observed Specialist Behavior on a Benchmark Task 
+
+Figure 14 presents a case study on AlpacaEval 2.0. The benchmark instruction is reproduced verbatim, while the Generalist response, Specialist output, integrated response, and pairwise outcome are taken directly from the corresponding evaluation run.

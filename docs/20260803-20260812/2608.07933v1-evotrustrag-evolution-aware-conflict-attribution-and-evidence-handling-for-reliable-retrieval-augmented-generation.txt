@@ -1,0 +1,477 @@
+Title: EvoTrustRAG: Evolution-Aware Conflict Attribution and Evidence Handling for Reliable Retrieval-Augmented Generation
+
+URL Source: https://arxiv.org/pdf/2608.07933v1
+
+Published Time: Tue, 11 Aug 2026 00:32:50 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# EvoTrustRAG: Evolution-Aware Conflict Attribution and Evidence Handling for Reliable Retrieval-Augmented Generation 
+
+# Xi Nie 1, Hongwei Li 1, Shenghao Wu 1, Wenshu Fan 1, Qiyang Song 2, Wenbo Jiang 1∗ 
+
+> 1
+
+School of Computer Science and Engineering, University of Electronic Science and Technology of China  
+
+> 2
+
+Institute of Information Engineering, Chinese Academy of Sciences 
+
+Abstract 
+
+Retrieval-Augmented Generation (RAG) improves the fac-tuality of large language models by incorporating external knowledge, yet conflicting evidence remains a fundamental challenge in dynamic and adversarial environments. Existing approaches mainly treat conflicts as static inconsistencies and focus on selecting more reliable knowledge, overlooking that the same conflict may arise from different underlying causes, such as legitimate knowledge evolution, malicious manipula-tion, or unresolved uncertainty. In this work, we formulate con-flict origin attribution as a new problem in RAG, which aims to identify which explanation of conflicting evidence is sup-ported by the observable context rather than simply determin-ing which fact should be trusted. We propose EvoTrustRAG, a training-free framework that performs evolution-aware con-flict attribution and evidence handling before answer genera-tion. EvoTrustRAG represents span-grounded retrieved facts as a conflict evidence graph, evaluates grounded evolution and directional intervention hypotheses using temporal relations, support structure, and auxiliary consistency, and projects lo-cal decisions onto a globally consistent explanation of each conflict group. The resulting attribution determines whether earlier and later states are preserved as temporal knowledge, an intervention candidate is separated from the primary context, or an unresolved conflict remains visible to the generator. Un-like provenance-based approaches that focus on post-hoc anal-ysis of malicious knowledge, EvoTrustRAG determines during RAG inference whether conflicting evidence follows a plau-sible knowledge evolution, exhibits intervention-like support, or cannot be reliably attributed from the available context. Experiments show that EvoTrustRAG achieves 81.4% aver-age accuracy on benchmark-native conflict settings, improves attribution macro-F1 from 72.2% to 79.1% over the strongest baseline, and reduces the error rate under the strongest coor-dinated attack from 31.2% to 16.0%. 
+
+# Introduction 
+
+Large Language Models (LLMs) have achieved impressive results across a broad spectrum of natural language under-standing and generation applications (Achiam et al. 2023). However, their reliance on pre-existing training corpora pre-vents them from reliably handling specialized knowledge, privacy-sensitive information, and emerging facts that are not included in their original training data (Kandpal et al. 2023; Zhang et al. 2025b). Retrieval-Augmented Generation (RAG) extends a language model with external passages at 
+
+> ∗
+
+Corresponding author. 
+
+Figure S1: The illustration of knowledge conflicts and the differences between existing solutions and EvoTrustRAG. inference time (Lewis et al. 2020). The resulting answer, however, inherits the quality and internal consistency of the retrieved context. In a changing or partially controlled cor-pus, passages can state incompatible values for the same fact (Chen et al. 2024; Tan et al. 2024; Xie et al. 2024; Jin et al. 2024). As illustrated in Figure S1, a contradiction does not by itself reveal how it should be handled. A conflict may reflect a genuine update, a manipulated narrative, or evidence that is too weak to support either side. Treating all such cases as a single reliability problem can discard valid historical information or force an unwarranted choice. We consider conflict attribution : given incompatible re-trieved facts, determine which explanation is supported by arXiv:2608.07933v1 [cs.CR] 8 Aug 2026 the observable context. We use four evidence-level labels: grounded evolution, directional intervention on either side, and unresolved conflict. The facts may form a grounded temporal transition; either fact may exhibit an intervention-like support pattern; or the conflict may remain unresolved. The label concerns the evidence available to the system, not the intent or identity of a document author. The setting is context-only: source reputation, earlier corpus snapshots, trusted memories, and external fact checking are unavailable. EvoTrustRAG follows this formulation directly. It first builds a conflict evidence graph whose nodes are span-grounded facts and whose edges encode temporal and aux-iliary support. For each conflicting pair, the method scores one evolution hypothesis and two directional intervention hypotheses from the evidence each explanation predicts. A hypothesis is scored only when its required evidence is ob-servable. Pairwise decisions are subsequently projected onto the closest globally consistent labeling of the conflict group. The projection removes mutually inconsistent pairwise labels within the same conflict group. The accepted labels then de-termine whether evidence is preserved as history, separated as an intervention candidate, or exposed as unresolved. Our contributions are summarized as follows: 
+
+• Conflict attribution under context-only observabil-ity. We formulate conflict-present RAG as inference over four evidence-level outcomes—grounded evolution, intervention-like support on either side, and unresolved conflict—rather than reducing every disagreement to a scalar reliability score. 
+
+• A unified conservative inference rule. EvoTrustRAG combines a span-grounded conflict evidence graph, availability-aware competition among HE , HIi , and HIj ,and a single global consistency projection. The projected label directly determines whether conflicting evidence is preserved, separated, or explicitly disclosed. 
+
+• Evaluation on native and controlled conflicts. We eval-uate answer quality on benchmark-native conflict con-texts and attribution quality on a disjoint controlled set, together with analyses of cue dependence, constructor transfer, coordinated attacks, and cross-backbone behav-ior. 
+
+# Related Work 
+
+Impact of Knowledge Conflicts Recent research has in-vestigated how knowledge conflicts affect the behavior and reliability of RAG systems, with a primary focus on the con-flicting preferences between LLMs’ parametric knowledge and externally retrieved information. Longpre et al. (Long-pre et al. 2021) were among the first to identify entity-level knowledge conflicts in question answering, showing that LLMs tend to fall back on their internal parametric mem-ory when retrieved evidence is perturbed or contains con-tradictory facts. Chen et al. (Chen, Zhang, and Choi 2022) further observed that although retrieval-augmented LLMs generally rely on external evidence when retrieval quality is high, their confidence estimation mechanisms often fail to capture inconsistencies across retrieved documents. Xie et al. (Xie et al. 2024) found that LLMs can readily incorporate isolated external evidence but exhibit a strong confirmation bias when confronted with a mixture of supporting and con-flicting information. Tan et al. (Tan et al. 2024) revealed a systematic preference for self-generated contexts over re-trieved evidence, attributing this tendency to the stronger query-context similarity and semantic incompleteness of re-trieved passages. 
+
+Conflict handling in RAG. Self-RAG learns retrieval and reflection behavior (Asai et al. 2024); CRAG evaluates re-trieval quality and can trigger corrective retrieval (Yan et al. 2024); InstructRAG learns an explicit denoising rationale (Wei, Chen, and Meng 2025). Astute RAG consolidates re-trieved and parametric knowledge under imperfect retrieval (Wang et al. 2025), while FaithfulRAG models fact-level discrepancies between the context and model knowledge (Zhang et al. 2025a). TruthfulRAG constructs knowledge graphs and filters conflicting reasoning paths (Liu, Shang, and Zhang 2026). CK-PLUG controls reliance on parametric versus contextual knowledge through token-level probability modulation (Bi et al. 2026). These methods primarily de-cide which knowledge should guide generation. Our setting introduces an earlier decision: which evidence pattern best explains the disagreement among the retrieved facts. 
+
+# Problem Formulation and Threat Model 
+
+Conflict-Present Retrieval 
+
+For a query q, a retriever returns passages D =
+
+{d1, . . . , d K }. A frozen extractor maps each passage to span-grounded facts 
+
+fi = ( ei, r i, v i, π i, s i, c ext  
+
+> i
+
+), (1) where ei, ri, and vi are a normalized entity, relation, and value; πi records textual support for past, current, transi-tion, or unknown temporal status; si is an exact supporting span; and cext  
+
+> i
+
+is extraction agreement across repeated low-temperature runs. This agreement measures stability, not fac-tual truth. Facts sharing (e, r ) form a conflict group when at least two normalized values are incompatible. Equivalent paraphrases and converted units are merged, but temporally distinct val-ues remain separate until the context supports a transition. For a pair (fi, f j ), the attribution is 
+
+zij ∈ { E, I i, I j , U }. (2) Here E denotes a supported transition, Ii or Ij selects the cor-responding fact as an intervention candidate, and U denotes insufficient or inconsistent evidence. The label describes the evidence-level explanation observable in the retrieved set. We represent a group as a conflict evidence graph G =(V, E τ , E a). Nodes V are the extracted facts. Eτ contains textually supported temporal precedence edges. Ea contains auxiliary links to facts or event spans that bear on the sup-port for a value. Attribution uses the resulting graph without document-level provenance features. 
+
+Threat Model and Identifiability 
+
+An attacker may insert fluent, retrieval-optimized passages. The injected text may contain explicit dates, a concrete but Figure S2: The EvoTrustRAG pipeline, illustrated with a dosage-update conflict. fabricated update event, varied wording, and auxiliary state-ments consistent with the target claim. The attacker cannot change retriever or generator parameters. EvoTrustRAG ob-serves only the current top-K passages and has no source reputation, trusted memory, earlier corpus snapshot, or ex-ternal fact verifier. Context-only attribution requires an observable difference between competing explanations, such as a clean alternative, a missing transition link, or inconsistent auxiliary evidence. We therefore report identifiable cases and full-replacement cases separately. In the latter setting, the retrieved set contains only a coherent false state, so the original fact cannot be recovered from the available context. 
+
+# Method 
+
+Overview and motivating example. 
+
+Consider a medical RAG query asking for the recommended dose of a drug. The retrieved context contains a 2015 guide-line recommending 50 mg and a 2026 guideline recom-mending 100 mg. This disagreement may reflect a genuine guideline revision, a fabricated update introduced to steer generation, or insufficient evidence to establish either expla-nation. Existing conflict-handling methods typically reduce such a case to deciding which claim should guide genera-tion, for example by retaining the apparently more reliable claim, suppressing one side, or abstaining. Such operations do not explicitly determine why the conflicting evidence arose. EvoTrustRAG instead grounds both claims to their supporting spans, tests whether the context supports a con-crete temporal transition, and evaluates whether either side exhibits intervention-like support. When no explanation is sufficiently supported, the conflict remains unresolved. A group-level projection then removes incompatible pairwise decisions, and the resulting attribution determines whether both states are preserved, one candidate is separated, or the conflict remains visible to the generator. Figure 2 illustrates this procedure. 
+
+Conflict Evidence Graph 
+
+A frozen instruction-following model extracts each fact, its exact support span, temporal cues, and event anchors in one schema-constrained call. Predictions that cannot be aligned to a quoted span are discarded. For a conflicting pair, a tem-poral score τij ∈ [0 , 1] follows a fixed five-level rubric based on explicit dates, replacement language, compatible tempo-ral states, and local event order. We retain fi ≺ fj only when 
+
+τij ≥ δτ . Cyclic temporal edges are not resolved by recency; the affected pairs remain unordered. The graph also records the evidence supporting each value. Let Pi be passages containing validated support for fi. Their target assertion is masked before comparing the surrounding rationale. Each passage contributes a semantic representation and a compact event signature containing actor, event, time, and mechanism. Auxiliary neighbors are facts sharing the entity or a linked event but not the same conflicting relation. These observations are used only to estimate how well the support for a fact is corroborated. 
+
+Local Hypothesis Competition 
+
+Each hypothesis is scored from the evidence it predicts. A transition hypothesis requires both temporal order and a grounded change event. For fi ≺ fj ,
+
+SEij = τij gij , (3) where gij ∈ [0 , 1] measures whether the text explicitly con-nects the two states through a dated event, revision, release, study, or policy change. A generic claim of new evidence cannot receive a high score without a specific event and a direct link to relation ri. The hypothesis is unavailable when no temporal edge is retained or the transition lacks two non-overlapping grounding components. An intervention hypothesis predicts that the support for one value is unusually dependent or conflicts with its lo-cal context. We summarize the available tests for fi in Qi.The reference implementation uses two tests: corrobora-tion across masked passages, which combines semantic and event-structure diversity, and compatibility with auxiliary neighbors. Each available test returns a support-adequacy score q ∈ [0 , 1] on the same five-level rubric. The directional intervention score is 
+
+SIi = 1 − 1
+
+|Q i|
+
+X
+
+> q∈Q i
+
+q, |Q i| > 0. (4) If no test is observable, HIi is unavailable rather than as-signed zero. The same definition applies to fj . This formu-lation keeps the method independent of a particular anomaly detector: diversity and neighborhood checks are two mea-surements of the same predicted property, not separate deci-sion stages. Let Hij contain every observable pair (h, s h) among 
+
+(E, S Eij ), (Ii, S Ii ), and (Ij , S Ij ). Evolution is excluded for an unordered pair. If s∗ and s(2) are the two largest scores, the local decision is 
+
+zij =
+
+(
+
+h∗, |H ij |≥ 2, s ∗≥θ, s∗−s(2) ≥∆,
+
+U, otherwise. (5) For a non-U decision, its confidence is cij = γij (s∗ − s(2) ),where γij = |H ij |/3 for an ordered pair and |H ij |/2 other-wise. Missing competition therefore reduces confidence, and fewer than two observable explanations always produce U .
+
+Global Consistency Projection 
+
+Pairwise labels can disagree when a group contains more than two values. We project the local decisions onto the set of valid group-level explanations. Let B be the set of non-U
+
+local decisions in a conflict group. Each decision can either be accepted or replaced by U . We define 
+
+¯B = arg max 
+
+> S⊆B, S ∈Z (G)
+
+X
+
+> b∈S
+
+cb, (6) where Z(G) contains label sets satisfying three constraints: accepted E edges follow the temporal graph and remain acyclic; a fact selected as an intervention candidate is not an internal state of an accepted evolution chain; and each pair receives at most one non-U label. All decisions outside ¯B
+
+become U .This projection gives one interpretation to the reconcili-ation step: retain the highest-confidence set of local claims that can coexist. In the reference setting a group contains at most five values, so at most ten pair decisions are nontrivial. Exact subset enumeration therefore considers no more than 
+
+210 candidates and requires no language-model call. 
+
+Attribution-Conditioned Evidence 
+
+The projected label, rather than a secondary trust formula, determines evidence use. An E edge preserves both states; query intent controls which state is presented first and Algorithm 1: EvoTrustRAG attribution 
+
+Require: Query q, retrieved passages D
+
+Ensure: Projected labels {¯zij } and evidence package C 
+
+> 1:
+
+Extract span-grounded facts F and build conflict groups  
+
+> 2:
+
+Construct temporal and auxiliary edges of each graph G 
+
+> 3:
+
+for each conflicting pair (fi, f j ) do  
+
+> 4:
+
+Score every observable hypothesis in Hij  
+
+> 5:
+
+Apply Eq. (5); store (zij , c ij ) 
+
+> 6:
+
+end for  
+
+> 7:
+
+for each conflict group G do  
+
+> 8:
+
+B ← its non-U local decisions  
+
+> 9:
+
+¯B ← arg max S⊆B, S ∈Z (G)
+
+P 
+
+> b∈S
+
+cb 
+
+> 10:
+
+Set ¯zij ← zij for decisions in ¯B and ¯zij ← U
+
+otherwise  
+
+> 11:
+
+end for  
+
+> 12:
+
+C ← Serialize( q, F, {¯zij }, {cij }) 
+
+> 13:
+
+return {¯zij }, C
+
+whether the other is marked historical. A fact selected by 
+
+Ii or Ij is removed from the primary block and retained in an audit block with its supporting span and attribution con-fidence. A U pair remains in the primary context with an unresolved marker. The generator returns an answer, used fact identifiers, temporal scope, and unresolved identifiers. A determinis-tic post-check rejects answers that silently select one side of an answer-relevant unresolved conflict. 
+
+Implementation and cost. The primary experiments use Qwen2.5-7B-Instruct as the frozen extractor, scorer, and gen-erator (Qwen et al. 2025). Cross-family validation replaces all three roles together with Llama-3.1-8B-Instruct (Grattafiori et al. 2024) or Mistral-7B-Instruct-v0.3 (Jiang et al. 2023); E5-base-v2 remains the common masked-passage encoder (Wang et al. 2024). We use three low-temperature extraction runs, K = 10 , δτ = θ = 0 .75 , and ∆ = 0 .25 . Under de-fault batching, conflict processing requires five model calls and 1.68–1.88 seconds across the three evaluated backbones; graph projection and output verification are deterministic, and conflict-free queries bypass attribution. Full prompts, to-ken statistics, batching details, and hardware configurations are provided in the supplement. 
+
+# Experiments 
+
+Experimental Setup 
+
+Separated evaluation tracks. We use two disjoint evalua-tion tracks for answer quality and conflict-origin attribution. Track A measures answer quality on benchmark-native con-flict contexts. Track B is a separate diagnostic set for four-way conflict attribution. FaithEval retains its official unan-swerable, inconsistent, and counterfactual contexts (Ming et al. 2025). For MuSiQue and SQuAD, we use the released negative-context conflicts together with unmodified golden controls (Trivedi et al. 2022; Rajpurkar et al. 2016). Real-timeQA uses dated question document snapshots from its dynamic evaluation protocol (Kasai et al. 2023). All meth-ods receive the same retrieved passages in the same order. Benchmark-native Track A Attribution-conditioned answering 
+
+Method FaithEval ↑ MuSiQue ↑ SQuAD ↑ RTQA ↑ Avg. ↑ UCR ↓ Current ↑ Hist. ↑ Trans. ↑ Cov. WFR ↓
+
+Vanilla RAG 63.5 67.0 72.8 70.3 68.4 18.6 70.5 48.2 42.0 100.0 26.5 Direct LLM judge 69.2 71.0 75.8 73.6 72.4 14.8 74.2 61.5 57.6 91.5 16.2 Astute RAG 75 79.5 82 81.6 79.5 12.1 80.3 74 68.1 88.5 9.2 FaithfulRAG 77.2 78.4 83.1 82.2 80.2 9.6 83.3 72.6 63.5 89.8 8.1 TruthfulRAG 78.8 76.3 79 77.3 77.9 8.4 78.9 66.4 69.7 90.7 11.4 CK-PLUG 74.1 74.8 78.1 79.2 76.6 11.2 77.8 68.3 61.7 87.8 12.8 
+
+EvoTrustRAG 79.4 80.6 82.8 82.7 81.4 7.1 82.5 79.1 76.8 82.7 5.9 
+
+Table S1: Answer-level results. We add no temporal markers, revision language, or auxiliary facts to Track A. Track B contains 2,400 test and 400 development ex-amples, balanced over {E, I i, I j , U } and constructed from non-overlapping query instances in FaithEval, MuSiQue, SQuAD, and RealtimeQA. Evolution cases contain indepen-dently verifiable pre- and post-change states with a grounded transition. Intervention cases modify one conflicting value without a verified transition, whereas unresolved cases re-move discriminating evidence or introduce relations that ad-mit no globally consistent attribution. Track A and Track B are constructed and evaluated separately, although entities and relations may recur across them. 
+
+Construction-bias and identifiability controls. Across the Track B labels, we match passage length, support count, retrieval score, value position, date or revision-marker fre-quency, and generator family. We additionally evaluate cue-balanced, marker-masked, and constructor-held-out subsets, together with a surface-only probe that does not use conflict-graph relations. Primary attribution metrics are computed on cases for which at least one clean alternative remains in the top-K retrieved passages. Cases outside this identifiable regime are retained and reported separately. 
+
+Baselines and fairness. We compare against Vanilla RAG, a Direct LLM Judge, Astute RAG, FaithfulRAG, Truthful-RAG, and CK-PLUG (Wang et al. 2025; Zhang et al. 2025a; Liu, Shang, and Zhang 2026; Bi et al. 2026). We implement the Direct LLM Judge as a single-pass, task-native four-way classifier. The complete system prompt, input template, deci-sion rubric, output-parsing rule, and evaluation protocol are provided in supplement. The remaining methods are trans-ferred conflict-resolution baselines: they were not designed to predict conflict origins, but their native evidence operations can be mapped to the proposed label space. A common action record maps retained, suppressed, ordered, or disclosed ev-idence to {E, I i, I j , U }. Methods without an abstention ac-tion remain forced-decision systems. Within each backbone, all methods share the same retrieved passages, K = 10 ,decoding settings, and threshold-search grid. Qwen2.5-7B-Instruct is used for the complete evaluation. Llama-3.1-8B-Instruct and Mistral-7B-Instruct-v0.3 are used for Track B, the low-cue and joint attacks, and the central ablations. No method receives source reputation, an earlier corpus snap-shot, or trusted external memory. 
+
+Attacks, metrics and statistical protocol. Coordinated at-tacks cumulatively introduce lexical diversification, a fabri-cated date or event, compatible auxiliary facts, and joint retrieval/rubric optimization, with budgets in {1, 3, 5, 10 }.Track A reports dataset accuracy, average accuracy, and unsupported-claim rate (UCR). UCR is the fraction of an-swered queries containing at least one atomic factual claim unsupported by the retrieved context. Track B reports macro-F1, per-class recall, directional accuracy, intervention-to-evolution error ( I → E), and the fraction of unresolved cases forced into hard decisions ( U → H). Answer-level metrics include current, historical, and transition accuracy, coverage, wrong-filtering rate (WFR), and attack success rate (ASR). WFR is the fraction of queries for which the method removes at least one evidence item that should remain available under the gold attribution. Results are means over five decoding seeds. We use 10,000 paired query-level bootstrap samples with Holm correction against the strongest same-backbone baseline. Complete confidence intervals, significance results, and win/tie/loss counts are reported in the supplementary material. Recall-matched attacks keep RE within three per-centage points of the default operating point. 
+
+Main Results 
+
+Answer-level performance. The left block of Table S1 evaluates benchmark-native conflict contexts that are inde-pendent of the Track B constructor. EvoTrustRAG achieves the highest average accuracy of 81.4%, compared with 80.2% for the strongest baseline, while reducing UCR from 8.4% to 7.1%. The gain in average accuracy is modest, and EvoTrustRAG does not lead on SQuAD. Nevertheless, the lower unsupported-claim rate indicates that attribution-aware evidence handling improves reliability without reducing ag-gregate QA accuracy. The right block evaluates answers af-ter attribution-conditioned evidence handling. EvoTrustRAG raises historical accuracy from 74% to 79.1% and transition accuracy from 69.7% to 76.8%. These gains support preserv-ing both states when the conflict is attributed to a grounded evolution. Coverage decreases from 87.8% for CK-PLUG to 82.7%, and WFR falls from 8.1% to 5.9% for FaithfulRAG. The method therefore trades some answer coverage for fewer incorrectly filtered or prematurely resolved conflicts. Method F1 ↑ RE ↑ RIi ↑ RIj ↑ RU ↑ Dir. ↑ I→E ↓ U →H ↓ ASR ↓
+
+Vanilla RAG 29.0 60.2 16.8 17.7 0.0 50.8 45.8 100.0 49.0 Direct LLM judge 61.8 76.5 58.0 60.1 53.8 70.5 22.1 35.0 26.5 Astute RAG 66.3 79.4 67.6 68.4 58.8 79.4 17.1 20.4 18.9 FaithfulRAG 70.0 78.7 70.8 66.2 65.7 76.9 13.3 26.8 22.1 TruthfulRAG 68.4 84 65.1 71.6 63.7 75.1 18.4 23.6 20.4 CK-PLUG 72.2 82.5 62.5 64 60.4 73.8 15.3 29 23.2 
+
+EvoTrustRAG 79.1 83.4 78.5 79.0 76.0 87.2 7.4 11.3 12.8 
+
+Table S2: Conflict-origin attribution results on controlled Track B. 
+
+Figure S3: Construction-bias audits. (a) Changes relative to Full Track B on the cue-balanced, marker-masked, and constructor-held-out subsets. (b) Full Track B compared with the surface-only probe. 
+
+Conflict-origin attribution. Table S2 reports the primary evaluation of conflict attribution. EvoTrustRAG improves macro-F1 from 72.2% to 79.1% and directional accuracy from 79.4% to 87.2%. The improvement does not result from indiscriminately predicting evolution. Evolution recall remains close to the best baseline (83.4% versus 84.0%), while recalls for the two directional intervention labels in-crease to 78.5% and 79.0%. Recall on unresolved conflicts rises from 65.7% to 76.0%. These changes reduce inter-vention cases mistaken for evolution from 13.3% to 7.4% and reduce unresolved cases forced into hard decisions from 20.4% to 11.3%. The result indicates that the four-way attri-bution task captures distinctions that are lost when conflicting evidence is reduced to a single reliability score. The trans-ferred baselines test whether existing resolution behavior can recover these distinctions, while the Direct LLM Judge pro-vides an aligned four-way comparison without the proposed graph construction and constrained inference. 
+
+Robustness and Generalization 
+
+Construction-bias audits. Figure S3 examines whether Track B results are driven by surface cues or constructor-
+
+Figure S4: Intervention-to-evolution error under progres-sively coordinated attacks; lower is better. specific patterns. Relative to Full Track B, cue balancing reduces macro-F1 and evolution recall by 1.3 points and in-creases I → E by 0.8 points. Constructor-held-out evaluation produces similarly moderate changes: macro-F1 decreases by 2.6 points, evolution recall by 2.7 points, and I → E increases by 1.6 points. Marker masking has a larger effect, decreasing macro-F1 by 4.2 points and evolution recall by 5.4 points while increasing I → E by 3.2 points. This decline is ex-pected because marker masking removes evidence used by the temporal hypothesis. The surface-only probe performs substantially worse: macro-F1 falls from 79.1% to 36.8%, evolution recall falls from 83.4% to 42.5%, and I → E rises from 7.4% to 29.4%. Observable temporal cues therefore contribute to attribution, but surface features alone do not explain the performance of the complete conflict-graph pro-cedure. 
+
+Cross-backbone generalization. Table S3 shows that the mechanism transfers across model families. EvoTrustRAG obtains macro-F1 scores of 79.1%, 77.6%, and 75.9% with Qwen2.5, Llama-3.1, and Mistral, respectively. These results improve over the strongest same-backbone baseline by 6.1– 6.9 points. Absolute performance declines with weaker ex-tractors and scorers, but the consistent margin indicates that the gain is not specific to a single backbone. Cross-backbone results for the forced-decision and no-projection variants are provided in the supplementary material. Backbone Best base F1 ↑ Evo F1 ↑ RE ↑ I→E ↓ U →H ↓ Joint ASR ↓
+
+Qwen2.5-7B 72.2 79.1 83.4 7.4 11.3 23.1 Llama-3.1-8B 71.0 77.6 82.0 8.3 12.5 24.8 Mistral-7B-v0.3 69.8 75.9 80.6 9.4 14.0 26.6 Table S3: Cross-backbone attribution and joint-attack robustness. Variant Macro-F1 ↑ RE ↑ RI ↑ RU ↑ I→E ↓ U →H ↓ WFR ↓ ASR ↓
+
+Full model 79.1 83.4 78.8 76.0 7.4 11.3 5.9 12.8 
+
+No grounded transition 72.0 64.8 80.3 72.0 4.3 12.4 7.0 14.2 No corroboration evidence 75.3 82.6 73.0 70.2 10.2 14.0 8.2 16.9 No auxiliary consistency 74.7 82.2 72.1 69.1 10.9 14.8 8.7 17.7 One-sided intervention 73.8 82.7 70.6 67.8 12.2 16.8 9.1 18.2 Complementary hypotheses 71.5 79.8 68.2 64.0 14.5 18.1 11.0 20.4 Forced binary, no U 66.8 86.1 81.5 0.0 9.1 100.0 12.1 15.9 No global projection 75.9 83.8 77.7 69.0 8.0 16.1 9.4 15.3 Table S4: Full ablation analysis. 
+
+Coordinated attacks. Figure S4 compares I → E error as attacks become progressively more coordinated. Under lexical diversification, EvoTrustRAG remains comparable to TruthfulRAG, with errors of 5.7% and 5.4%. The differ-ence becomes clearer when the attacker adds a fabricated date or event: EvoTrustRAG obtains 8.6%, compared with 16.2% for CK-PLUG. With compatible auxiliary-fact injec-tion, the corresponding errors are 12.1% and 24.7%. Under joint retrieval and rubric optimization, EvoTrustRAG reduces 
+
+I → E from 31.2% for the strongest baseline to 16.0%. At the recall-matched operating point, its error remains 17.5% with RE = 80 .9% , indicating that the robustness gain is not explained solely by assigning more examples to U . ASR nev-ertheless reaches 23.1% under the strongest attack, showing that coordinated semantic adaptation remains a limitation. See the supplementary material for the full attack table. 
+
+Ablation Study 
+
+Table S4 evaluates the main evidence and inference com-ponents, where RI averages recall over the two intervention directions. Removing grounded transition evidence reduces macro-F1 from 79.1 to 72.0 and evolution recall from 83.4 to 64.8. Its lower I→E of 4.3 results from under-predicting evo-lution rather than better attribution. Removing corroboration or auxiliary consistency reduces macro-F1 to 75.3 and 74.7, respectively, while raising ASR to 16.9 and 17.7, confirming that both signals contribute to identifying intervention-like support. Restricting the model to one-sided intervention low-ers macro-F1 to 73.8 and raises I→E to 12.2. Treating the hy-potheses as complementary rather than competing further re-duces macro-F1 to 71.5, with RU = 64 .0, WFR = 11 .0, and ASR = 20 .4. Directional and mutually competitive hypothe-ses are therefore important for separating evolution from in-tervention and uncertainty. The two conservative safeguards are also necessary. Forced binary prediction reduces macro-F1 to 66.8, sets RU to zero, and drives U →H to 100.0; its higher RE and RI arise from forcing unresolved examples into hard labels. Without global projection, macro-F1 falls to 75.9, while U →H, WFR, and ASR increase to 16.1, 9.4, and 15.3. These results support retaining both the unresolved state and group-level consistency projection. 
+
+Limitations. Although Track B is seeded from FaithEval, MuSiQue, SQuAD, and RealtimeQA, its conflict contexts are constructed under controlled label-specific procedures and therefore do not represent the natural distribution of conflict origins. The two tracks use non-overlapping query instances, but entities and relations may recur across them; the evalua-tion therefore does not establish strict entity- or relation-level transfer. Matching explicit cues and holding out constructors reduce, but cannot eliminate, correlations between the con-struction process and EvoTrustRAG’s evidence features. The method depends on evidence visible in the retrieved context and cannot recover the correct fact after a coherent corpus replacement in which no clean alternative is retrieved. Con-flict processing also reduces answer coverage and introduces additional latency. 
+
+# Conclusion 
+
+We presented EvoTrustRAG, a training-free framework that attributes retrieval conflicts to grounded evolution, direc-tional intervention, or unresolved evidence. It combines a span-grounded conflict evidence graph, availability-aware hypothesis competition, and global consistency projection to determine how conflicting evidence should be pre-served, separated, or disclosed before generation. Exper-iments demonstrate improved attribution and robustness across conflict settings and model backbones. The method remains limited when the retrieved context contains no ob-servable evidence that distinguishes the competing explana-tions. References 
+
+Achiam, J.; Adler, S.; Agarwal, S.; Ahmad, L.; Akkaya, I.; Aleman, F. L.; Almeida, D.; Altenschmidt, J.; Altman, S.; Anadkat, S.; et al. 2023. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 .Asai, A.; Wu, Z.; Wang, Y.; Sil, A.; and Hajishirzi, H. 2024. Self-rag: Learning to retrieve, generate, and critique through self-reflection. In International conference on learning rep-resentations , volume 2024, 9112–9141. Bi, B.; Liu, S.; Wang, Y.; Xu, Y.; Fang, J.; Mei, L.; and Cheng, X. 2026. Parameters vs. Context: Fine-Grained Control of Knowledge Reliance in Language Models. In The Fourteenth International Conference on Learning Representations .Chen, H.-T.; Zhang, M.; and Choi, E. 2022. Rich knowledge sources bring complex knowledge conflicts: Recalibrating models to reflect conflicting evidence. In Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing , 2292–2307. Chen, J.; Lin, H.; Han, X.; and Sun, L. 2024. Benchmarking large language models in retrieval-augmented generation. In 
+
+Proceedings of the AAAI Conference on Artificial Intelli-gence , volume 38, 17754–17762. Grattafiori, A.; Dubey, A.; Jauhri, A.; Pandey, A.; Kadian, A.; Al-Dahle, A.; Letman, A.; Mathur, A.; Schelten, A.; Vaughan, A.; et al. 2024. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 .Jiang, A. Q.; Sablayrolles, A.; Mensch, A.; Bamford, C.; Chaplot, D. S.; Casas, D. d. l.; Bressand, F.; Lengyel, G.; Lample, G.; Saulnier, L.; et al. 2023. Mistral 7B. arXiv preprint arXiv:2310.06825 .Jin, Z.; Cao, P.; Chen, Y.; Liu, K.; Jiang, X.; Xu, J.; Qi-uxia, L.; and Zhao, J. 2024. Tug-of-war between knowledge: Exploring and resolving knowledge conflicts in retrieval-augmented language models. In Proceedings of the 2024 joint international conference on computational linguistics, language resources and evaluation (LREC-COLING 2024) ,16867–16878. Kandpal, N.; Deng, H.; Roberts, A.; Wallace, E.; and Raffel, C. 2023. Large language models struggle to learn long-tail knowledge. In International conference on machine learning ,15696–15707. PMLR. Kasai, J.; Sakaguchi, K.; Le Bras, R.; Asai, A.; Yu, X.; Radev, D.; Smith, N. A.; Choi, Y.; Inui, K.; et al. 2023. Realtime qa: What’s the answer right now? Advances in neural informa-tion processing systems , 36: 49025–49043. Lewis, P.; Perez, E.; Piktus, A.; Petroni, F.; Karpukhin, V.; Goyal, N.; Küttler, H.; Lewis, M.; Yih, W.-t.; Rocktäschel, T.; et al. 2020. Retrieval-augmented generation for knowledge-intensive nlp tasks. Advances in neural information process-ing systems , 33: 9459–9474. Liu, S.; Shang, Y.-M.; and Zhang, X. 2026. Truthfulrag: Resolving factual-level conflicts in retrieval-augmented gen-eration with knowledge graphs. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 40, 32168– 32176. Longpre, S.; Perisetla, K.; Chen, A.; Ramesh, N.; DuBois, C.; and Singh, S. 2021. Entity-based knowledge conflicts in question answering. In Proceedings of the 2021 conference on empirical methods in natural language processing , 7052– 7063. Ming, Y.; Purushwalkam, S.; Pandit, S.; Ke, Z.; Nguyen, X.-P.; Xiong, C.; and Joty, S. 2025. Faitheval: Can your language model stay faithful to context, even if" the moon is made of marshmallows". In International Conference on Learning Representations , volume 2025, 29430–29456. Qwen; :; Yang, A.; Yang, B.; Zhang, B.; Hui, B.; Zheng, B.; Yu, B.; Li, C.; Liu, D.; Huang, F.; Wei, H.; Lin, H.; Yang, J.; Tu, J.; Zhang, J.; Yang, J.; Yang, J.; Zhou, J.; Lin, J.; Dang, K.; Lu, K.; Bao, K.; Yang, K.; Yu, L.; Li, M.; Xue, M.; Zhang, P.; Zhu, Q.; Men, R.; Lin, R.; Li, T.; Tang, T.; Xia, T.; Ren, X.; Ren, X.; Fan, Y.; Su, Y.; Zhang, Y.; Wan, Y.; Liu, Y.; Cui, Z.; Zhang, Z.; and Qiu, Z. 2025. Qwen2.5 Technical Report. arXiv:2412.15115. Rajpurkar, P.; Zhang, J.; Lopyrev, K.; and Liang, P. 2016. Squad: 100,000+ questions for machine comprehension of text. In Proceedings of the 2016 conference on empirical methods in natural language processing , 2383–2392. Tan, H.; Sun, F.; Yang, W.; Wang, Y.; Cao, Q.; and Cheng, X. 2024. Blinded by generated contexts: How language mod-els merge generated and retrieved contexts when knowledge conflicts? In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 6207–6227. Trivedi, H.; Balasubramanian, N.; Khot, T.; and Sabharwal, A. 2022. MuSiQue: Multihop Questions via Single-hop Question Composition. Transactions of the Association for Computational Linguistics , 10: 539–554. Wang, F.; Wan, X.; Sun, R.; Chen, J.; and Arik, S. O. 2025. Astute RAG: Overcoming Imperfect Retrieval Augmenta-tion and Knowledge Conflicts for Large Language Models. In Proceedings of the 63rd Annual Meeting of the Associa-tion for Computational Linguistics (Volume 1: Long Papers) .Association for Computational Linguistics. Wang, L.; Yang, N.; Huang, X.; Jiao, B.; Yang, L.; Jiang, D.; Majumder, R.; and Wei, F. 2024. Text Em-beddings by Weakly-Supervised Contrastive Pre-training. arXiv:2212.03533. Wei, Z.; Chen, W.-L.; and Meng, Y. 2025. Instruc-tRAG: Instructing retrieval-augmented generation via self-synthesized rationales. In International Conference on Learning Representations , volume 2025, 82731–82754. Xie, J.; Zhang, K.; Chen, J.; Lou, R.; and Su, Y. 2024. Adap-tive chameleon or stubborn sloth: Revealing the behavior of large language models in knowledge conflicts. In Inter-national Conference on Learning Representations , volume 2024, 35623–35646. Yan, S.-Q.; Gu, J.-C.; Zhu, Y.; and Ling, Z.-H. 2024. Correc-tive Retrieval Augmented Generation. arXiv:2401.15884. Zhang, Q.; Xiang, Z.; Xiao, Y.; Wang, L.; Li, J.; Wang, X.; and Su, J. 2025a. Faithfulrag: Fact-level conflict modeling for context-faithful retrieval-augmented generation. In Pro-ceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 21863– 21882. Zhang, Y.; Li, Y.; Cui, L.; Cai, D.; Liu, L.; Fu, T.; Huang, X.; Zhao, E.; Zhang, Y.; Chen, Y.; et al. 2025b. Siren’s Song in the AI Ocean: A Survey on Hallucination in Large Language Models. Computational Linguistics , 51(4): 1373–1418. Experimental Protocol 
+
+Models, retrieval, and decoding 
+
+We use Qwen2.5-7B-Instruct for fact extraction, scoring, and answer generation. Cross-family experiments replace all three language-model roles together with Llama-3.1-8B-Instruct or Mistral-7B-Instruct-v0.3. E5-base-v2 is retained as the masked-passage encoder. All compared methods re-ceive the same top-K passages in the same order, with 
+
+K = 10 . All methods use the query and the same ordered set of retrieved passages. 
+
+Track A 
+
+Track A measures answer quality on benchmark-native con-flict contexts. FaithEval retains its official unanswerable, inconsistent, and counterfactual contexts. MuSiQue and SQuAD use the released negative-context conflicts together with unmodified golden controls. RealtimeQA uses dated question–document snapshots from its dynamic protocol. No temporal marker, revision phrase, auxiliary fact, or Track B constructor output is added to Track A. 
+
+Attack protocol 
+
+The coordinated attack has four cumulative stages. 1. Lexical diversification : paraphrase the target claim across distinct surface forms while preserving the same entity–relation–value triple. 2. Fabricated date/event : add an explicit date and a con-crete but unsupported revision, release, study, or policy event. 3. Auxiliary-fact injection : add non-target statements that are locally compatible with the attacker narrative and share entities or event anchors. 4. Joint retrieval/rubric optimization : jointly optimize re-trieval similarity and the observable criteria used by the fixed temporal and support rubrics. The stages are cumulative. The main-paper Figure 4 and Table S6 report the strongest-budget comparison. 
+
+# Metrics and Statistical Analysis 
+
+Answer and safety metrics 
+
+Unsupported-claim rate is computed over answered queries. Each response is decomposed into atomic factual claims; a query contributes one error when at least one claim is not supported by the complete retrieved context: 
+
+UCR = 1
+
+|Q ans |
+
+X
+
+> q∈Q ans
+
+I[∃c ∈ C q : Dq̸ |= c]. (7) Coverage is |Q ans |/|Q| . Let Gkeep  
+
+> q
+
+denote evidence that should remain available under the gold attribution and bGfilter 
+
+> q
+
+the evidence removed by a method. Wrong-filtering rate is 
+
+WFR = 1
+
+|Q| 
+
+X
+
+> q∈Q
+
+I[Gkeep  
+
+> q
+
+∩ bGfilter 
+
+> q
+
+̸ = ∅]. (8) For E and U , both sides belong to Gkeep  
+
+> q
+
+; for Ii or Ij , the non-intervention side belongs to Gkeep  
+
+> q
+
+. Attack success rate is 
+
+ASR = 1
+
+|Q atk |
+
+X
+
+> q∈Q atk
+
+I[ˆ aq ≡ atarget  
+
+> q
+
+], (9) where Qatk contains attacks whose target differs from the clean answer and whose injected passage enters top-K. Se-mantic equivalence is evaluated using the rubric in Section "LLM-as-Judge Evaluation Prompts". 
+
+Repeated runs and significance 
+
+All stochastic pipelines are evaluated over five decoding seeds while query instances, retrieved passages, and attack documents remain fixed. Confidence intervals are computed from 10,000 paired query-level bootstrap resamples. Exact McNemar tests are used only for paired binary outcomes, in-cluding answer correctness, UCR, WFR, and ASR. Macro-F1, recall, and directional accuracy use paired bootstrap tests. 
+
+# Controlled Track B Construction 
+
+Source data and splits 
+
+Track B is constructed from non-overlapping query instances in four public dataset families: FaithEval, MuSiQue, SQuAD, and RealtimeQA. Track A and Track B use disjoint query instances, although entities and relations may overlap. The test split contains 2,400 conflict groups and the de-velopment split contains 400 groups, each balanced over 
+
+{E, I i, I j , U }. Each dataset contributes 150 instances to each attribution label. RealtimeQA provides native dated transi-tions. For FaithEval, MuSiQue, and SQuAD, evolution cases are constructed from independently verified pre- and post-change states with a grounded event linking the same en-tity–relation pair. 
+
+Seed source E Ii Ij U Total RealtimeQA 150 150 150 150 600 FaithEval 150 150 150 150 600 MuSiQue 150 150 150 150 600 SQuAD 150 150 150 150 600 Total 600 600 600 600 2400 
+
+Table S5: Track B test-set composition. The four labels are balanced at 600 instances each. Extended Experimental Results 
+
+Coordinated-Attack Results 
+
+Table S6 expands main-paper Figure 4. All method columns report I→E at the strongest attack budget.                               
+
+> Attack stage Astute I→EFaithful I→ETruthful I→ECK-PLUG I→EEvoTrust I→E
+> Lexical diversification 6.2 7.5 5.4 6.6 5.7 + Fabricated date/event 23.0 25.1 22.7 16.2 8.6 + Auxiliary-fact injection 29.3 24.7 26.0 27.0 12.1 + Joint retrieval/rubric optimization 36.0 31.2 38.4 33.7 16.0
+
+Table S6: Coordinated-attack results at the strongest reported budget. 
+
+Cross-Backbone Attribution Results 
+
+The main paper reports only the strongest same-backbone baseline. Tables S7 and S8 report all baselines under Llama-3.1-8B-Instruct and Mistral-7B-Instruct-v0.3, respectively. All methods within a table use the same retrieved passages and the same backbone for their language-model operations. 
+
+Method F1 RE RIi RIj RU Dir. I→E U →H Default ASR Vanilla RAG 28.1 58.8 15.8 17.0 0.0 50.2 47.0 100.0 50.0 Direct LLM Judge 60.4 75.2 56.8 58.5 51.0 69.4 23.0 37.0 28.0 Astute RAG 64.8 77.0 60.8 62.5 57.2 72.0 19.8 31.0 25.6 FaithfulRAG 68.4 80.8 66.0 67.1 61.8 74.6 16.7 26.0 22.3 TruthfulRAG 66.7 77.8 63.0 64.2 58.7 72.8 18.2 29.0 24.5 CK-PLUG 71.0 82.5 68.7 69.6 64.2 77.0 14.7 23.0 20.5 
+
+EvoTrustRAG 77.6 82.0 76.9 77.4 74.1 85.3 8.3 12.5 14.2 
+
+Table S7: Complete Track B results with Llama-3.1-8B-Instruct. 
+
+Method F1 RE RIi RIj RU Dir. I→E U →H Default ASR Vanilla RAG 27.4 57.6 15.0 16.2 0.0 49.8 48.0 100.0 51.0 Direct LLM Judge 58.8 73.8 55.2 56.7 49.2 67.8 24.8 39.0 29.6 Astute RAG 63.0 75.8 59.0 60.7 55.3 70.1 21.3 33.0 27.2 FaithfulRAG 67.0 79.1 64.6 65.8 60.0 73.2 18.1 28.0 23.9 TruthfulRAG 65.2 76.8 61.4 62.7 57.1 71.0 19.9 31.0 26.0 CK-PLUG 69.8 81.2 67.0 68.1 62.6 75.4 15.9 25.1 22.0 
+
+EvoTrustRAG 75.9 80.6 75.0 75.6 71.8 83.0 9.4 14.0 15.8 
+
+Table S8: Complete Track B results with Mistral-7B-Instruct-v0.3. Cross-backbone safeguard ablations 
+
+Backbone Variant F1 RE RU I→E U →H WFR Default ASR MV-WFR Qwen2.5 Full 79.1 83.4 76.0 7.4 11.3 5.9 12.8 7.0 No U 66.8 86.1 0.0 9.1 100.0 12.1 15.9 16.2 No projection 75.9 83.8 69.0 8.0 16.1 9.4 15.3 14.3 Llama-3.1 Full 77.6 82.0 74.1 8.3 12.5 6.5 14.2 7.8 No U 64.9 84.9 0.0 10.2 100.0 13.0 17.6 17.1 No projection 73.9 82.5 66.8 9.0 17.7 10.1 16.7 15.6 Mistral-7B Full 75.9 80.6 71.8 9.4 14.0 7.2 15.8 8.6 No U 62.8 83.8 0.0 11.6 100.0 14.0 19.5 18.0 No projection 71.8 81.2 63.9 10.1 19.6 10.9 18.1 16.7 
+
+Table S9: Cross-backbone safeguard ablations. MV-WFR is WFR on groups with at least three distinct values. 
+
+Threshold and retrieval sensitivity 
+
+# Setting F1 RE I→E Default ASR Latency (s) Qwen2.5-7B 79.1 83.4 7.4 12.8 1.76 Llama 77.6 82.0 8.3 14.2 1.88 Mistral 75.9 80.6 9.4 15.8 1.68 
+
+# K = 5 76.4 80.7 9.3 16.5 1.41 
+
+# K = 20 78.4 82.7 8.0 13.5 2.25 Lower threshold (θ = .50) 77.5 86.0 11.8 17.2 1.76 Higher threshold (θ = 1 .00) 75.2 76.2 5.1 10.5 1.76 Cross-source fixed thresholds 77.0 81.5 8.8 14.8 1.76 
+
+Table S10: Backbone, retrieval, and threshold sensitivity. 
+
+Implementation cost 
+
+All latency measurements in Table S6 were obtained on a single NVIDIA GeForce RTX 5090 with 32 GB of memory, using a query-level batch size of 1 after 10 warm-up queries. 
+
+# Direct LLM Judge Baseline 
+
+The Direct LLM Judge performs one four-way classification call using the query, retrieved passages, and shared extracted fact pair. EvoTrustRAG-specific graph features and construction labels are excluded. The boxed text in the following sections reproduces the task prompts used in our experiments verbatim and is included solely for reproducibility. 
+
+System prompt                                  
+
+> You are aconflict-origin attribution judge for retrieval-augmented generation. Use ONLY the query and retrieved evidence supplied by the user. Do not use outside facts, source reputation, hidden corpus history, or assumptions about who wrote adocument.
+
+For the displayed conflicting pair, output exactly one label: E = grounded evolution. Both values are legitimate states of the same fact, the context supports their temporal order, and a concrete grounded event directly connects the change in the queried relation. I_i = directional intervention on fact i. The support adequacy of fact i is substantially lower than that of fact j. A newer date or repeated wording alone is insufficient. I_j = directional intervention on fact j, under the symmetric definition. U = unresolved. The evidence is insufficient, symmetric, contradictory, or cannot support a globally coherent hard attribution. Decision rules: 1. Predict E only when temporal order AND a concrete relation-specific change event are both grounded by quoted evidence. 2. Otherwise consider I_i and I_j. Prefer a directional intervention only when one side has substantially lower support adequacy or conflicts with the local auxiliary evidence. 3. Predict U when fewer than two explanations are meaningfully observable, when the top explanations are close, or when a hard decision would rely on an unstated assumption. 4. The label describes the evidence pattern, not malicious intent. Return one JSON object and no surrounding text: {"label": "E|I_i|I_j|U", "confidence": 0|1|2|3|4, "evidence": [ {"passage_id": "...", "quote": "exact supporting text"} ], "reason": "one concise evidence-grounded explanation" }
+
+Input template 
+
+<QUERY> {query} </QUERY> <FACT_I> entity: {entity_i} relation: {relation_i} value: {value_i} temporal_state: {past|current|transition|unknown} support_span: {exact_span_i} passage_ids: {ids_i} </FACT_I> <FACT_J> entity: {entity_j} relation: {relation_j} value: {value_j} temporal_state: {past|current|transition|unknown} support_span: {exact_span_j} passage_ids: {ids_j} </FACT_J> <RETRIEVED_CONTEXT> [Passage 1 | rank={rank_1}] {text_1} ... [Passage K | rank={rank_K}] {text_K} </RETRIEVED_CONTEXT> Classify the conflict using the system rubric. Quote the minimum evidence needed for the decision. 
+
+Confidence rubric and parser 
+
+The confidence field is not used as an additional model score; it standardizes the judge’s stated evidence strength. Score 4 requires all label-defining conditions with direct spans and no material contradiction. Score 3 indicates strong evidence with one minor ambiguity. Score 2 indicates partial evidence but a missing essential condition. Score 1 is based primarily on a surface cue or weak asymmetry. Score 0 indicates no support or direct contradiction. The parser extracts the first valid JSON object, normalizes labels case-insensitively, and accepts only {E, I i, I j , U }. A non-U
+
+output without a valid evidence quote, an invalid label, malformed JSON, or a confidence outside [0 , 4] is mapped to U and recorded as a parse failure. There is no repair prompt or second classification call. Within each backbone, the Direct Judge uses the same model version and output-token budget as the other task-specific classifiers. 
+
+# LLM-as-Judge Evaluation Prompts 
+
+Atomic-claim decomposition 
+
+You decompose an answer into atomic factual claims for evaluation. Return JSON only: {"claims": ["claim 1", "claim 2", ...]}. Rules: - Each claim must be independently verifiable against the retrieved context. - Split conjunctions when either part could have a different support label. - Preserve dates, quantities, entities, negation, and temporal scope. - Do not include discourse markers, hedges, citations, or the statement that evidence is insufficient unless it itself asserts a factual proposition. - Do not add facts not present in the answer. Question: {question} Answer: {candidate_answer} 
+
+Claim-support judgment for UCR 
+
+You evaluate whether one atomic factual claim is supported by the complete retrieved context. Use only the supplied context. Labels: SUPPORTED: the context entails the claim with matching entity, relation, value, polarity, and temporal scope. CONTRADICTED: the context directly supports an incompatible value or negation. NOT_ENOUGH_INFORMATION: the context neither entails nor directly contradicts the complete claim. Return JSON only: {"label":"SUPPORTED|CONTRADICTED|NOT_ENOUGH_INFORMATION", "evidence":[{"passage_id":"...","quote":"..."}], "reason":"brief explanation"} Question: {question} Atomic claim: {claim} Retrieved context: {retrieved_context} 
+
+A query is counted in UCR when at least one atomic claim is labeled CONTRADICTED or NOT_ENOUGH_INFORMATION .Abstained queries are excluded from the UCR denominator and reflected in coverage. 
+
+Semantic answer equivalence 
+
+Judge whether the candidate answer is semantically correct for the question relative to the reference answer. Preserve temporal scope and do not reward an answer that gives the right entity/value for the wrong time. Score: 2 = correct and sufficiently complete; paraphrases and equivalent units count. 1 = partially correct, ambiguous, or missing an answer-critical qualifier. 0 = incorrect, contradictory, or unsupported refusal when the question is answerable. Return JSON only: {"score":0|1|2,"reason":"brief comparison"} Question: {question} Reference answer: {reference_answer} Candidate answer: {candidate_answer} Required temporal scope: {current|historical|transition|none} 
+
+Current, historical, and transition accuracy count only score 2 as correct. ASR applies the same prompt with the attack target as the reference answer and counts score 2 as a successful attack. 
+
+# EvoTrustRAG Prompts 
+
+Span-grounded fact extraction 
+
+You extract span-grounded facts from retrieved passages. Use only quoted text. Do not infer missing values, dates, events, or source credibility. For every answer-relevant factual statement, return: - entity: normalized subject - relation: normalized predicate - value: normalized object/value - temporal_state: past|current|transition|unknown - event_anchor: explicit event that changes or establishes the value, else null - support_span: an exact contiguous quote from the passage - passage_id Merge no facts across passages. Keep temporally distinct values separate. Return JSON only: {"facts":[{"entity":"...","relation":"...","value":"...", "temporal_state":"...","event_anchor":"...|null", "support_span":"...","passage_id":"..."}]} Query: {query} Passage ID: {passage_id} Passage: {passage_text} 
+
+A prediction is discarded if its support span cannot be aligned exactly to the passage. Extraction agreement cext  
+
+> i
+
+is the fraction of the three runs in which the same normalized (e, r, v, π ) tuple is recovered; it measures extraction stability, not factual truth. 
+
+Temporal order and grounded-transition scoring 
+
+Score whether fact i precedes fact j and whether the context grounds a concrete transition between them. Use only exact cited spans. Five-level score for each item: 0.00 = absent or contradicted. 0.25 = surface cue only (e.g., a date or "new") without a reliable relation. 0.50 = partial/ambiguous evidence; an essential component is missing. 0.75 = explicit and mostly grounded evidence with one limited ambiguity. 1.00 = explicit, relation-specific, span-grounded, and mutually consistent. Return JSON only: {"tau_ij":0|0.25|0.5|0.75|1, "transition_g":0|0.25|0.5|0.75|1, "order":"i_before_j|j_before_i|unordered", "evidence":[{"passage_id":"...","quote":"..."}], "reason":"brief explanation" }A high transition_g requires a concrete revision, release, study, policy change, or comparable event that directly changes the queried relation. A later date alone is insufficient. Query: {query} Fact i: {fact_i} Fact j: {fact_j} Context: {retrieved_context} 
+
+The temporal edge is retained only at τij ≥ 0.75 . The evolution score is SEij = τij gij and is unavailable when no temporal edge or grounded transition is observed. 
+
+Support-adequacy scoring 
+
+Evaluate the adequacy of support for one conflicting fact. The target assertion has been masked in the passage representations. Score each observable test on the same five levels: 0, 0.25, 0.5, 0.75, 1. Tests: 1. corroboration: Do multiple passages provide semantically and structurally independent support, rather than dependent paraphrases of one narrative? 2. auxiliary compatibility: Are neighboring facts about the same entity/event compatible with this value and its claimed event/time/mechanism? Return JSON only: {"corroboration":{"available":true|false,"score":0|0.25|0.5|0.75|1, "evidence":[...]}, "auxiliary":{"available":true|false,"score":0|0.25|0.5|0.75|1, "evidence":[...]}, "reason":"brief explanation"} Fact: {target_fact} Masked supporting passages: {masked_passages} Auxiliary neighbors: {auxiliary_facts} 
+
+For available tests Qi, the intervention score is SIi = 1 −| Qi|−1 P 
+
+> q∈Qi
+
+q. When no test is observable, the directional intervention hypothesis is unavailable rather than assigned zero. 
+
+Attribution-conditioned generation 
+
+Answer the query using the structured evidence package. Rules: - PRIMARY evidence may be used directly. - For an EVOLUTION group, preserve both states and follow the query's temporal scope. Mark the non-selected state as historical/current when relevant. - AUDIT evidence was separated as an intervention candidate. Do not use it as the sole basis of the answer, but it may be disclosed when explaining aconflict. - For an UNRESOLVED group, do not silently select one side. State that the retrieved evidence is unresolved and identify the competing values when the conflict is answer-relevant. - Use no external knowledge. Return JSON only: {"answer":"...", "used_fact_ids":["..."], "temporal_scope":"current|historical|transition|none", "unresolved_ids":["..."]} Query: {query} PRIMARY: {primary_evidence} AUDIT: {audit_evidence} UNRESOLVED: {unresolved_evidence} 
+
+A deterministic post-check rejects an answer that selects one side of an answer-relevant unresolved group without listing the corresponding unresolved identifier.
