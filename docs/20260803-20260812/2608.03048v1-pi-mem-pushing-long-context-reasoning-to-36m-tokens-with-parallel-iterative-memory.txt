@@ -1,0 +1,1192 @@
+Title: PI-Mem: Pushing Long-Context Reasoning to 3.6M Tokens with Parallel-Iterative Memory
+
+URL Source: https://arxiv.org/pdf/2608.03048v1
+
+Published Time: Wed, 05 Aug 2026 00:25:20 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# PI-Mem: Pushing Long-Context Reasoning to 3.6M Tokens with Parallel-Iterative Memory 
+
+## Dawei Liu 1,2 ∗, Haixu Song 2,3 ∗, Shuang Cheng 2,4 , Shijie Wang 2, Haozheng Hou 2,5 , Kaifeng Liu 2,5 ,Ermo Hua 2,3 , Zhonghang Yuan 2,6 , Zhijie Zhong 2,1 , Yuchen Fan 2,1 , Biqing Qi 2†, Bowen Zhou 2
+
+> 1
+
+Shanghai Jiao Tong University, 2Shanghai Artificial Intelligence Laboratory, 3Tsinghua University, 
+
+> 4
+
+Zhejiang University, 5Harbin Institute of Technology, 6University of Science and Technology of China 
+
+Abstract 
+
+Long-context reasoning remains a critical bottleneck for large language models, as recent recurrent-memory approaches face two inherent challenges: sequential chunk-wise updates can overwrite early critical evidence with later irrelevant con-tent, and serial inter-chunk dependencies limit parallelism and cause latency to increase with context length. To address these issues, we propose PI-Mem (Parallel-Iterative Memory), a mechanism that processes all chunks in parallel and iteratively refines a shared memory over a bounded number of turns. In each turn, PI-Mem reads all chunks in parallel conditioned on the current memory, selects new or complementary evidence from each chunk, and merges the selected evidence into a com-pact shared memory for the next turn. To discourage redun-dant turns, we optimize the workflow through reinforcement learning with an auxiliary turn-efficiency reward, enabling the model to adaptively exit once sufficient evidence has been accumulated. We evaluate PI-Mem with Qwen3.5-35B-A3B and Qwen2.5-7B on the HotpotQA benchmark across context lengths up to 3.6 million tokens and find that it outperforms the recurrent-memory baseline by +6.25 and +7.81 absolute points while achieving 6.1 × and 2.1 × inference speedups, re-spectively. These results demonstrate that PI-Mem breaks the accuracy–efficiency trade-off in long-context reasoning and provides a scalable approach to complex multi-hop question answering over extremely long documents. 
+
+Code — https://github.com/JetAstra/PI-Mem 
+
+## Introduction 
+
+The ability to reason over long contexts is increasingly im-portant for large language models (LLMs), supporting appli-cations such as long-document question answering (Gemini Team 2025; Yang et al. 2025b), multi-turn dialogue (Maha-rana et al. 2024; Li et al. 2024; Wu et al. 2025), repository-level code understanding (Yang et al. 2024; Hui et al. 2024), and agentic workflows over large external contexts (Yao et al. 2023; Agashe et al. 2024; Kimi Team et al. 2026). Yet model performance often degrades as context length grows, high-lighting the persistent difficulty of identifying, retaining, and effectively utilizing relevant information across distant parts of the context (Hsieh et al. 2024; Du et al. 2025). One family of approaches addresses this challenge by extending the natively supported context window through 
+
+> ∗
+
+These authors contributed equally. 
+
+> †
+
+Corresponding author. Recurrent Memory            
+
+> Memory Memory Memory Memory
+> Overwritten Evidence
+> Wrong Answer
+> Slow Sequential Processing
+> Parallel-Iterative Memory
+> Memory Correct Answer
+> Memory
+> No Info No Info No New Evidence
+> C1
+> C2
+> C3
+> C4
+> C1
+> C2
+> C3
+> C4
+> C1C2C3C4
+> Document Chunk /Valid Evidence Noisy Information
+
+Figure 1: Top: Recurrent-memory workflows process chunks sequentially and repeatedly rewrite a running memory state, potentially overwriting early evidence and creating strict se-rial dependencies. Bottom: PI-Mem reads chunks in parallel conditioned on a shared global memory, improving evidence preservation and reducing inference latency. positional-encoding interpolation or extrapolation, thereby enabling direct processing of longer sequences without dis-carding input context (Chen et al. 2023; Peng et al. 2024; Liu et al. 2025a). In practice, such extensions are generally reliable only within a limited extrapolation range and still incur the high computational cost of dense attention at ultra-long context lengths. To address this efficiency bottleneck, sparse attention restricts computation to selected tokens or key-value blocks, whereas recurrent formulations of linear attention summarize preceding tokens in a compact state. Nevertheless, these architectures are costly to train and often rely on high-quality synthetic long-context corpora (Yuan et al. 2025; Lu et al. 2025; Yang, Kautz, and Hatamizadeh 2025; Qwen Team 2026), whose construction and curation remain difficult at scale across diverse reasoning tasks. These limitations motivate recurrent-memory processing as a complementary strategy for handling long inputs. A recurrent-memory mechanism maintains a fixed-length tex-arXiv:2608.03048v1 [cs.CL] 4 Aug 2026 tual memory as a compact state throughout input processing. At each step, the model processes the current chunk together with the previous memory and generates an updated mem-ory that overwrites the previous state. Once all chunks have been processed, the model generates the final answer condi-tioned on the resulting memory (Yu et al. 2025a; Sheng et al. 2026; Shi et al. 2025). In principle, bounding the context of each memory update allows the workflow to process inputs of arbitrary length at a computational cost that grows linearly rather than quadratically with input length. However, as il-lustrated in Figure 1, this recurrent-memory design faces two challenges. First, successive memory updates compress each new chunk and the existing fixed-length memory into a new state, potentially overwriting early evidence with later noisy information before the relevance of the early evidence be-comes apparent and thereby impairing evidence preservation and integration across distant chunks. Second, the recurrent-memory workflow imposes a strict inter-chunk dependency, forcing each chunk to await the preceding memory update and increasing inference latency with context length. To address these challenges, we introduce PI-Mem, a Parallel-Iterative Memory mechanism for long-context rea-soning. PI-Mem gathers evidence from all chunks in parallel 
+
+and uses it to update a shared memory over a bounded num-ber of turns. Specifically, we define each memory-update 
+
+turn as a complete read-select-merge cycle. The read step processes all chunks in parallel, with each chunk-level read conditioned on the same global memory, thereby avoiding sequential memory overwrites that may discard earlier evi-dence and reducing inference latency through parallel chunk processing. PI-Mem then selects observations that provide new or complementary evidence and merges them with the current memory to produce an updated global memory. In the next turn, all chunks are read again conditioned on the updated memory, allowing evidence discovered in one chunk to guide extraction from other chunks and thereby enabling cross-chunk information exchange. This cycle repeats until either no chunk yields useful new evidence or a predefined maximum number of turns is reached, after which PI-Mem generates the final answer from the question and the consoli-dated global memory. To train PI-Mem, we optimize the en-tire workflow end-to-end with reinforcement learning (RL), combining an answer-accuracy reward with a turn-efficiency reward that discourages redundant turns. Experiments with Qwen3.5-35B-A3B and Qwen2.5-7B demonstrate the effectiveness and efficiency of PI-Mem. On HotpotQA (HQA) at 3.6M tokens, PI-Mem improves over MemAgent by +6.25 and +7.81 absolute points and delivers inference speedups of 6.1 × and 2.1 ×, respectively. Our main contributions are summarized as follows: 
+
+• We propose PI-Mem, a parallel-iterative memory mech-anism for long-context reasoning that reads all chunks in parallel conditioned on a shared memory and iteratively refines the memory over a bounded number of turns. 
+
+• We optimize the workflow end-to-end with RL to improve long-context performance and introduce a turn-efficiency reward that discourages redundant turns. 
+
+• We empirically show that PI-Mem outperforms the recurrent-memory baseline and substantially reduces in-ference latency on HotpotQA at context lengths up to 3.6M tokens, while also improving performance across diverse long-context benchmarks. 
+
+## Related Work 
+
+Memory-Based Context Management. Memory-based approaches retain salient information in external stores or compact textual states to operate beyond limited context windows. Early work introduced hierarchical virtual con-text management, while production-oriented layers extract, consolidate, and retrieve conversational information (Packer et al. 2023; Chhikara et al. 2025). Recent workflows re-currently update compact states over document chunks or interaction steps; related variants reconstruct evolving re-ports or reason over recalled compressed memories (Yu et al. 2025a; Zhou et al. 2025; Chen et al. 2026a,b). These designs bound the active context but retain sequential state transi-tions. Later work improves selectivity through update and exit gates, learned memory construction and editing, active retrieval and writing, multi-scale folding, and adaptive rout-ing (Sheng et al. 2026; Wang et al. 2025b; Zhang et al. 2026; Wang et al. 2026; Sun et al. 2025; Ye et al. 2025; Feng et al. 2026). Our approach instead conditions all chunk-level reads within each turn on the same memory, improving evidence preservation and reducing inference latency. 
+
+Reinforcement Learning for Long-Context Reasoning. 
+
+RL with verifiable rewards, together with group-relative pol-icy optimization and its variants, has substantially improved multi-step reasoning (Shao et al. 2024; Yu et al. 2025b). Long-context studies extend this paradigm through super-vised warm-up, progressive context curricula, difficulty-aware sampling, self-play verification, and synthetic multi-hop tasks with distractors (Wan et al. 2025; Yang et al. 2026; Wang et al. 2025a). These strategies stabilize optimization, adapt task difficulty as training progresses, and provide scal-able reward signals when annotated long-context data are scarce. Beyond outcome-only supervision, dense, verifiable context rewards directly guide grounding and evidence se-lection (Chen, Shieh, and Bing 2026). RL has also been used to train memory-augmented workflows, including iterative memory fusion, historical-memory retrieval, and policies that control retrieval, writing, and stopping through final-answer and step-level signals (Shen et al. 2025; Shi et al. 2025; Wang et al. 2026). Our approach applies trajectory-level RL to a parallel-iterative workflow, training the policy to coordinate evidence selection and memory refinement and discouraging redundant turns. 
+
+## Method 
+
+In this section, we first describe the PI-Mem inference work-flow and then present its RL training procedure. 
+
+PI-Mem Inference Workflow 
+
+Figure 2 provides an overview of the PI-Mem inference workflow, and Algorithm 1 presents its procedural details. PI-Mem reads all chunks in parallel and iteratively refines a shared memory over a bounded number of turns. We define Exit Final Answer  
+
+> m
+> ★
+> m(1)
+
+# …
+
+Turn k’  
+
+> Read → No New Evidence
+
+## …m(0) 
+
+q  
+
+> Max Turn Reached (k’ =K )
+> OR
+
+Read  
+
+> Q + M ₀
+> C2C4
+
+q +   
+
+> C1C3
+> Parallel Read Chunks
+> O1O2O4O3
+
+Select   
+
+> O1O2O4O3
+
+Extracted Evidence 
+
+✓✗ ✓ ✗
+
+Merge 
+
+> m(k-1)
+> m(k)
+> Extracted Evidence
+
+q Question Document Chunk Memory O1 O1 Valid Observation Invalid Observation 
+
+> Compress & Integrate
+> m(k-1)
+
+q
+
+> m(k)
+
+Turn k
+
+> Read → Select → Merge
+
+Turn 1  
+
+> Read → Select → Merge m(k-1)
+
+Figure 2: Overview of the PI-Mem workflow. PI-Mem reads all chunks in parallel conditioned on a shared global memory and iteratively refines this memory through read-select-merge turns. Algorithm 1: PI-Mem Inference Workflow 
+
+Input : Question q, context C, model πθ , maximum number of turns K
+
+Output : Final answer a
+
+Initialize : Split C into chunks {ci}ni=1 ;
+
+m(0) ← EMPTY 
+
+1: m⋆ ← m(0) 
+
+2: for k = 1 to K do 
+
+3: Read each chunk ci in parallel :
+
+4: o(k) 
+
+> i
+
+← ReadCall (πθ , q, c i, m (k−1) )
+
+5: O(k) ← { o(k) 
+
+> i
+
+| χ(o(k) 
+
+> i
+
+) = yes }
+
+6: if O(k) = ∅ then 
+
+7: break 
+
+8: else 
+
+9: m(k) ← MergeCall (πθ , q, m (k−1) , O (k))
+
+10: m⋆ ← m(k)
+
+11: end if 
+
+12: end for 
+
+13: a ← FinalCall (πθ , q, m ⋆)
+
+14: return a
+
+each memory-update turn as a complete read-select-merge 
+
+cycle: PI-Mem reads all chunks conditioned on the current global memory, selects observations with new or comple-mentary evidence, and merges them into an updated global memory. We first detail the three operations within each turn and then describe iterative refinement and adaptive exit across turns. 
+
+Read-Select-Merge Turn. For a general QA task, we de-note the question by q, the full background context by C, and the model by πθ . We first split C into equal-sized chunks 
+
+{ci}ni=1 and initialize the global memory m(0) as an empty memory. At turn k, PI-Mem updates the global memory through a read-select-merge turn: 
+
+m(k) = Turn (πθ , q, m (k−1) , {ci}ni=1 ). (1) The goal of each turn is to update the global memory by processing all chunks in parallel. In the read step, PI-Mem processes all chunks in paral-lel. For each chunk ci, ReadCall places q, ci, and m(k−1) 
+
+into a chunk-reading template and calls πθ to generate a chunk-level observation o(k) 
+
+> i
+
+. Rather than successively over-writing the memory as in sequential recurrent processing, PI-Mem reads all chunks independently conditioned on the same memory m(k−1) , thereby reducing the risk that evi-dence from early chunks is overwritten by noisy information from later chunks. This independence also enables PI-Mem to read chunks in parallel and efficiently batch the corre-sponding calls, allowing ultra-long sequences to be processed with lower inference latency. Each chunk call must explicitly output a check signal, either <check>yes</check> or 
+
+<check>no</check> . The model outputs yes when ci
+
+provides evidence relevant to q that is new or complemen-tary to m(k−1) . When the check signal is yes , the output includes the corresponding evidence needed for answering 
+
+q; otherwise, the model outputs only no .The select step filters observations by the <check> sig-nal. Let χ(o(k) 
+
+> i
+
+) denote the value enclosed by the check tags; the selected observation set is defined as 
+
+O(k) = { o(k) 
+
+> i
+
+| χ(o(k) 
+
+> i
+
+) = yes }. (2) This filtering removes observations that provide no useful update, so the memory update focuses on new or comple-mentary evidence rather than irrelevant or redundant text. The merge step consolidates the selected observations into the updated global memory. Specifically, MergeCall places 
+
+q, m(k−1) , and O(k) into a merge template and invokes πθ
+
+to produce m(k). A straightforward alternative is to concate-nate all positive chunk outputs, but this can still produce an overly long intermediate context when many chunks con-tain relevant evidence. The merge step instead compresses and integrates evidence from different chunks, removes re-dundancy, preserves details necessary for answering q, and prevents unbounded memory growth as the number of se-lected observations increases. Thus, a single turn updates the global memory through parallel evidence extraction, se-lective filtering, and compact cross-source integration. 
+
+Iterative Refinement and Exit Mechanism. After turn 
+
+k finishes, PI-Mem feeds the merged memory m(k) into the next read step and repeats the read-select-merge cycle. Each later turn therefore reads all chunks again, conditioned on evidence discovered in previous turns. Compared with a single greedy turn, in which chunk relevance is judged only from the initial empty memory, iterative refinement reduces the risk of overlooking evidence whose importance becomes clear only after other facts have been identified and enables cross-chunk information exchange through the shared memory. PI-Mem further uses the check signal as an adaptive exit mechanism . The loop automatically stops when no chunk produces useful new evidence, i.e., O(k) = ∅, or when it reaches the maximum number of turns K. Finally, PI-Mem invokes the model once more to answer using only the ques-tion q and the final global memory m⋆, rather than the origi-nal long context, so that final inference remains compact and grounded in the consolidated evidence. 
+
+Trajectory-Level Reinforcement Learning 
+
+We adopt GRPO (Shao et al. 2024) to optimize the multi-call workflow end to end. During RL training, each rollout for a query defines a complete trajectory. Since the work-flow invokes the model multiple times, each trajectory con-tains multiple model-call samples, including read, merge, and final-answer calls. We denote the i-th trajectory by 
+
+τi = {(xi,s , y i,s )}Si
+
+> s=1
+
+, (3) where Si is the number of model-call samples in trajectory 
+
+τi, s indexes one such model call, xi,s is the corresponding phase-specific prompt constructed from the workflow state, and yi,s is the generated response. For each training query, we sample a group of G complete trajectories {τi}Gi=1 from the old policy πθold and use all model-call samples in these trajectories for policy optimization. We next describe how the trajectory-level reward is constructed and used for end-to-end workflow optimization. 
+
+Reward Design. We assign one reward to each completed trajectory τi based on its final answer ai and turn count ki.Let racc (ai) denote the accuracy reward and K the maximum number of turns. We augment answer accuracy with a turn-efficiency bonus: 
+
+rturn (τi) = K − ki
+
+K − 1 ; Ri = racc (ai) + λturn rturn (τi). (4) The turn bonus assigns higher rewards to trajectories that exit in fewer turns, and λturn controls its contribution. It dis-courages redundant refinement once the memory is sufficient and encourages the workflow to exit when no new evidence is found, reducing latency. 
+
+Trajectory-Level Optimization. This scalar reward is then broadcast to every model-call sample (xi,s , y i,s ) in the same trajectory. Following Dr. GRPO (Liu et al. 2025b), we omit normalization by the group standard deviation and com-pute the group-relative advantage over complete trajectories rather than individual calls: 
+
+Ai = Ri − 1
+
+G
+
+> G
+
+X
+
+> j=1
+
+Rj . (5) Given this trajectory-level advantage, each token in every model-call sample of trajectory τi uses the same Ai in the per-token clipped surrogate term: 
+
+ℓi,s,t (θ) = min 
+
+
+
+ρi,s,t (θ)Ai,
+
+clip( ρi,s,t (θ), 1 − ε, 1 + ε)Ai
+
+
+
+,
+
+(6) where ε denotes the clipping ratio, and the token-level policy ratio is 
+
+ρi,s,t (θ) = πθ (yi,s,t | xi,s , y i,s,<t )
+
+πθold (yi,s,t | xi,s , y i,s,<t ) . (7) The final objective uses DAPO-style token-level aggrega-tion (Yu et al. 2025b) over all model-call samples in the sampled trajectories. Let Z = PGi=1 
+
+PSi 
+
+> s=1
+
+|yi,s | denote the total number of generated tokens. The objective is 
+
+J (θ) = E(q,a )∼D ,{yi,s }∼ πθold (·| xi,s )
+
+"
+
+1
+
+Z
+
+> G
+
+X
+
+> i=1
+> Si
+
+X
+
+> s=1
+> |yi,s |
+
+X
+
+> t=1
+
+
+
+ℓi,s,t (θ) − βKL( πθ ∥ πref )
+
+#
+
+. (8) Here, (q, a ) denotes a question and its reference answer sam-pled from the data distribution D. The coefficient β scales the token-level KL divergence between the current policy πθ
+
+and the reference policy πref .
+
+## Experiments 
+
+Training Setup 
+
+We evaluate our method on two representative models: Qwen3.5-35B-A3B (Qwen Team 2026), an MoE model with hybrid attention, and Qwen2.5-7B-Instruct (Yang et al. 2025a), a dense model with full attention. For the Qwen3.5-35B-A3B experiments, following the data construction protocol of MemAgent (Yu et al. 2025a), we synthesize long-context QA training samples by embed-ding HotpotQA (Yang et al. 2018) gold paragraphs into distractor documents sampled from the same dataset. Each training sample contains 1,000 documents, yielding a con-text length of approximately 140K tokens. PI-Mem splits the context into 15K-token chunks. Across the workflow, all gen-eration stages use the same maximum output length of 4,096 Method 7K 14K 28K 56K 112K 224K 448K 896K 1.8M 3.6M Avg. 
+
+Qwen3.5-35B-A3B 
+
+Vanilla 87.50 79.69 82.81 81.25 78.12 73.44 62.50 37.50 34.38 29.69 64.69 YaRN 82.81 81.25 79.69 82.81 78.12 68.75 59.38 56.25 29.69 14.06 63.28 RAG 84.38 82.81 71.88 67.19 46.88 54.69 51.56 53.12 46.88 43.75 60.31 MemAgent 84.38 81.25 82.81 81.25 79.69 68.75 73.44 71.88 71.88 70.31 76.56 
+
+PI-Mem 87.50 82.81 84.38 82.81 84.38 79.69 82.81 76.56 75.00 76.56 81.25 
+
+Qwen2.5-7B 
+
+Vanilla 60.94 54.69 50.00 23.44 0.00 0.00 0.00 0.00 0.00 0.00 18.91 YaRN 56.25 62.50 62.50 45.31 34.38 0.00 0.00 0.00 0.00 0.00 26.09 RAG 57.81 46.88 46.88 45.31 39.06 42.19 29.69 43.75 26.56 32.81 41.09 MemAgent 81.25 81.25 75.00 82.81 76.56 75.00 76.56 75.00 78.12 73.44 77.50 GRU-Mem 81.25 79.69 77.34 76.56 74.22 73.44 71.88 76.56 N/A N/A 76.37 ReMemR1 82.3 82.8 81.1 78.9 82.0 79.7 80.0 80.8 N/A N/A 80.95 
+
+PI-Mem 82.81 82.81 81.25 82.81 89.06 85.94 82.81 84.38 87.50 81.25 84.06 
+
+Table 1: Length-grouped RULER HQA results. Scores are reported across context lengths from 7K to 3.6M tokens. The averages for GRU-Mem and ReMemR1 use the eight reported lengths. tokens, including chunk-level memory generation, merged-memory generation, and final-answer generation. Thinking mode is disabled during training to improve rollout efficiency and reduce the generated output length of each model call. We set the maximum number of turns to K = 3 . For a fair comparison, the MemAgent baseline is trained with the same RL hyperparameters: a rollout batch size of 128 prompts, a GRPO group size of 8 rollouts per prompt, and 80 rollout steps, corresponding to 10,240 training samples counted at the prompt level. For Qwen2.5-7B, each HotpotQA training sample con-tains 200 documents (approximately 28K tokens). PI-Mem uses 5K-token chunks and a maximum output length of 1,024 tokens. We use 16 rollouts per prompt and 240 rollout steps, and compare against the officially released MemAgent check-point with the same backbone. 
+
+Evaluation Setup 
+
+Baselines. We compare PI-Mem with direct-inference, retrieval-augmented, and recurrent-memory baselines. Vanilla denotes standard direct inference using the backbone model. We also include YaRN (Peng et al. 2024), a com-monly used positional-encoding extrapolation method, as a direct-inference baseline. RAG (Lewis et al. 2020) retrieves relevant chunks from the long context and performs direct inference over the retrieved evidence. We include MemA-gent (Yu et al. 2025a), GRU-Mem (Sheng et al. 2026), and ReMemR1 (Shi et al. 2025) as recurrent-memory workflow baselines. We report the RL-trained variants of MemA-gent and PI-Mem and use the published HQA results for GRU-Mem and ReMemR1. 
+
+Benchmarks. We evaluate long-context performance on RULER (Hsieh et al. 2024) and LongBench v2 (Bai et al. 2024). RULER is a synthetic benchmark that probes re-trieval, multi-hop tracing, aggregation, and question answer-ing over long contexts. LongBench v2 contains 503 chal-lenging multiple-choice questions across six realistic task categories. In our RULER results, all tasks except HQA are treated as out-of-distribution (OOD) tasks, while HQA is considered in-distribution because the RL training data is synthesized from HQA. We report LongBench v2 results only for Qwen3.5, as all evaluated methods on Qwen2.5 per-formed at approximately the random-guessing level on this four-choice benchmark in our experiments, making method-level comparisons difficult to interpret. 
+
+Implementation Details. Thinking mode is disabled for Qwen3.5 and is not applicable to Qwen2.5. We use temper-ature = 0 .7 and top-p = 0 .95 , and set the maximum output length to 4,096 tokens for Qwen3.5 and 1,024 tokens for Qwen2.5. We use 8 NVIDIA H200 GPUs with tensor paral-lelism set to 2 for inference. For RULER, each task at each context length is evaluated with 64 samples. 
+
+Main Results 
+
+Tables 1 and 2 summarize the length-grouped RULER HQA and OOD results. On HQA, PI-Mem achieves the best av-erage score for both backbones. With Qwen3.5-35B-A3B, it improves the average from 76.56 for MemAgent to 81.25 and remains strong at the longest 3.6M-token setting, where Vanilla and YaRN degrade sharply. With Qwen2.5-7B, PI-Mem improves the average from 77.50 to 84.06 and matches or outperforms MemAgent across all reported lengths, with especially large gains in the longer-context regime. On RULER OOD tasks, PI-Mem also shows stronger robustness as context length increases. For Qwen3.5-35B-A3B, it obtains the best average score of 98.04, outperform-ing MemAgent by 6.76 points and surpassing both direct-inference baselines. At 1M tokens, PI-Mem reaches 96.88 while MemAgent drops to 83.86. For Qwen2.5-7B, PI-Mem improves the average from 84.68 to 91.09 and raises the 1M-token score from 74.83 to 88.39. Together, these results show that the parallel-iterative workflow remains robust as context Method 8K 16K 32K 64K 128K 256K 512K 1M Avg. 
+
+Qwen3.5-35B-A3B 
+
+Vanilla 98.67 98.39 97.64 97.96 97.40 96.08 95.81 75.56 94.69 YaRN 97.92 96.59 96.74 97.02 97.46 97.22 96.19 86.58 95.72 RAG 98.31 93.07 94.32 95.18 93.25 87.02 77.90 75.24 89.29 MemAgent 94.55 92.92 95.18 94.05 92.46 90.84 86.42 83.86 91.28 
+
+PI-Mem 98.92 98.65 98.06 98.42 97.69 98.38 97.30 96.88 98.04 
+
+Qwen2.5-7B 
+
+Vanilla 86.57 87.17 84.48 60.65 22.72 0.00 0.00 0.00 42.70 YaRN 84.24 83.03 78.82 72.48 57.13 0.00 0.00 0.00 46.96 RAG 80.58 79.30 77.57 76.49 74.07 68.05 63.45 58.70 72.28 MemAgent 91.66 90.33 89.31 87.73 83.73 80.30 79.51 74.83 84.68 
+
+PI-Mem 91.72 91.78 92.10 92.49 91.75 91.38 89.14 88.39 91.09 
+
+Table 2: Length-grouped RULER out-of-distribution results. Scores are reported across context lengths from 8K to 1M tokens. 
+
+Method All Difficulty Length 
+
+Easy Hard Short Med. Long Vanilla 50.7 55.7 47.6 56.1 47.9 47.2 YaRN 51.5 52.1 51.1 57.8 48.4 47.2 RAG 48.9 53.6 46.0 51.7 44.7 52.8 MemAgent 52.3 59.9 47.6 55.6 48.8 53.7 
+
+PI-Mem 54.1 66.1 46.6 53.3 49.8 63.9 
+
+Table 3: LongBench v2 results. Following the grouping de-fined by the benchmark, we report results by difficulty (Easy and Hard) and context length (Short, Medium, and Long). 
+
+Method Qwen3.5-35B-A3B Qwen2.5-7B 
+
+256K 512K 1M 256K 512K 1M MemAgent 70.3% 74.2% 58.6% 73.8% 75.8% 74.6% 
+
+PI-Mem 100% 100% 100% 98.8% 100% 100% 
+
+Table 4: Final-memory evidence coverage on RULER MV-NIAH, measured as the proportion of ground-truth values present in the final memory. length grows, with gains that persist across both backbones and extend beyond the HQA-based training distribution. Table 3 reports the LongBench v2 results. PI-Mem achieves the best overall score of 54.1, outperforming MemAgent by 1.8 points and the vanilla baseline by 3.4 points. These results show that the proposed workflow im-proves long-context performance across realistic tasks. 
+
+Evidence Retention Analysis. To directly assess whether recurrent memory updates overwrite earlier evidence, we measure final-memory evidence coverage on RULER Multi-values Needle-in-a-Haystack (MV-NIAH), where coverage is defined as the proportion of ground-truth values present in the final memory (Hsieh et al. 2024). The task requires retrieving four independent values associated with the same key from positions distributed across a long context and thus provides a controlled diagnostic of evidence retention. Table 4 shows 896K 1.8M 3.6M   
+
+> Context Length
+> 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0
+> Latency (sec)  ↓
+> 1e4
+> 0.5 ×
+> 2.7 ×
+> 2.3 ×
+> 13.5 ×
+> 2.8 ×
+> 16.9 ×
+> Qwen3.5-35B-A3B
+> 896K 1.8M 3.6M
+> Context Length
+> 2.4 ×5.1 ×
+> 3.8 ×7.9 ×
+> 7.0 ×
+> 14.4 ×
+> Qwen2.5-7B
+> Vanilla MemAgent Ours
+> 1
+
+Figure 3: End-to-end HQA inference latency at ultra-long context lengths with Qwen3.5-35B-A3B and Qwen2.5-7B. Reported speedups are relative to Vanilla. a clear contrast: PI-Mem retains almost all target evidence in the final memory, whereas MemAgent loses a substantial portion of that evidence over successive recurrent updates. This comparison indicates that parallel reading preserves the collected evidence more effectively by mitigating the overwrite caused by recurrent memory updates. 
+
+Latency Analysis. Figure 3 compares end-to-end infer-ence latency on ultra-long HQA inputs. At 3.6M tokens, PI-Mem is 16.9 × faster than Vanilla and 6.1 × faster than MemAgent with Qwen3.5-35B-A3B; the correspond-ing speedups with Qwen2.5-7B are 14.4 × and 2.1 ×. Vanilla keeps the full context active during inference, incurring sub-stantial full-context prefill and KV-cache costs. MemAgent bounds the context of each call through chunking, but its recurrent updates form a serial critical path that prevents concurrent processing of chunks from the same sequence. PI-Mem removes this dependency by executing chunk-level ReadCall operations in parallel within each turn and batch-ing the corresponding calls across examples, thereby improv-ing GPU utilization and reducing latency. 8K 16K 32K 64K 128K 256K 512K 1M         
+
+> Context Length
+> 55 60 65 70 75 80 85 90 95 100
+> RULER Performance  91.5 88.1 82.7 79.3 77.3 72.0 67.8 60.3 91.7 91.8 92.1 92.5 91.8 91.4 89.1 88.4
+> +28.1 on 1M Length
+> Parallel w/o RL Parallel w/ RL
+> 1
+
+Figure 4: Effect of RL training on RULER OOD performance across context lengths. RL training brings larger gains as the context becomes longer. 
+
+Ablation Study 
+
+For computational efficiency, we conduct all ablations in this section with Qwen2.5-7B-Instruct. 
+
+Effect of RL Training. Figure 4 evaluates whether RL training improves the proposed workflow on RULER OOD tasks. RL training yields only a minor gain at 8K tokens, but the improvement becomes increasingly clear as the con-text length grows. This trend suggests that even with simple synthetic data based on HQA, RL training helps the model generalize to more diverse long-context tasks and use the workflow more effectively. 
+
+Select and Merge Components. Figure 5 studies the select component and the merge component on HQA at ultra-long context lengths (896K, 1.8M, and 3.6M). In the variant with-out select, the model is not required to output a <check> 
+
+signal, so all chunk-level observations are directly passed to the merge step. In the variant without merge, selected observations are simply concatenated across chunks rather than consolidated into a compact global memory. Remov-ing either component weakens context management: without selection, irrelevant, redundant, or noisy observations accu-mulate, whereas without merging, useful evidence remains fragmented and the memory expands rapidly. As the input grows, the resulting context pollution or fragmentation leads to lower accuracy and longer inference time. 
+
+Turn-Efficiency Reward. Figure 6 compares training with and without the turn-efficiency reward; the reward-enabled variant uses λturn = 0 .2. The left panel shows that adding the turn reward produces a substantially larger reduction in the number of read-select-merge turns. Although the model trained without the turn reward also learns to use fewer turns as training proceeds, its curve is more unstable and the re-duction is substantially smaller. By contrast, the turn-reward variant quickly suppresses redundant turns and converges to a lower and more stable turn count. The right panel shows a higher late-stage accuracy reward, indicating that the ef-ficiency gain preserves correctness. Before workflow-level training, extra turns can be unnecessary or harmful because repeated updates may introduce noise, overwrite useful evi-100 50 0 50 100             
+
+> Ours w/o select w/o merge Ours w/o select w/o merge Ours w/o select w/o merge
+> 0.0% 84.4% +30.0% 70.3% (-14.1%) +35.0% 71.9% (-12.5%) 0.0% 87.5% +29.3% 53.1% (-34.4%) +53.7% 67.2% (-20.3%) 0.0% 81.2% +26.2% 23.4% (-57.8%) +83.3% 45.3% (-35.9%)
+> 896K 1.8M 3.6M
+> Latency Increase (%) ↓HQA Score (%) ↑
+> 1
+
+Figure 5: Component ablation on HQA. HQA Score reports the absolute score, whereas Latency Increase reports the rel-ative percentage increase over the full configuration. Remov-ing either the select component or the merge component lowers HQA accuracy and increases latency, with the degra-dation becoming more severe at ultra-long context lengths. 0 30 60 90 120 150 180 210 240           
+
+> Training step
+> 2.2 2.3 2.4 2.5 2.6 2.7 2.8 2.9 3.0
+> Turns Used Mean  ↓△= -0.23
+> w/o turn reward w/ turn reward
+> 030 60 90 120 150 180 210 240
+> Training step
+> 0.50 0.55 0.60 0.65 0.70 0.75 0.80 0.85
+> Acc Reward Mean  ↑△= +0.19
+> 1
+
+Figure 6: Effect of the turn-efficiency reward on Qwen2.5-7B RL training. The turn reward leads to a faster, larger, and more stable reduction in the number of turns, while also improving the accuracy reward. dence, or over-refine sufficient memory. Further analyses in the Technical Supplement include more implementation details, additional ablation studies, ac-tual turn counts, detailed comparisons of inference FLOPs and end-to-end latency, and comparative case studies. 
+
+## Conclusion 
+
+We introduced PI-Mem, a parallel-iterative memory mecha-nism for long-context reasoning that gathers evidence from all chunks in parallel and iteratively refines a shared mem-ory. Instead of updating memory recurrently after every chunk, PI-Mem reads chunks in parallel conditioned on a shared global memory, selects useful observations, and merges them into a compact memory across turns. We further post-trained the workflow with RL so the model can better follow the read-select-merge process and avoid unnecessary turns. Experiments with Qwen3.5-35B-A3B and Qwen2.5-7B demonstrate that PI-Mem improves long-context QA and retrieval performance while reducing inference latency com-pared with recurrent-memory and direct-inference baselines. Together, memory workflow design and end-to-end post-training offer a promising path to ultra-long-context reason-ing without relying solely on larger native context windows. Acknowledgments 
+
+This work was supported by Shanghai Artificial Intelligence Laboratory and supported by the National Natural Science Foundation of China (Grant No. 6250076080) and supported by the China Postdoctoral Science Foundation under Grant Number 2025M771537. 
+
+## References 
+
+Agashe, S.; Han, J.; Gan, S.; Yang, J.; Li, A.; and Wang, X. E. 2024. Agent S: An Open Agentic Framework that Uses Computers Like a Human. arXiv preprint arXiv:2410.08164 .Bai, Y.; Tu, S.; Zhang, J.; Peng, H.; Wang, X.; Lv, X.; Cao, S.; Xu, J.; Hou, L.; Dong, Y.; Tang, J.; and Li, J. 2024. LongBench v2: Towards Deeper Understanding and Reason-ing on Realistic Long-context Multitasks. arXiv preprint arXiv:2412.15204 .Chen, G.; Qiao, Z.; Chen, X.; Yu, D.; Xu, H.; Zhao, W. X.; Song, R.; Yin, W.; Yin, H.; Zhang, L.; Li, K.; Liao, M.; Jiang, Y.; Xie, P.; Huang, F.; and Zhou, J. 2026a. IterResearch: Rethinking Long-Horizon Agents with Interaction Scaling. arXiv:2511.07327. Chen, G.; Shieh, M. Q.; and Bing, L. 2026. LongRLVR: Long-Context Reinforcement Learning Requires Verifiable Context Rewards. arXiv preprint arXiv:2603.02146 .Chen, S.; Wong, S.; Chen, L.; and Tian, Y. 2023. Extending Context Window of Large Language Models via Positional Interpolation. arXiv preprint arXiv:2306.15595 .Chen, Z.; Li, D.; Zhang, M.; Hu, B.; and Zhang, M. 2026b. Dynamic Long Context Reasoning over Com-pressed Memory via End-to-End Reinforcement Learning. arXiv:2602.08382. Chhikara, P.; Khant, D.; Aryan, S.; Singh, T.; and Ya-dav, D. 2025. Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory. arXiv preprint arXiv:2504.19413 .Du, Y.; Tian, M.; Ronanki, S.; Rongali, S.; Bodapati, S.; Gal-styan, A.; Wells, A.; Schwartz, R.; Huerta, E. A.; and Peng, H. 2025. Context Length Alone Hurts LLM Performance Despite Perfect Retrieval. arXiv:2510.05381. Feng, Z.; Su, L.; Zhang, Z.; Wang, X.; Zhang, X.; Wang, X.; Fang, R.; Zhang, Q.; Li, B.; Cai, S.; Ye, R.; Chen, H.; Yong, J.; Zhou, J. T.; Qian, C.; Xie, P.; Hooi, B.; Liu, Z.; and Zhou, J. 2026. AgentSwing: Adaptive Parallel Context Management Routing for Long-Horizon Web Agents. arXiv:2603.27490. Gemini Team. 2025. Gemini 2.5: Pushing the Frontier with Advanced Reasoning, Multimodality, Long Context, and Next Generation Agentic Capabilities. arXiv preprint arXiv:2507.06261 .Hsieh, C.-P.; Sun, S.; Kriman, S.; Acharya, S.; Rekesh, D.; Jia, F.; Zhang, Y.; and Ginsburg, B. 2024. RULER: What’s the Real Context Size of Your Long-Context Language Mod-els? arXiv:2404.06654. Hui, B.; Yang, J.; Cui, Z.; Yang, J.; Liu, D.; Zhang, L.; Liu, T.; Zhang, J.; Yu, B.; Lu, K.; Dang, K.; Fan, Y.; Zhang, Y.; Yang, A.; Men, R.; Huang, F.; Zheng, B.; Miao, Y.; Quan, S.; Feng, Y.; Ren, X.; Ren, X.; Zhou, J.; and Lin, J. 2024. Qwen2.5-Coder Technical Report. arXiv:2409.12186. Kimi Team; Bai, T.; Bai, Y.; Bao, Y.; Cai, S. H.; Cao, Y.; Charles, Y.; Che, H. S.; Chen, C.; Chen, G.; et al. 2026. Kimi K2.5: Visual Agentic Intelligence. arXiv:2602.02276. Lewis, P.; Perez, E.; Piktus, A.; Petroni, F.; Karpukhin, V.; Goyal, N.; Küttler, H.; Lewis, M.; Yih, W.-t.; Rocktäschel, T.; Riedel, S.; and Kiela, D. 2020. Retrieval-Augmented Gen-eration for Knowledge-Intensive NLP Tasks. In Larochelle, H.; Ranzato, M.; Hadsell, R.; Balcan, M.; and Lin, H., eds., 
+
+Advances in Neural Information Processing Systems , vol-ume 33, 9459–9474. Curran Associates, Inc. Li, H.; Yang, C.; Zhang, A.; Deng, Y.; Wang, X.; and Chua, T.-S. 2024. Hello Again! LLM-Powered Personalized Agent for Long-Term Dialogue. arXiv preprint arXiv:2406.05925 .Liu, J.; Zhu, D.; Bai, Z.; He, Y.; Liao, H.; Que, H.; Wang, Z.; Zhang, C.; Zhang, G.; Zhang, J.; Zhang, Y.; Chen, Z.; Guo, H.; Li, S.; Liu, Z.; Shan, Y.; Song, Y.; Tian, J.; Wu, W.; Zhou, Z.; Zhu, R.; Feng, J.; Gao, Y.; He, S.; Li, Z.; Liu, T.; Meng, F.; Su, W.; Tan, Y.; Wang, Z.; Yang, J.; Ye, W.; Zheng, B.; Zhou, W.; Huang, W.; Li, S.; and Zhang, Z. 2025a. A Comprehensive Survey on Long Context Language Modeling. arXiv:2503.17407. Liu, Z.; Chen, C.; Li, W.; Qi, P.; Pang, T.; Du, C.; Lee, W. S.; and Lin, M. 2025b. Understanding R1-Zero-Like Training: A Critical Perspective. arXiv preprint arXiv:2503.20783 .Lu, E.; Jiang, Z.; Liu, J.; Du, Y.; Jiang, T.; Hong, C.; Liu, S.; He, W.; Yuan, E.; Wang, Y.; Huang, Z.; Yuan, H.; Xu, S.; Xu, X.; Lai, G.; Chen, Y.; Zheng, H.; Yan, J.; Su, J.; Wu, Y.; Zhang, N. Y.; Yang, Z.; Zhou, X.; Zhang, M.; and Qiu, J. 2025. MoBA: Mixture of Block Attention for Long-Context LLMs. arXiv preprint arXiv:2502.13189 .Maharana, A.; Lee, D.-H.; Tulyakov, S.; Bansal, M.; Barbieri, F.; and Fang, Y. 2024. Evaluating Very Long-Term Conver-sational Memory of LLM Agents. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics .Packer, C.; Wooders, S.; Lin, K.; Fang, V.; Patil, S. G.; Stoica, I.; and Gonzalez, J. E. 2023. MemGPT: Towards LLMs as Operating Systems. arXiv preprint arXiv:2310.08560 .Peng, B.; Quesnelle, J.; Fan, H.; and Shippole, E. 2024. YaRN: Efficient Context Window Extension of Large Lan-guage Models. In The Twelfth International Conference on Learning Representations .Qwen Team. 2026. Qwen3.5: Towards Native Multimodal Agents. Shao, Z.; Wang, P.; Zhu, Q.; Xu, R.; Song, J.; Bi, X.; Zhang, H.; Zhang, M.; Li, Y. K.; Wu, Y.; and Guo, D. 2024. DeepSeekMath: Pushing the Limits of Mathematical Rea-soning in Open Language Models. arXiv:2402.03300. Shen, W.; Yang, Z.; Li, C.; Lu, Z.; Peng, M.; Sun, H.; Shi, Y.; Liao, S.; Lai, S.; Zhang, B.; Liu, D.; Huang, F.; Zhou, J.; and Yan, M. 2025. QwenLong-L1.5: Post-Training Recipe for Long-Context Reasoning and Memory Management. arXiv preprint arXiv:2512.12967 .Sheng, L.; Zhang, Y.; Ma, W.; Shi, Y.; Huang, T.; Wang, X.; Zhang, A.; Shen, K.; and Chua, T.-S. 2026. When to Memorize and When to Stop: Gated Recurrent Memory for Long-Context Reasoning. arXiv:2602.10560. Shi, Y.; Chen, Y.; Wang, S.; Li, S.; Cai, H.; Gu, Q.; Wang, X.; and Zhang, A. 2025. Look Back to Reason Forward: Revisitable Memory for Long-Context LLM Agents. arXiv preprint arXiv:2509.23040 .Sun, W.; Lu, M.; Ling, Z.; Liu, K.; Yao, X.; Yang, Y.; and Chen, J. 2025. Scaling Long-Horizon LLM Agent via Context-Folding. arXiv preprint arXiv:2510.11967 .Wan, F.; Shen, W.; Liao, S.; Shi, Y.; Li, C.; Yang, Z.; Zhang, J.; Huang, F.; Zhou, J.; and Yan, M. 2025. QwenLong-L1: Towards Long-Context Large Reasoning Models with Reinforcement Learning. arXiv:2505.17667. Wang, S.; Zhang, G.; Zhang, L. L.; Shang, N.; Yang, F.; Chen, D.; and Yang, M. 2025a. LoongRL: Reinforcement Learning for Advanced Reasoning over Long Contexts. arXiv preprint arXiv:2510.19363 .Wang, X.; Li, M.; Lu, P.; Chang, X.-W.; Shang, L.; Li, J.; Mi, F.; Parthasarathi, P.; and Cui, Y. 2026. InfMem: Learning System-2 Memory Control for Long-Context Agent. arXiv preprint arXiv:2602.02704 .Wang, Y.; Takanobu, R.; Liang, Z.; Mao, Y.; Hu, Y.; McAuley, J.; and Wu, X. 2025b. Mem-α: Learning Memory Construction via Reinforcement Learning. arXiv preprint arXiv:2509.25911 .Wu, D.; Wang, H.; Yu, W.; Zhang, Y.; Chang, K.-W.; and Yu, D. 2025. LongMemEval: Benchmarking Chat Assistants on Long-Term Interactive Memory. arXiv:2410.10813. Yang, A.; Yang, B.; Zhang, B.; Hui, B.; Zheng, B.; Yu, B.; Li, C.; Liu, D.; Huang, F.; Wei, H.; Lin, H.; Yang, J.; Tu, J.; Zhang, J.; Yang, J.; Yang, J.; Zhou, J.; Lin, J.; Dang, K.; Lu, K.; Bao, K.; Yang, K.; Yu, L.; Li, M.; Xue, M.; Zhang, P.; Zhu, Q.; Men, R.; Lin, R.; Li, T.; Tang, T.; Xia, T.; Ren, X.; Ren, X.; Fan, Y.; Su, Y.; Zhang, Y.; Wan, Y.; Liu, Y.; Cui, Z.; Zhang, Z.; and Qiu, Z. 2025a. Qwen2.5 Technical Report. arXiv:2412.15115. Yang, A.; Yu, B.; Li, C.; Liu, D.; Huang, F.; Huang, H.; Jiang, J.; Tu, J.; Zhang, J.; Zhou, J.; Lin, J.; Dang, K.; Yang, K.; Yu, L.; Li, M.; Sun, M.; Zhu, Q.; Men, R.; He, T.; Xu, W.; Yin, W.; Yu, W.; Qiu, X.; Ren, X.; Yang, X.; Li, Y.; Xu, Z.; and Zhang, Z. 2025b. Qwen2.5-1M Technical Report. arXiv:2501.15383. Yang, J.; Jimenez, C. E.; Wettig, A.; Lieret, K.; Yao, S.; Narasimhan, K.; and Press, O. 2024. SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineer-ing. In Advances in Neural Information Processing Systems .Yang, S.; Kautz, J.; and Hatamizadeh, A. 2025. Gated Delta Networks: Improving Mamba2 with Delta Rule. In Interna-tional Conference on Learning Representations .Yang, Z.; Qi, P.; Zhang, S.; Bengio, Y.; Cohen, W. W.; Salakhutdinov, R.; and Manning, C. D. 2018. HotpotQA: A Dataset for Diverse, Explainable Multi-hop Question An-swering. arXiv:1809.09600. Yang, Z.; Shen, W.; Li, C.; Chen, R.; Wan, F.; Yan, M.; Quan, X.; and Huang, F. 2026. SPELL: Self-Play Rein-forcement Learning for Evolving Long-Context Language Models. arXiv:2509.23863. Yao, S.; Zhao, J.; Yu, D.; Du, N.; Shafran, I.; Narasimhan, K.; and Cao, Y. 2023. ReAct: Synergizing Reasoning and Acting in Language Models. In International Conference on Learning Representations .Ye, R.; Zhang, Z.; Li, K.; Yin, H.; Tao, Z.; Zhao, Y.; Su, L.; Zhang, L.; Qiao, Z.; Wang, X.; Xie, P.; Huang, F.; Chen, S.; Zhou, J.; and Jiang, Y. 2025. AgentFold: Long-Horizon Web Agents with Proactive Context Management. arXiv:2510.24699. Yu, H.; Chen, T.; Feng, J.; Chen, J.; Dai, W.; Yu, Q.; Zhang, Y.-Q.; Ma, W.-Y.; Liu, J.; Wang, M.; and Zhou, H. 2025a. MemAgent: Reshaping Long-Context LLM with Multi-Conv RL-based Memory Agent. arXiv preprint arXiv:2507.02259 .Yu, Q.; Zhang, Z.; Zhu, R.; Yuan, Y.; Zuo, X.; Yue, Y.; Dai, W.; Fan, T.; Liu, G.; Liu, L.; Liu, X.; Lin, H.; Lin, Z.; Ma, B.; Sheng, G.; Tong, Y.; Zhang, C.; Zhang, M.; Zhang, W.; Zhu, H.; Zhu, J.; Chen, J.; Chen, J.; Wang, C.; Yu, H.; Song, Y.; Wei, X.; Zhou, H.; Liu, J.; Ma, W.-Y.; Zhang, Y.-Q.; Yan, L.; Qiao, M.; Wu, Y.; and Wang, M. 2025b. DAPO: An Open-Source LLM Reinforcement Learning System at Scale. arXiv:2503.14476. Yuan, J.; Gao, H.; Dai, D.; Luo, J.; Zhao, L.; Zhang, Z.; Xie, Z.; Wei, Y. X.; Wang, L.; Xiao, Z.; Wang, Y.; Ruan, C.; Zhang, M.; Liang, W.; and Zeng, W. 2025. Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention. arXiv preprint arXiv:2502.11089 .Zhang, Y.; Shu, J.; Ma, Y.; Lin, X.; Wu, S.; and Sang, J. 2026. Memory as Action: Autonomous Context Curation for Long-Horizon Agentic Tasks. arXiv:2510.12635. Zhou, Z.; Qu, A.; Wu, Z.; Kim, S.; Prakash, A.; Rus, D.; Zhao, J.; Low, B. K. H.; and Liang, P. P. 2025. MEM1: Learning to Synergize Memory and Reasoning for Efficient Long-Horizon Agents. arXiv preprint arXiv:2506.15841 .Technical Supplement 
+
+## 1 Training Details 
+
+Hyperparameter Qwen3.5 Qwen2.5 
+
+Documents per sample 1,000 200 Context length 140K 28K Chunk size 15,000 5,000 Maximum output length 4,096 1,024 Maximum turns ( K) 3Train batch size 128 Mini batch size 8Adam optimizer β1, β 2 (0 .9, 0.999) 
+
+Adam optimizer ϵ 1 × 10 −8
+
+Weight decay 0.01 Gradient clipping 1.0 Warmup steps 20 Learning rate 1 × 10 −6
+
+Learning-rate schedule Constant after linear warmup KL loss coefficient ( β) 1 × 10 −3
+
+Clip ratio ( ε) 0.2 MoE router auxiliary loss coef. 1 × 10 −3 N/A GRPO group size ( G) 8 16 Training rollout steps 80 240 Training samples 10,240 30,720 Temperature 1.0 Top-p 1.0 Thinking mode Disabled N/A GPU world size (H200) 32 16 Training Time (hours) 75 96 Table 1: Training hyperparameters for PI-Mem with Qwen3.5-35B-A3B and Qwen2.5-7B-Instruct. Following MemAgent’s released data-construction procedure, we synthesize HQA training data by embedding the gold HotpotQA paragraphs into distractor articles sampled from the same dataset. For Qwen2.5-7B, we use the released MemAgent training data, in which each sample contains 200 articles (approximately 28K tokens). Since Qwen3.5-35B-A3B has a longer native context window, we additionally synthesize longer samples with the same construction pipeline, using 1,000 articles (approximately 140K tokens) per sample. We accordingly increase the chunk size from 5K to 15K tokens and the maximum output length from 1,024 to 4,096 tokens. Thinking mode is disabled for Qwen3.5 to improve rollout efficiency and reduce the generated output length of each model call. Most RL hyperparameters and algorithmic choices follow the original MemAgent setup, including Dr. GRPO-style advantage normalization (without division by the group standard deviation) and DAPO-style loss aggregation. We retain MemAgent’s GRPO group size of 16 for Qwen2.5-7B, but reduce it to 8 for Qwen3.5-35B-A3B because of the substantially higher training cost. For the Qwen3.5 comparison, we train PI-Mem and MemAgent on the same longer dataset with identical hyperparameters. For Qwen2.5-7B, we train only PI-Mem on the released MemAgent data and evaluate the officially released MemAgent checkpoint. 
+
+## 2 Evaluation Details 
+
+2.1 Evaluation Setup 
+
+Following MemAgent, single-answer tasks use normalized answer matching (Sub-EM), whereas multi-answer tasks are scored by the fraction of target values appearing in the prediction; LongBench v2 follows its official evaluation protocol. The evaluation Configuration Qwen3.5 Qwen2.5 
+
+Chunk size 15,000 5,000 Maximum output length 4,096 1,024 Maximum turns ( K) 3GPU world size (H200) 8Tensor parallel size 2Samples per subtask (RULER) 64 Thinking mode Disabled N/A Temperature 0.7 Top-p 0.95 Table 2: Evaluation configurations for PI-Mem with Qwen3.5-35B-A3B and Qwen2.5-7B-Instruct. temperature and top-p also follow MemAgent’s official code. Each model reported in this work is trained in a single run, and each evaluation sample is evaluated once per method. 
+
+YaRN. We use a scaling factor of 4.0 for positional-encoding extrapolation. 
+
+RAG. For each evaluation sample, we construct an Okapi BM25 index over its decoded text chunks; the index is therefore sample-specific rather than a shared external knowledge base. We use the original question as the retrieval query and select the top-6 chunks in descending order of their BM25 scores. 
+
+2.2 Detailed Evaluation Results 
+
+Method 7K 14K 28K 56K 112K 224K 448K 896K 1.8M 3.6M Avg. 
+
+Qwen3.5-35B-A3B 
+
+Vanilla 87.50 79.69 82.81 81.25 78.12 73.44 62.50 37.50 34.38 29.69 64.69 YaRN 82.81 81.25 79.69 82.81 78.12 68.75 59.38 56.25 29.69 14.06 63.28 RAG 84.38 82.81 71.88 67.19 46.88 54.69 51.56 53.12 46.88 43.75 60.31 MemAgent (w/o RL) 78.12 78.12 70.31 71.88 62.50 60.94 62.50 68.75 51.56 39.06 64.37 MemAgent 84.38 81.25 82.81 81.25 79.69 68.75 73.44 71.88 71.88 70.31 76.56 PI-Mem (w/o RL) 78.12 75.00 73.44 68.75 67.19 67.19 71.88 64.06 65.62 67.19 69.84 
+
+PI-Mem 87.50 82.81 84.38 82.81 84.38 79.69 82.81 76.56 75.00 76.56 81.25 
+
+PI-Mem (w/o RL) Turns 2.133 2.125 2.148 2.227 2.180 2.227 2.258 2.258 2.188 2.344 2.209 
+
+PI-Mem Turns 2.016 2.016 2.047 2.047 2.062 2.078 2.078 2.094 2.094 2.156 2.069 
+
+Qwen2.5-7B 
+
+Vanilla 60.94 54.69 50.00 23.44 0.00 0.00 0.00 0.00 0.00 0.00 18.91 YaRN 56.25 62.50 62.50 45.31 34.38 0.00 0.00 0.00 0.00 0.00 26.09 RAG 57.81 46.88 46.88 45.31 39.06 42.19 29.69 43.75 26.56 32.81 41.09 GRU-Mem 81.25 79.69 77.34 76.56 74.22 73.44 71.88 76.56 N/A N/A 76.37 ReMemR1 82.3 82.8 81.1 78.9 82.0 79.7 80.0 80.8 N/A N/A 80.95 MemAgent (w/o RL) 62.50 59.38 51.56 50.00 43.75 40.62 35.94 37.50 31.25 32.81 44.53 MemAgent 81.25 81.25 75.00 82.81 76.56 75.00 76.56 75.00 78.12 73.44 77.50 PI-Mem (w/o RL) 57.03 51.56 47.66 44.53 41.41 46.46 34.38 35.94 35.94 28.12 42.30 
+
+PI-Mem 82.81 82.81 81.25 82.81 89.06 85.94 82.81 84.38 87.50 81.25 84.06 
+
+PI-Mem (w/o RL) Turns 2.883 2.875 2.859 2.875 2.859 2.921 2.930 2.938 2.891 2.906 2.894 
+
+PI-Mem Turns 2.312 2.203 2.156 2.219 2.172 2.188 2.234 2.234 2.234 2.328 2.228 Table 3: Length-grouped RULER HQA results. Scores and mean turn counts are reported. The averages for GRU-Mem and ReMemR1 use the eight reported lengths. 7K 14K 28K 56K 112K 224K 448K 896K 1.8M 3.6M   
+
+> Context Length
+> 010 20 30 40 50 60 70 80 90 100
+> Score  ↑
+> Qwen3.5-35B-A3B
+> 7K 14K 28K 56K 112K 224K 448K 896K 1.8M 3.6M
+> Context Length Qwen2.5-7B
+> Vanilla MemAgent PI-Mem
+> 1
+
+Figure 1: HQA performance across context lengths for Qwen3.5-35B-A3B (left) and Qwen2.5-7B (right). Method 8K 16K 32K 64K 128K 256K 512K 1M Avg. 
+
+Qwen3.5-35B-A3B 
+
+Vanilla 98.67 98.39 97.64 97.96 97.40 96.08 95.81 75.56 94.69 YaRN 97.92 96.59 96.74 97.02 97.46 97.22 96.19 86.58 95.72 RAG 98.31 93.07 94.32 95.18 93.25 87.02 77.90 75.24 89.29 MemAgent (w/o RL) 95.50 88.91 77.38 63.93 56.76 50.25 50.03 39.32 65.26 MemAgent 94.55 92.92 95.18 94.05 92.46 90.84 86.42 83.86 91.28 PI-Mem (w/o RL) 97.03 95.66 96.87 96.86 96.43 96.27 95.71 95.15 96.25 
+
+PI-Mem 98.92 98.65 98.06 98.42 97.69 98.38 97.30 96.88 98.04 
+
+PI-Mem (w/o RL) Turns 2.043 2.071 2.163 2.204 2.212 2.225 2.274 2.294 2.186 
+
+PI-Mem Turns 2.055 2.044 2.041 2.021 2.024 2.037 2.065 2.068 2.044 
+
+Qwen2.5-7B 
+
+Vanilla 86.57 87.17 84.48 60.65 22.72 0.00 0.00 0.00 42.70 YaRN 84.24 83.03 78.82 72.48 57.13 0.00 0.00 0.00 46.96 RAG 80.58 79.30 77.57 76.49 74.07 68.05 63.45 58.70 72.28 MemAgent (w/o RL) 94.22 91.92 88.35 85.96 81.16 78.19 72.22 62.41 81.80 MemAgent 91.66 90.33 89.31 87.73 83.73 80.30 79.51 74.83 84.68 PI-Mem (w/o RL) 91.47 88.14 82.66 79.30 77.32 71.99 67.80 60.29 77.37 
+
+PI-Mem 91.72 91.78 92.10 92.49 91.75 91.38 89.14 88.39 91.09 
+
+PI-Mem (w/o RL) Turns 2.825 2.852 2.864 2.905 2.891 2.896 2.920 2.920 2.884 
+
+PI-Mem Turns 2.038 2.057 2.057 2.038 2.044 2.065 2.098 2.101 2.062 Table 4: Length-grouped RULER out-of-distribution results. Scores are reported across context lengths from 8K to 1M tokens; mean turn counts are additionally averaged over the 11 out-of-distribution tasks at each length. 8K 16K 32K 64K 128K 256K 512K 1M 
+
+Context Length 
+
+> 75 80 85 90 95 100
+> Score  ↑
+
+Qwen3.5-35B-A3B 
+
+> 8K 16K 32K 64K 128K 256K 512K 1M
+
+Context Length 
+
+> 010 20 30 40 50 60 70 80 90 100
+
+Qwen2.5-7B   
+
+> Vanilla MemAgent PI-Mem
+
+1Figure 2: RULER OOD performance across context lengths for Qwen3.5-35B-A3B (left) and Qwen2.5-7B (right). 
+
+Method All Difficulty Length 
+
+Easy Hard Short Medium Long Vanilla 50.7 55.7 47.6 56.1 47.9 47.2 YaRN 51.5 52.1 51.1 57.8 48.4 47.2 RAG 48.9 53.6 46.0 51.7 44.7 52.8 MemAgent (w/o RL) 49.3 55.2 45.7 53.9 46.0 48.1 MemAgent 52.3 59.9 47.6 55.6 48.8 53.7 PI-Mem (w/o RL) 51.7 63.5 44.4 51.7 48.4 58.3 
+
+PI-Mem 54.1 66.1 46.6 53.3 49.8 63.9 
+
+Table 5: LongBench v2 results using Qwen3.5-35B-A3B. Following the grouping defined by the benchmark, we report results by difficulty (Easy and Hard) and context length (Short, Medium, and Long). 2.3 Computational Cost and End-to-End Latency 
+
+Table 7 compares Vanilla, MemAgent, and PI-Mem on the 64-sample HQA evaluation sets from 112K to 3.6M tokens. We report analytically estimated algorithmic FLOPs, counting one multiply–accumulate operation (MAC) as two FLOPs; PFLOPs denotes the aggregate operation count in units of 10 15 FLOPs rather than throughput. For PI-Mem, the estimate includes all chunk reads, refinement turns, memory updates, and final-answer generation, thereby covering the complete inference workload. Wall-clock latency is measured end-to-end for the same 64 samples under the evaluation configuration in Table 2. The speedup ratio is computed as the Vanilla latency divided by the latency of each method. For a workflow-level asymptotic comparison, let N denote the number of chunks, C the chunk size, M the fixed memory length, and K the maximum number of refinement turns; the total input length is therefore N C . Table 6 reports the dominant chunk-reading attention cost under standard quadratic self-attention. The comparison omits merge and final-answer costs to isolate the effect of workflow structure; these components are included in the complete PFLOPs estimates in Table 7. 
+
+Method Attention FLOPs Serial Depth 
+
+Vanilla O(( N C )2) 1
+
+MemAgent O(N (C + M )2) O(N )
+
+PI-Mem O(KN (C + M )2) O(K)
+
+Table 6: Asymptotic chunk-reading attention cost and serial depth under quadratic self-attention. Vanilla uses one ultra-long call, whereas PI-Mem processes all N chunk reads in parallel within each turn. The asymptotic analysis exposes a compute–latency trade-off for PI-Mem: relative to recurrent memory, it performs up to 
+
+K times more chunk-reading work but reduces the sequential critical path from O(N ) to O(K). Because K is bounded and typically much smaller than N for ultra-long inputs, PI-Mem converts additional computation into parallelizable work. The empirical results indicate that this trade-off is most favorable in the ultra-long-context regime, where increased parallelism outweighs the additional computation. 
+
+Length Method Qwen3.5-35B-A3B Qwen2.5-7B 
+
+PFLOPs ↓ Latency (s) ↓ Speedup ↑ PFLOPs ↓ Latency (s) ↓ Speedup ↑
+
+112K Vanilla 103.98 62.94 1.00 × 259.70 80.41 1.00 ×
+
+MemAgent 57.53 258.89 0.24 × 129.70 124.58 0.65 ×
+
+PI-Mem 101.01 151.72 0.41 × 226.46 80.12 1.00 ×
+
+224K Vanilla 344.67 133.17 1.00 × 854.33 319.69 1.00 ×
+
+MemAgent 121.94 627.33 0.21 × 267.99 300.10 1.07 ×
+
+PI-Mem 201.07 164.14 0.81 × 454.48 154.72 2.07 ×
+
+448K Vanilla 1,232.93 416.74 1.00 × 3,040.02 849.50 1.00 ×
+
+MemAgent 249.47 1,243.47 0.34 × 543.88 629.07 1.35 ×
+
+PI-Mem 401.34 317.06 1.31 × 909.09 309.65 2.74 ×
+
+896K Vanilla 4,638.38 1,341.35 1.00 × 11,404.64 3,176.89 1.00 ×
+
+MemAgent 506.60 2,793.83 0.48 × 1,099.70 1,308.64 2.43 ×
+
+PI-Mem 806.86 500.39 2.68 × 1,832.27 625.76 5.08 ×
+
+1.8M Vanilla 18,041.40 13,237.88 1.00 × 44,280.96 10,112.76 1.00 ×
+
+MemAgent 1,020.13 5,848.31 2.26 × 2,215.06 2,634.93 3.84 ×
+
+PI-Mem 1,615.29 984.08 13.45 × 3,671.00 1,285.31 7.87 ×
+
+3.6M Vanilla 71,573.35 33,365.14 1.00 × 175,515.76 38,653.00 1.00 ×
+
+MemAgent 2,054.65 12,060.71 2.77 × 4,462.91 5,535.50 6.98 ×
+
+PI-Mem 3,365.35 1,974.65 16.90 × 7,633.65 2,682.48 14.41 ×
+
+Table 7: Aggregate algorithmic FLOPs and end-to-end wall-clock latency for 64 HQA samples. PFLOPs denotes 10 15 floating-point operations. FLOPs are analytically estimated, while latency is measured. Speedup is relative to Vanilla. 3 Additional Ablations 
+
+3.1 Maximum Turn Budget 
+
+K Metric 7K 14K 28K 56K 112K 224K 448K 896K 1.8M 3.6M 1 HQA score 73.44 71.88 75.00 75.00 78.12 79.69 67.19 76.56 67.19 70.31 Mean turns used 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 3 HQA score 82.81 82.81 81.25 82.81 89.06 85.94 82.81 84.38 87.50 81.25 
+
+Mean turns used 2.312 2.203 2.156 2.219 2.172 2.188 2.234 2.234 2.234 2.328 5 HQA score 84.38 84.38 79.69 79.69 90.62 85.94 84.38 84.38 85.94 81.25 
+
+Mean turns used 2.375 2.344 2.109 2.281 2.312 2.234 2.359 2.234 2.375 2.484 Table 8: Effect of the maximum turn budget K on Qwen2.5-7B HQA performance and the mean number of turns used. Bold values denote the best HQA score at each context length; ties are all highlighted. Table 8 shows that limiting PI-Mem to one turn consistently reduces HQA accuracy. With K = 1 , all chunk reads are conditioned only on the initial empty memory, so evidence discovered in one chunk cannot guide subsequent reads of other chunks; iterative refinement is therefore important for cross-chunk information exchange. Increasing the budget from K = 3 to 
+
+K = 5 , however, does not yield consistent further gains because most samples converge early: under K = 5 , 75.94% of samples exit after two turns, whereas only 4.84% use four or five turns. PI-Mem thus benefits from iteration while invoking additional turns only for the small subset of samples that require further refinement. 
+
+3.2 Chunk and Memory Sizes 
+
+We evaluate training-free PI-Mem with Qwen3.5-35B-A3B on HQA while varying one size parameter at a time. The default configuration uses 15K-token chunks and a 4K-token memory. For the chunk-size ablation, the memory size remains 4K; for the memory-size ablation, the chunk size remains 15K. Chunk Memory 7K 14K 28K 56K 112K 224K 448K 896K 1.8M 3.6M 5K 4K 71.88 70.31 65.62 70.31 67.19 70.31 62.50 67.19 65.62 65.62 15K 2K 78.12 76.56 67.19 68.75 59.38 65.62 64.06 70.31 65.62 59.38 15K 4K 78.12 75.00 73.44 68.75 67.19 67.19 71.88 64.06 65.62 67.19 15K 8K 78.12 76.56 70.31 70.31 65.62 64.06 70.31 68.75 60.94 67.19 25K 4K 78.12 73.44 67.19 75.00 70.31 67.19 64.06 71.88 62.50 67.19 Table 9: Effect of chunk and memory sizes on training-free PI-Mem with Qwen3.5-35B-A3B on HQA. One parameter is varied at a time, and the shaded row denotes the default 15K/4K configuration. Table 9 shows no consistent degradation across context lengths when the chunk size varies from 5K to 25K or the memory size varies from 2K to 8K. PI-Mem is therefore robust to these size choices, and its performance is not materially affected within the tested ranges. We do not conduct an additional size ablation for Qwen2.5-7B because its chunk and memory sizes exactly follow the experimental setup of MemAgent. 4 Prompt Template 
+
+Prompt Template for ReadCall 
+
+You are presented with a problem, a section of an article, and a global memory summarizing previously gathered information. Please read the section carefully and determine whether the section contains new information relevant to answering the problem beyond what is already in the global memory. First, output your judgment in the format <check> yes </check> if there is new information, or <check> no </check> if there is none. Then, if there is new information, extract and list the key details. 
+
+<problem> 
+
+{prompt} 
+
+</problem> <memory> 
+
+{memory} 
+
+</memory> <section> 
+
+{chunk} 
+
+</section> 
+
+Your response: 
+
+Prompt Template for MergeCall 
+
+You are presented with a problem and key information extracted from multiple sections of an article. Please consolidate all the information into a single comprehensive memory. Remove redundancies and organize the information clearly, retaining all details relevant to answering the problem. 
+
+<problem> 
+
+{prompt} 
+
+</problem> <extracted_information> 
+
+{memories} 
+
+</extracted_information> 
+
+Consolidated memory: 
+
+Prompt Template for FinalCall 
+
+You are presented with a problem and a previous memory. Please answer the problem based on the pre-vious memory and put the answer in \boxed{{}}. 
+
+<problem> 
+
+{prompt} 
+
+</problem> <memory> 
+
+{memory} 
+
+</memory> 
+
+Your answer: 5 Case Studies 
+
+We present paired Qwen3.5-35B-A3B trajectories on the same questions. The MV-NIAH example has 130,778 tokens, and the HQA example has 1,600 documents and 226,114 tokens. We retain the terminology used in the main paper: one PI-Mem turn 
+
+is a complete read–select–merge cycle. Inside the colored boxes, all prose is transcribed from the corresponding JSONL fields; we add only structural labels and color highlighting. Ellipses mark omitted portions of long outputs. 
+
+5.1 Case 1: MemAgent on MV-NIAH 
+
+MemAgent on MV-NIAH 
+
+Question: Some special magic numbers are hidden within the following text. Make sure to memorize it. What are all the special magic numbers for cloudy-singing mentioned in the provided text? 
+
+Chunk 0: “One of the special magic numbers for cloudy-singing is: 2952447 . July 2010What hard liquor, cigarettes, heroin, and crack have in common is that they’re all more concentrated forms of less addictive predecessors. Most if not all the things we describe as addictive are. And the scary thing is, the process that created them is accelerating.” 
+
+Memory 0: “Based on the provided text, here is the updated memory containing the special magic number for ‘cloudy-singing’ and other relevant details from the article: 
+
+Updated Memory: 
+
+• Special Magic Number for Cloudy-Singing: 2952447 
+
+• Context of the Number: The number appears in the text immediately following the phrase ‘One of the special magic numbers for cloudy-singing is:’ and is followed by the date ‘July 2010’. 
+
+• Article Themes & Key Concepts: 
+
+– Addictiveness & Technological Progress: The text discusses how technological progress accelerates the concen-tration of things we like (e.g., opium to heroin, food processing, social media), making the world more addictive. It notes that social customs (antibodies) evolve slowly compared to technological progress, creating a need for individuals to figure out what to avoid on their own. 
+
+– . . . ”. . . 
+
+Chunk 2: “One of the special magic numbers for cloudy-singing is: 8372717 .” 
+
+Memory 2: “Based on the provided text, here is the updated memory containing the new special magic number for ‘cloudy-singing’ and all other relevant details from the article: 
+
+Updated Memory: 
+
+• Special Magic Number for Cloudy-Singing: 8372717 
+
+– Note: The previous memory listed 2952447. The text explicitly states: ‘One of the special magic numbers for cloudy-singing is: 8372717.’ This new number appears in the section discussing how technology makes mass-produced goods (like cars and watches) convenient and affordable for the rich, contrasting them with expensive, custom-made items that are often inferior in performance. 
+
+• Context of the Number: The number appears in the essay ‘Make Money as a Specialized Skill’ (April 2004), specif-ically within a paragraph comparing expensive custom cars to mass-produced cars, and expensive mechanical watches to accurate quartz watches. . . . ” MemAgent on MV-NIAH — Continued 
+
+Chunk 6: “One of the special magic numbers for cloudy-singing is: 8023581 .” 
+
+Memory 6: “Based on the provided text, here is the updated memory containing the new special magic number for ‘cloudy-singing’ and all other relevant details from the article: 
+
+Updated Memory: 
+
+• Special Magic Number for Cloudy-Singing: 8023581 
+
+– Note: The previous memory listed 8372717 (and originally 2952447). The text explicitly states: ‘One of the spe-cial magic numbers for cloudy-singing is: 8023581.’ This new number appears in the section discussing ‘Rounds’ and the structure of angel rounds versus series A rounds. 
+
+• Context of the Number: The number appears in the essay ‘How to Start a Startup’ (April 2012), specifically within a paragraph comparing the equity dilution of traditional Series A rounds (30–40%) with the lower dilution of angel rounds (often around 13%). . . . 
+
+Correction to Previous Memory: 
+
+• The previous memory listed 8372717 as the number for ‘cloudy-singing’ found in the ‘Make Money as a Specialized Skill’ essay. 
+
+• The text provided in this section explicitly introduces a new number: 8023581 .
+
+• Action: The memory has been updated to reflect the most recent explicit statement regarding the ‘special magic number for cloudy-singing’ found in the current text, while retaining the context of the previous number for com-pleteness. ”
+
+Chunk 7: “One of the special magic numbers for cloudy-singing is: 2188606 .” 
+
+Memory 7: “Based on the provided text, here is the updated memory containing the new special magic number for ‘cloudy-singing’ and all other relevant details from the article: 
+
+Updated Memory: 
+
+• Special Magic Number for Cloudy-Singing: 2188606 
+
+– Note: The previous memory listed 8023581 (and originally 8372717 and 2952447). The text explicitly states: ‘One of the special magic numbers for cloudy-singing is: 2188606.’ 
+
+• Context of the Number: The number appears in the essay ‘Wisdom and Intelligence’ (February 2007), within a discussion distinguishing between ‘wise’ and ‘smart’. . . . 
+
+Correction to Previous Memory: 
+
+• The previous memory listed 8023581 as the number for ‘cloudy-singing’ found in the ‘How to Start a Startup’ essay. 
+
+• The text provided in this section explicitly introduces a new number: 2188606 .
+
+• Action: The memory has been updated to reflect the most recent explicit statement regarding the ‘special magic number for cloudy-singing’ found in the current text, while retaining the context of the previous numbers for com-pleteness. The number 2188606 is now the primary reference for ‘cloudy-singing’ based on the latest provided text. ”. . . 
+
+Final Output: “Based on the provided memory, the text explicitly states that the special magic number for ‘cloudy-singing’ found in the essay ‘Wisdom and Intelligence’ (February 2007) is 2188606 .Although the memory notes that previous numbers (8023581, 8372717, 2952447) were associated with ‘cloudy-singing’ in other contexts or previous updates, the most recent and explicit statement in the current text identifies 2188606 
+
+as the number. \boxed{2188606}” 
+
+Prediction: 2188606 Sub-EM: 0.25 
+
+Gold Answer: 2188606, 8023581, 8372717, 2952447 
+
+In Memories 2, 6, and 7, each new value replaces the previous value in the main “Special Magic Number” entry, while earlier values are moved to notes or corrections. As a result, although all values remain in memory, the final response returns only the latest one. 5.2 Case 2: PI-Mem on the Same MV-NIAH Sample 
+
+PI-Mem on MV-NIAH — Turn 1 
+
+Question: Some special magic numbers are hidden within the following text. Make sure to memorize it. What are all the special magic numbers for cloudy-singing mentioned in the provided text? 
+
+Chunk 0: <check>yes</check> 
+
+“The section contains new information relevant to the problem. Specifically, it explicitly states a ‘special magic number for cloudy-singing’ which is 2952447 . This information was not present in the empty global memory. 
+
+Key Details Extracted: 
+
+• Special Magic Number for Cloudy-Singing: 2952447 
+
+• Context: The number is mentioned at the very beginning of the provided text section, followed by the date ‘July 2010’. 
+
+• Source: The text appears to be an excerpt from an article (likely by Paul Graham, based on the style and content regarding startups, Lisp, and Viaweb) where this specific number is introduced as a ‘special magic number’. ”
+
+Chunk 1: <check>no</check> Chunk 2: <check>yes</check> 
+
+“The section contains new information relevant to the problem. Specifically, it explicitly states a ‘special magic number for cloudy-singing’ within the text. 
+
+Key Details Extracted: 
+
+• Context: The number is mentioned in a paragraph discussing the difference between mass-produced cars and custom-made cars, and how technology has made the rich live more like the average person. 
+
+• The Number: 8372717 
+
+• The Phrase: ‘One of the special magic numbers for cloudy-singing is: 8372717.’ ”
+
+Chunk 3: <check>no</check> Chunk 4: <check>no</check> Chunk 5: <check>no</check> Chunk 6: <check>yes</check> 
+
+“The section contains new information relevant to the problem. Specifically, it explicitly states a ‘special magic number’ associated with the phrase ‘cloudy-singing’ within the text provided. 
+
+Key Details Extracted: 
+
+• Context: The text discusses startup funding, specifically the difference between angel rounds and Series A rounds, and the role of super-angels vs. VCs. 
+
+• The Magic Number: The text explicitly states: ‘One of the special magic numbers for cloudy-singing is: 8023581 .’ 
+
+• Location: This sentence appears in the section titled ‘April 2010’ (under the subsection ‘Rounds’), embedded within a paragraph discussing equity dilution in Series A rounds. ”
+
+Chunk 7: <check>yes</check> 
+
+“The section contains new information relevant to the problem. Specifically, it explicitly states a ‘special magic number for cloudy-singing’ within the text discussing the relationship between wisdom and intelligence. 
+
+Key Details: 
+
+• Context: The number appears in the essay section titled ‘A few days ago I finally figured out something I’ve won-dered about for 25 years: the relationship between wisdom and intelligence.’ 
+
+• The Number: 2188606 
+
+• The Phrase: ‘One of the special magic numbers for cloudy-singing is: 2188606.’ ”PI-Mem on MV-NIAH — Turn 1 Continued 
+
+Chunk 8: <check>no</check> Merged Memory: 
+
+“Based on the provided extracted information, here is the consolidated memory regarding the special magic numbers for ‘cloudy-singing’: 
+
+Special Magic Numbers for Cloudy-Singing 
+
+The text explicitly identifies four distinct numbers associated with the phrase ‘cloudy-singing’: 1. 2952447 . . . 2. 8372717 . . . 3. 8023581 . . . 4. 2188606 . . . ”
+
+PI-Mem on MV-NIAH — Turn 2 
+
+Chunk 0: <check>no</check> Chunk 1: <check>no</check> Chunk 2: <check>no</check> Chunk 3: <check>no</check> Chunk 4: <check>no</check> Chunk 5: <check>no</check> Chunk 6: <check>no</check> Chunk 7: <check>no</check> Chunk 8: <check>no</check> Merged Memory: 
+
+“Based on the provided extracted information, here is the consolidated memory regarding the special magic numbers for ‘cloudy-singing’: 
+
+Special Magic Numbers for Cloudy-Singing 
+
+The text explicitly identifies four distinct numbers associated with the phrase ‘cloudy-singing’: 1. 2952447 . . . 2. 8372717 . . . 3. 8023581 . . . 4. 2188606 . . . ”
+
+Final Output: 
+
+“Based on the provided memory, the special magic numbers for ‘cloudy-singing’ are explicitly listed as: 1. 2952447 2. 8372717 3. 8023581 4. 2188606 The question asks for all the special magic numbers mentioned. \boxed{2952447, 8372717, 8023581, 2188606}” 
+
+Prediction: 2952447, 8372717, 8023581, 2188606 Sub-EM: 1.00 
+
+Gold Answer: 2188606, 8023581, 8372717, 2952447 
+
+Turn 1 extracts four positive chunk memories and merges them as four distinct members of the same set. In Turn 2, every chunk returns <check>no</check> ; the consolidated set is preserved for the final call. 5.3 Case 3: MemAgent on HQA 
+
+MemAgent on HQA 
+
+Question: Which song was behind the third single on the album “A Lot About Livin’ (And a Little ’bout Love)” for two weeks on the country charts? 
+
+Memory 0: 
+
+“Based on the provided text, there is no information regarding the album “A Lot About Livin’ (And a Little ’bout Love)” or the specific song that was the third single on that album and spent two weeks on the country charts. The provided documents contain information about various artists, albums, and events (such as Buddy Holly’s “That’ll Be the Day”, Selena’s career, The Chieftains’ “The Chieftains in China”, and others), but none mention the specific album or single in question. Therefore, the memory cannot be updated with the answer to the problem as the necessary information is not present in the source text. 
+
+Updated Memory: 
+
+No previous memory. The provided text does not contain information about the album “A Lot About Livin’ (And a Little ’bout Love)” or the third single from that album that spent two weeks on the country charts. The text includes infor-mation on other musical topics such as Buddy Holly’s final album “That’ll Be the Day”, Selena’s career, The Chieftains’ album “The Chieftains in China”, and various other unrelated subjects, but none address the specific query.” . . . 
+
+Memory 3: 
+
+“Based on the provided text, the memory has been updated with the specific information regarding the album “A Lot About Livin’ (And a Little ’bout Love)” and its singles. 
+
+Updated Memory: 
+
+The provided text now contains specific information regarding the album “A Lot About Livin’ (And a Little ’bout Love)” and its singles, which was previously absent. 
+
+• Album: “A Lot About Livin’ (And a Little ’bout Love)” is an album by Alan Jackson .
+
+• First Single: The first single from this album was “She’s Got the Rhythm (And I Got the Blues)” , released in October 1992. This song co-written by Alan Jackson and Randy Travis, won an award in 1993 from Music City News for being one of the most performed country songs of the year. 
+
+• Third Single: The text explicitly states that “She’s Got the Rhythm (And I Got the Blues)” was the first single . How-ever, the text does not explicitly name the third single nor does it explicitly state which song spent “two weeks” on the country charts. . . . 
+
+Revised Summary of Findings: 
+
+• Album: “A Lot About Livin’ (And a Little ’bout Love)” by Alan Jackson. 
+
+• First Single: “She’s Got the Rhythm (And I Got the Blues)” (Released Oct 1992). 
+
+• Third Single Information: The provided text does not identify the third single or its chart performance (two weeks on the country charts). 
+
+Conclusion: The provided text does not contain the answer to the problem. It identifies the album and the first single, but fails to mention the third single or its specific chart duration.” MemAgent on HQA — Continued 
+
+Memory 6: 
+
+“Based on the provided text, the memory has been updated with specific information regarding the album “A Lot About Livin’ (And a Little ’bout Love)” and its singles. 
+
+Updated Memory: 
+
+• Album: “A Lot About Livin’ (And a Little ’bout Love)” is an album by Alan Jackson .
+
+• First Single: The first single from this album was “She’s Got the Rhythm (And I Got the Blues)” , released in October 1992. 
+
+• Third Single Information: The provided text does not explicitly name the third single nor does it explicitly state which song spent “two weeks” on the country charts as the third single. . . . 
+
+Conclusion: The provided text does not contain the answer to the problem. It identifies the album and the first single, but fails to mention the third single or its specific chart duration. 
+
+Note: Document 730 mentions a song “We’ll Burn That Bridge” by Brooks & Dunn that peaked at #2 for two weeks behind “Chattahoochee” by Alan Jackson, but this does not directly answer the question regarding the third single on the specific album “A Lot About Livin’ (And a Little ’bout Love)”. ”. . . 
+
+Memory 9: 
+
+“Updated Memory: . . . 
+
+• Fifth/Final Single: “(Who Says) You Can’t Have It All”. 
+
+• Third Single Information: The provided text does not identify the third single or its chart performance. . . . 
+
+Conclusion: The provided text does not contain the answer to the problem. It identifies the album, the first single, and the fifth single, but fails to mention the third single or its specific chart duration. 
+
+Note: Document 730 mentions a song “We’ll Burn That Bridge” by Brooks & Dunn that peaked at #2 for two weeks behind “Chattahoochee” by Alan Jackson, but this does not directly answer the question regarding the third single on the specific album “A Lot About Livin’ (And a Little ’bout Love)”. ”
+
+Memory 10: 
+
+“Based on the provided text, the memory has been updated with specific information regarding the album “A Lot About Livin’ (And a Little ’bout Love)” and its singles. 
+
+Updated Memory: 
+
+• Album: “A Lot About Livin’ (And a Little ’bout Love)” is the third studio album by American country music artist 
+
+Alan Jackson . It was released on October 6, 1992 .
+
+• Singles List: 
+
+1. “She’s Got the Rhythm (And I Got the Blues)” 
+
+2. “Chattahoochee” 
+
+3. “Tonight I Climbed the Wall” 
+
+4. “(Who Says) You Can’t Have It All” 
+
+5. “Mercury Blues” 
+
+• Chart Performance: “Chattahoochee” and “She’s Got the Rhythm (And I Got the Blues)” were both Number One 
+
+hits. The other three songs reached the Top Five .. . . 
+
+Revised Summary of Findings: 
+
+• First Single: “She’s Got the Rhythm (And I Got the Blues)” (Number One). 
+
+• Second Single: “Chattahoochee” (Number One). 
+
+• Third Single: “Tonight I Climbed the Wall” (Top Five). 
+
+• Fourth Single: “(Who Says) You Can’t Have It All” (Top Five). 
+
+• Fifth Single: “Mercury Blues” (Top Five). 
+
+• Answer to Problem: The text identifies the third single as “Tonight I Climbed the Wall” . While the text confirms it reached the Top Five, it does not explicitly confirm the “two weeks” duration mentioned in the problem statement. 
+
+Note: The previous memory noted the absence of the third single’s name. This update resolves that gap by identifying “Tonight I Climbed the Wall” as the third single based on the sequence provided in Document 1131. ”MemAgent on HQA — Continued 
+
+Memory 11: 
+
+“Based on the provided text, the memory has been updated with specific information regarding the album “A Lot About Livin’ (And a Little ’bout Love)” and its singles, correcting a previous error regarding the release order and chart performance of the third single. 
+
+Updated Memory: . . . 
+
+• Second Single: “Chattahoochee” (Number One). 
+
+• Third Single: “Tonight I Climbed the Wall” (Peaked at Number 4). 
+
+• Answer to Problem: The text identifies the third single as “Tonight I Climbed the Wall” . While the text confirms it reached the Top Five (specifically Number 4), it does not explicitly confirm the “two weeks” duration mentioned in the problem statement. 
+
+Note: The previous memory incorrectly identified the order of the first two singles and lacked the specific peak position for the third single. This update corrects the release order and adds the specific peak chart position of “Tonight I Climbed the Wall” based on Document 1273. ”
+
+Memory 12: 
+
+“Based on the provided text, the memory has been updated with specific information regarding the album “A Lot About Livin’ (And a Little ’bout Love)” and its singles, correcting a previous error regarding the release order and chart performance of the third single. 
+
+Updated Memory: . . . 
+
+• First Single: “She’s Got the Rhythm (And I Got the Blues)” (Number One). 
+
+• Second Single: “Tonight I Climbed the Wall” (Number 4). 
+
+• Third Single: “Chattahoochee” (Number One). 
+
+• Answer to Problem: The text identifies the third single as “Chattahoochee” . While the text confirms it reached Number One, it does not explicitly confirm the “two weeks” duration mentioned in the problem statement. 
+
+Note: The previous memory incorrectly identified “Tonight I Climbed the Wall” as the third single. Document 1348 corrects this, identifying “Chattahoochee” as the third single released in May 1993. ”. . . 
+
+Memory 15: 
+
+“Based on the provided text, the memory has been updated with specific information regarding the album “A Lot About Livin’ (And a Little ’bout Love)” and its singles, correcting a previous error regarding the release order and chart performance of the third single. 
+
+Updated Memory: 
+
+• Album: “A Lot About Livin’ (And a Little ’bout Love)” is the third studio album by American country music artist 
+
+Alan Jackson .
+
+• Singles List & Order: 
+
+1. “She’s Got the Rhythm (And I Got the Blues)” 2. “Tonight I Climbed the Wall” 3. “Chattahoochee” 
+
+4. “(Who Says) You Can’t Have It All” 5. “Mercury Blues” . . . 
+
+None of the documents in the provided section (1593–1600) contain information regarding the specific chart dura-tion (“two weeks”) of the third single from Alan Jackson’s album “A Lot About Livin’ (And a Little ’bout Love)”. The memory update relies on the previously established context (Document 1348) which identified “Chattahoochee” as the third single, while noting the absence of the specific “two weeks” detail in the current text.” 
+
+Final Output: 
+
+“Based on the provided memory, the album “A Lot About Livin’ (And a Little ’bout Love)” by Alan Jackson produced five singles. The memory explicitly corrects a previous error to identify the third single as “Chattahoochee” , which was released in May 1993. Although the memory notes that the specific text does not explicitly state the “two weeks” duration, it confirms that “Chattahoochee” was the third single and a Number One hit. Therefore, the song in question is “Chattahoochee” .\boxed{Chattahoochee}” 
+
+Prediction: Chattahoochee Sub-EM: 0.00 
+
+Gold Answer: We’ll Burn That Bridge 
+
+Memory 6 records the answer-bearing relation from Document 730, and Memory 9 still retains it. Memory 10 rewrites the state around a later album track list: the complete Document 730 relation is absent, while an incorrect third-single interpretation becomes the answer candidate. Memory 12 eventually establishes the correct bridge entity, “Chattahoochee,” but the earlier relation needed to map that entity to “We’ll Burn That Bridge” is no longer available. 
+
+5.4 Case 4: PI-Mem on the Same HQA Sample 
+
+PI-Mem on HQA — Turn 1 
+
+Question: Which song was behind the third single on the album “A Lot About Livin’ (And a Little ’bout Love)” for two weeks on the country charts? 
+
+Chunk 0: <check>no</check> Chunk 1: <check>no</check> Chunk 2: <check>no</check> Chunk 3: <check>yes</check> 
+
+“The section contains new information relevant to the problem. Specifically, Document 420 identifies the song “She’s Got the Rhythm (And I Got the Blues)” as the first single from the album “A Lot About Livin’ (And a Little ’bout Love)” by Alan Jackson. While the problem asks for the third single, this document provides the context of the album and its singles, which is necessary to answer the question . . . 
+
+Key Details Extracted: 
+
+• Album: “A Lot About Livin’ (And a Little ’bout Love)” 
+
+• Artist: Alan Jackson 
+
+• First Single: “She’s Got the Rhythm (And I Got the Blues)” (Released October 1992) 
+
+• Award: The first single received an award in 1993 from Music City News for being one of the most performed country songs of the year. 
+
+• Note: The provided text does not explicitly state which song was the third single or its chart performance duration, but it establishes the album and the first single. ”
+
+Chunk 4: <check>no</check> Chunk 5: <check>yes</check> 
+
+“The section contains new information relevant to the problem. Specifically, Document 591 mentions the album “A Lot About Livin’ (And a Little ’bout Love)” by Randy Travis. While the problem asks about the third single on this album and its chart performance, the provided text in Document 591 actually discusses a different album by Randy Travis (“High Lonesome”) and mentions that Randy Travis co-wrote a song for Alan Jackson’s album “A Lot About Livin’ (And a Little ’bout Love)” in 1992. It does not provide the specific details about the singles on the album itself, nor does it identify the third single or its chart performance. . . . ” 
+
+Chunk 6: <check>yes</check> 
+
+“The section contains new information relevant to the problem. Specifically, Document 730 identifies a song titled 
+
+“We’ll Burn That Bridge” by Brooks & Dunn. This document explicitly states that “We’ll Burn That Bridge” peaked at #2 on the country charts for two weeks, behind “Chattahoochee” by Alan Jackson. This matches the specific criteria of the question (a song behind another for two weeks on the country charts), even though the document does not explicitly name the album “A Lot About Livin’ (And a Little ’bout Love)” in the text provided. However, given the specificity of the “two weeks” and “behind” details, this is the relevant piece of information found in the text. 
+
+Key Details Extracted: 
+
+• Song Title: We’ll Burn That Bridge 
+
+• Artist: Brooks & Dunn 
+
+• Album: Hard Workin’ Man (Note: The document states this song was the second single from Hard Workin’ Man ,not A Lot About Livin’ (And a Little ’bout Love) , but it is the only song in the text matching the “peaked at #2 for two weeks” description). 
+
+• Chart Performance: Peaked at #2 on the country charts for two weeks. 
+
+• Song Behind: “Chattahoochee” by Alan Jackson. 
+
+• Release Date: May 1993. 
+
+• Writers: Don Cook and Ronnie Dunn. ”PI-Mem on HQA — Turn 1 Continued 
+
+Chunk 7: <check>no</check> Chunk 8: <check>no</check> Chunk 9: <check>yes</check> 
+
+“The section contains new information relevant to the problem. Specifically, Document 1053 identifies the song “(Who Says) You Can’t Have It All” as the fifth and final single from Alan Jackson’s album “A Lot About Livin’ (And a Little ’bout Love)”. . . . 
+
+Key Details Extracted: 
+
+• Album: “A Lot About Livin’ (And a Little ’bout Love)” by Alan Jackson. 
+
+• Song: “(Who Says) You Can’t Have It All”. 
+
+• Release Date: January 1994. 
+
+• Position on Album: Fifth and final single. 
+
+• Chart Performance: Peaked at number 4 on the U.S. “Billboard” Hot Country Singles chart and number 11 on the Canadian “RPM” Country Tracks chart. 
+
+• Writers: Alan Jackson and Jim McBride. 
+
+• Album Certification: Certified 6× Platinum by the RIAA with over 6,000,000 sales in the US. ”
+
+Chunk 10: <check>yes</check> 
+
+“The section contains new information relevant to the problem. Specifically, Document 1131 provides the tracklist and chart performance details for the album “A Lot About Livin’ (And a Little ’bout Love)” by Alan Jackson. 
+
+Key Details Extracted: 
+
+• Album: A Lot About Livin’ (And a Little ’bout Love) by Alan Jackson. 
+
+• Release Date: October 6, 1992. 
+
+• Singles Released: “Chattahoochee”, “She’s Got the Rhythm (And I Got the Blues)”, “Tonight I Climbed the Wall”, “(Who Says) You Can’t Have It All”, and “Mercury Blues”. 
+
+• Chart Performance: “Chattahoochee” and “She’s Got the Rhythm (And I Got the Blues)” were Number One hits. The other three songs reached Top Five. 
+
+• Context for the Problem: The text lists the singles and their peak positions, but it does not explicitly state which specific song was the third single or how many weeks it spent on the charts. The third single listed in the text is “Tonight I Climbed the Wall”. ”
+
+Chunk 11: <check>yes</check> 
+
+“The section contains new information relevant to the problem. Specifically, Document 1273 identifies the song “Tonight I Climbed the Wall” by Alan Jackson as the second single from the album “A Lot About Livin’ (And a Little ’bout Love)”. . . . 
+
+Key Details Extracted: 
+
+• Album: “A Lot About Livin’ (And a Little ’bout Love)” 
+
+• Artist: Alan Jackson 
+
+• Second Single: “Tonight I Climbed the Wall” 
+
+• Release Date of Second Single: January 1993 
+
+• Chart Performance of Second Single: Peaked at number 4 on the US “Billboard” Hot Country Singles & Tracks chart and the Canadian “RPM” Country Tracks chart. ”
+
+Chunk 12: <check>yes</check> 
+
+“The section contains new information relevant to the problem. Specifically, Document 1348 identifies the song “Chat-tahoochee” as the third single from the album “A Lot About Livin’ (And a Little ’bout Love)” by Alan Jackson. While the problem asks which song was behind the third single for two weeks on the country charts, this document provides the crucial identity of the third single itself, which is the necessary starting point to answer the question . . . ” PI-Mem on HQA — Turn 1 Continued 
+
+Chunk 13: <check>no</check> Chunk 14: <check>no</check> Chunk 15: <check>no</check> Merged Memory: 
+
+“Based on the provided extracted information, here is the consolidated memory regarding the album “A Lot About Livin’ (And a Little ’bout Love)” and its singles: 
+
+Album Overview 
+
+• Title: A Lot About Livin’ (And a Little ’bout Love) 
+
+• Artist: Alan Jackson 
+
+• Release Date: October 6, 1992 
+
+• Certification: Certified 6× Platinum by the RIAA (over 6,000,000 sales in the US). 
+
+Singles and Chart Performance 
+
+The album released multiple singles with the following details extracted from the documents: . . . 
+
+Note: There is a discrepancy in the ordering of singles between documents. Document 420/1273/1348 suggest the order: 1. She’s Got the Rhythm, 2. Tonight I Climbed the Wall, 3. Chattahoochee. Document 1131 lists them in a different order but confirms the titles. 
+
+Relevance to the Problem 
+
+The problem asks for the song that was behind the third single on the album for two weeks on the country charts. 
+
+• The third single is identified as “Chattahoochee” (Document 1348). 
+
+• Document 730 states that “We’ll Burn That Bridge” by Brooks & Dunn peaked at #2 for two weeks, behind “Chat-tahoochee” .
+
+• While “We’ll Burn That Bridge” is not on Jackson’s album, the question asks “Which song was behind the third single...”, implying the song that was charting below the third single (Chattahoochee) at that specific time. 
+
+• Therefore, the song in question is “We’ll Burn That Bridge” .”PI-Mem on HQA — Turn 2 
+
+Chunk 0: <check>no</check> Chunk 1: <check>no</check> Chunk 2: <check>no</check> Chunk 3: <check>no</check> Chunk 4: <check>no</check> Chunk 5: <check>no</check> Chunk 6: <check>no</check> Chunk 7: <check>no</check> Chunk 8: <check>no</check> Chunk 9: <check>no</check> Chunk 10: <check>no</check> Chunk 11: <check>no</check> Chunk 12: <check>no</check> Chunk 13: <check>no</check> Chunk 14: <check>no</check> Chunk 15: <check>no</check> Merged Memory: 
+
+“Relevance to the Problem 
+
+The problem asks for the song that was behind the third single on the album for two weeks on the country charts. 
+
+• The third single is identified as “Chattahoochee” (Document 1348). 
+
+• Document 730 states that “We’ll Burn That Bridge” by Brooks & Dunn peaked at #2 for two weeks, behind “Chat-tahoochee” .
+
+• Therefore, the song in question is “We’ll Burn That Bridge” .”
+
+Final Output: 
+
+“Based on the provided memory, the third single on Alan Jackson’s album A Lot About Livin’ (And a Little ’bout Love) 
+
+is “Chattahoochee” (Document 1348). The memory explicitly states in Document 730 that the song “We’ll Burn That Bridge” (by Brooks & Dunn) peaked at number 2 on the country charts for two weeks, behind “Chattahoochee” .Therefore, the song that was behind the third single for two weeks is “We’ll Burn That Bridge”. \boxed{We’ll Burn That Bridge}” 
+
+Prediction: We’ll Burn That Bridge Sub-EM: 1.00 
+
+Gold Answer: We’ll Burn That Bridge 
+
+The positive reads in Turn 1 independently preserve Document 730’s chart relation and Document 1348’s third-single identity. Their merged memory states the complete two-hop chain and cites both documents. Turn 2 contributes no new local memories, so the grounded chain remains unchanged for the final call. Together, the MV-NIAH and HQA pairs show two manifestations of the same recurrent failure mode: later sequential updates can either demote earlier values to obsolete history or delete an unresolved but essential relation. PI-Mem instead retains complementary chunk-level outputs until they can be consolidated within a turn.

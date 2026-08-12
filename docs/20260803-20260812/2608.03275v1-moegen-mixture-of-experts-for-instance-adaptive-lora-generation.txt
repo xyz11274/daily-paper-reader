@@ -1,0 +1,559 @@
+Title: MoEGen: Mixture-of-Experts for Instance-Adaptive LoRA Generation
+
+URL Source: https://arxiv.org/pdf/2608.03275v1
+
+Published Time: Wed, 05 Aug 2026 00:41:23 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# MoEGen: Mixture-of-Experts for Instance-Adaptive LoRA Generation 
+
+Yiming Zeng 1,∗, Lei Lu 2,∗, Zexin Li 3, Zhuochun Li 4, Shuoqiu Li 5,Shuyi Liao 1, Xidong Wu 6, Zeyu Zhang 7, Minmei Wang 1,
+
+Yu Zhao 8, Tingting Yu 1,†, Shangqian Gao 5,†
+
+> 1
+
+University of Connecticut 2Northeastern University 3Nanyang Technological University 
+
+> 4
+
+University of Pittsburgh 5Florida State University 6Google 
+
+> 7
+
+Amazon AGI 8University of Cincinnati 
+
+Abstract 
+
+Parameter-efficient fine-tuning (PEFT) enables efficient adaptation of large language mod-els, but existing MoE-based PEFT methods typically improve capacity by storing multi-ple full LoRA experts, causing adapter stor-age to grow linearly with the number of ex-perts and restricting adaptation to a fixed ex-pert pool. We ask whether MoE-based PEFT can produce instance-specific adaptations with-out explicitly storing a separate LoRA mod-ule for each expert. To address this gap, we propose MoEGen , an adaptation framework that shifts MoE-based PEFT from expert se-lection to expert-conditioned parameter gener-ation. Instead of storing each expert as a full LoRA adapter, MoEGen represents each expert as a small learnable vector, termed an expert code. It routes each input over these vectors and uses their weighted combination to condi-tion a lightweight hypernetwork that generates input-specific low-rank updates. This design decouples expert capacity from adapter storage while enabling instance-conditioned adaptation. Experiments on eight commonsense reason-ing benchmarks show consistent improvements over strong static and MoE-based PEFT base-lines across three backbones. MoEGen also performs strongly in joint medical and legal-domain adaptation. 
+
+1 Introduction 
+
+Modern pretrained LLMs demonstrate remarkable performance across a wide spectrum of natural language processing tasks (Fedus et al., 2022; Touvron et al., 2023a; Chowdhery et al., 2022; OLMo et al., 2025). However, for challenging domain-specific downstream tasks, e.g., code gen-eration and mathematical reasoning (Rozière et al., 
+
+> *Equal contribution.
+> †Corresponding authors.
+
+2024; Lewkowycz et al., 2022), model adaptation is a standard way to further improve task per-formance. (OpenAI et al., 2024; Touvron et al., 2023a). While full supervised fine-tuning is an effective model adaption method, it is computa-tionally expensive and requires storing separate task-specific model copies, making it less practical in resource-constrained settings (Aghajanyan et al., 2021; Lialin et al., 2024). Parameter-efficient fine-tuning (PEFT) methods provide practical alternatives for model adaptation by updating only a small subset of model param-eters (Li et al., 2023; Tian et al., 2024; Hu et al., 2022; Liu et al., 2024b). LoRA (Hu et al., 2022), for example, learns low-rank weight updates while keeping the backbone parameters frozen. Recent MoE-LoRA methods further expand adaptation ca-pacity by selecting or combining multiple LoRA experts through a learned router (Dou et al., 2024; Liu et al., 2024a; Gao et al., 2025). However, be-cause each expert stores a complete set of low-rank parameters, adapter storage grows linearly with the size of the expert pool, making a large and diverse adaptation space costly to maintain. To address these limitations, we propose MoE-Gen , a lightweight plug-and-play adaptation frame-work that synthesizes input-specific LoRA param-eters from compositional latent expert codes. In-stead of representing each expert as a full LoRA module, MoEGen encodes experts as small learn-able vectors, termed expert codes, which are in-dependent of the targeted module dimensions. Prompt-conditioned routing selects and combines multiple expert codes in this low dimensional la-tent space, and a shared hypernetwork synthesizes input-specific LoRA parameter updates from the resulting expert-code mixture. Unlike conventional MoE-LoRA methods, where expert combinations 1arXiv:2608.03275v1 [cs.CL] 4 Aug 2026 Prompt Prompt  Prompt             
+
+> Pretrained Weights 𝐖𝐖 𝐁𝐁
+> 𝐀𝐀 𝐀𝐀𝟏𝟏 𝐀𝐀𝟐𝟐 𝐀𝐀𝟑𝟑
+> 𝐁𝐁𝟏𝟏 𝐁𝐁𝟐𝟐 𝐁𝐁𝟑𝟑
+> T1T2T3
+> Token Router
+> LoRA is static across prompts Prompt Router
+> 𝐀𝐀𝟏𝟏 𝐀𝐀𝟐𝟐 𝐀𝐀𝟑𝟑
+> 𝐁𝐁
+> Selected based on token
+> Selected based on prompt
+
+(a) LoRA  (b) MoELoRA  (c) Ours Figure 1: Comparison between traditional MoE and MoEGen. MoEGen replaces full feed-forward experts with compact style embeddings and a shared hypernetwork for input-specific LoRA generation. 
+
+are formed directly over stored LoRA parameter modules, MoEGen performs composition before parameter generation. This decouples expert ca-pacity from explicit backbone-specific adapter stor-age and enables a larger adaptation space through lightweight expert-code combinations. Overall, our contributions are as follows: • Lightweight expert parameterization. MoE-Gen represents each expert as a low-dimensional learnable code rather than a com-plete LoRA adapter, substantially reducing the parameter and storage costs of maintain-ing multiple experts. • Dynamic input-conditioned LoRA gen-eration. MoEGen dynamically generates an input-specific low-rank matrix for each adapted component. This enables more tar-geted adaptation by tailoring the low-rank up-date to the semantic characteristics of each input. • Consistent empirical performance. MoE-Gen improves over the strongest competing baselines by 0.6–1.1 points across eight com-monsense reasoning benchmarks while updat-ing only 0.44–0.52% of model parameters. It further achieves improvements of 4.6–6.2 points on the cross-domain joint benchmark. 
+
+2 Related Work 
+
+2.1 Parameter-Efficient Fine-Tuning 
+
+Parameter-efficient fine-tuning (PEFT) adapts pre-trained models by updating only a small fraction of their parameters. Adapter-based methods (Houlsby et al., 2019; Pfeiffer et al., 2021) insert trainable bottleneck modules into frozen transformers, while prefix-tuning (Li and Liang, 2021) prepends learn-able tokens. These methods may introduce infer-ence latency or have limited expressiveness on com-plex tasks (Han et al., 2024). LoRA (Hu et al., 2022) instead learns low-rank weight updates in parallel with frozen weights. Its extensions include adaptive rank allocation in AdaLoRA (Zhang et al., 2023), directional and magnitude decomposition in DoRA (Liu et al., 2024b), and quantization-aware initialization in LoftQ (Li et al., 2023). Sparse al-ternatives such as SpIEL (Ansell et al., 2024) and SMT (He et al., 2025) update selected parameters or sub-matrices. However, these methods gener-ally learn fixed updates that are applied uniformly across inputs, whereas MoEGen generates input-conditioned updates. 
+
+2.2 Mixture-of-Experts 
+
+Mixture-of-Experts (MoE) increases model ca-pacity by sparsely routing inputs to expert mod-ules (Shazeer et al., 2017). Switch Transformer (Fe-dus et al., 2022) and GLaM (Du et al., 2022) demonstrate the effectiveness of this sparse com-putation. MoELoRA (Liu et al., 2024a) and Lo-RAMoE (Dou et al., 2024) extend MoE to PEFT by routing among multiple LoRA experts, while Hy-draLoRA (Tian et al., 2024) introduces asymmetric expert structures. These methods store full LoRA experts and perform routing inside transformer lay-ers, coupling expert capacity with adapter storage. In contrast, MoEGen performs external routing over lightweight expert codes and generates input-conditioned LoRA parameters through a shared hypernetwork. 2Sentence Transformer                  
+
+> Embedding
+> Self-Attention
+> Feed-Forward
+> LM Head
+> Output: y
+> Frozen LLM
+> ×𝑁
+> QKVO
+> Input prompt x
+> Sequence embedding z
+> Component Embedding ℓ(𝒍)
+> LN + GeLU
+> Top-K Selection
+> Softmax
+> Shared Projection
+> Wr
+> Shared Gate Projection
+> Wr
+> …
+> Decoder Block 1
+> Expert Codes
+> LN + GeLU
+> Linear Projection
+> 𝐴 (𝒍) (dynamic)
+> 𝑩 (𝒍) (static )
+> Ŵl(dynamic )
+> ×
+> 00.7 00.3 0…
+> E1E2E3E4EN
+> Sparse Routing Weight
+
++   
+
+> Joint Expert Code
+> 0.7 ∗ 𝐸 !+ 0.3 ∗ 𝐸 "
+> … Cast …
+> Coordinate Embedding 𝐏 𝐣 (𝐥)
+> Wl(frozen )
+
++
+
+> …
+
+Figure 2: Overview of MoEGen. A frozen sentence encoder maps the input prompt x to a semantic embedding 
+
+z. For each adapted component l, z is concatenated with a learnable component embedding ℓ(l) and projected as h(l) = Wr [z; ℓ(l)] for sparse expert-code routing. The selected expert codes, together with component-local coordinates p(l) 
+
+> j
+
+, condition a shared hypernetwork to generate candidate LoRA A matrices. These candidates are mixed into A(l)mix and combined with the static matrix B(l) to form the dynamic low-rank update applied to the frozen weight W (l).
+
+3 Method 
+
+3.1 Overview 
+
+MoEGen consists of four modules: a frozen pre-trained LLM, a frozen prompt encoder, a sparse MoE router, and a shared LoRA hypernetwork. For each input, the prompt encoder produces a context embedding, which is used by the router to select a small number of expert codes. These expert codes do not store LoRA parameters directly. Instead, they serve as compact conditioning vectors that guide the hypernetwork to generate dynamic LoRA matrices. We apply MoEGen to the attention projections of each decoder block, including the query, key, value, and output projections; we refer to each adapted projection as a component . For a component with frozen weight W (l) ∈ Rdout ×din , MoEGen gener-ates a low-rank update ∆W (l) ∈ Rdout ×din and computes the adapted output as 
+
+y = W (l)x + αr ∆W (l)x, (1) where x ∈ Rdin , y ∈ Rdout , r is the LoRA rank, and α is the LoRA scaling factor. The low-rank update is factorized as ∆W (l) = B(l)(A(l))⊤ with 
+
+B(l) ∈ Rdout ×r and A(l) ∈ Rdin ×r, where r ≪
+
+min( din , d out ). The original LLM parameters are never modified. 
+
+3.2 Per-Component Semantic Routing with Compact Expert Codes 
+
+MoEGen maintains a single pool of N trainable expert codes {E1, . . . , E N } with Ei ∈ Rdh , shared across all L components. The routing parameters remain compact because all components share a common gating projection Wg.For each input prompt x, we use a frozen sen-tence encoder (Zhang et al., 2025) fenc : X →
+
+Rdz to obtain a semantic context embedding z =
+
+fenc (x). The encoder remains fixed during train-ing to preserve general semantic representations and reduce optimization cost. A lightweight router 
+
+fr then maps this shared semantic embedding into component-specific routing features: 
+
+fr(z) = [ h(1) , . . . , h (L)],H = (h(1) )⊤ · · · (h(L))⊤⊤ ∈ RL×dh .
+
+(2) where L is the number of adapted LoRA compo-nents (i.e., target projections across decoder layers), and each row h(l) ∈ Rdh denotes the routing fea-ture for component l.To enable component-specific specialization, we associate each component with a learnable embed-ding ℓ(l) ∈ Rdℓ and concatenate it with the shared prompt embedding: 
+
+h(l) = Wr[z; ℓ(l)], (3) 3where [·; ·] denotes vector concatenation and Wr ∈
+
+Rdh×(dz +dℓ) is a shared projection matrix. This formulation allows the router to model interactions between prompt-level semantics and component-specific identities, while requiring only dh(dz +
+
+dℓ) + Ld ℓ parameters. Each expert code Ei is a compact conditioning vector rather than a full LoRA adapter: it encodes an adaptation style that the hypernetwork (Sec. 3.3) later expands into component-specific LoRA matri-ces. For each component l, the routing feature h(l)
+
+is first passed through a nonlinear block and then projected to expert logits: 
+
+˜h(l) = GELU 
+
+
+
+LN 
+
+
+
+h(l) 
+
+,g(l) = Wg ˜h(l) + bg.
+
+(4) We then perform top-k selection and normalize the selected logits: 
+
+T (l) = TopK 
+
+
+
+g(l), k 
+
+
+
+,w(l) 
+
+> i
+
+=exp 
+
+
+
+g(l)
+
+> i
+
+P  
+
+> j∈T (l)
+
+exp 
+
+
+
+g(l)
+
+> j
+
+ , i ∈ T (l).
+
+(5) Here, T (l) ⊆ { 1, . . . , N } is the set of indices cor-responding to the k largest entries of g(l). Experts outside T (l) are assigned zero weight. 
+
+3.3 Expert-Conditioned LoRA Generation 
+
+For each adapted component l, MoEGen dynami-cally generates the LoRA A matrix while maintain-ing a trainable static B matrix. This asymmetric design keeps the generated part lightweight: the input-conditioned part is synthesized by the hyper-network, while the output projection side is shared across inputs. In MoEGen, expert codes are used as condition-ing vectors for parameter generation. We introduce a component-local embedding P (l) ∈ Rdin ×dh
+
+for each adapted component, where the j-th row 
+
+p(l) 
+
+> j
+
+∈ Rdh serves as a learnable coordinate for the 
+
+j-th input dimension. Given a selected expert code Ei ∈ Rdh , we use a shared hypernetwork to generate the corresponding LoRA A matrix row by row. The hypernetwork is shared across all components, experts, and input dimensions. For the j-th input dimension of the 
+
+l-th target component, it takes the concatenation of a learnable coordinate embedding p(l) 
+
+> j
+
+∈ Rdh
+
+and the expert code Ei, and outputs one row of the LoRA A matrix: 
+
+a(l) 
+
+> i,j
+
+= Linear 
+
+
+
+[p(l) 
+
+> j
+
+; Ei]
+
+
+
+, a(l) 
+
+> i,j
+
+∈ Rr. (6) The coordinate p(l) 
+
+> j
+
+identifies which row is being generated, while Ei provides the expert-specific conditioning signal. The hypernetwork is imple-mented as a lightweight block consisting of Lay-erNorm, GELU activation, and a linear projection 
+
+R2dh → Rr, contributing O(dhr) parameters that do not scale with depth, din , dout , or the number of experts N . Stacking rows yields the candidate matrix for expert i:
+
+A(l) 
+
+> i
+
+= [ a(l)
+
+> i, 1
+
+, . . . , a (l) 
+
+> i,d in
+
+]⊤ ∈ Rdin ×r. (7) For the selected expert set T (l), the candidate ma-trices are mixed according to the routing weights: 
+
+A(l) = X 
+
+> i∈T (l)
+
+w(l) 
+
+> i
+
+A(l) 
+
+> i
+
+. (8) The final low-rank update for component l is com-puted as 
+
+∆W (l) = B(l) 
+
+A(l)⊤
+
+, (9) where B(l) ∈ Rdout ×r and ∆W (l) ∈ Rdout ×din .Following LoRA (Hu et al., 2022), B(l) is initial-ized to zero for stable training. Overall, the routed expert codes specify the adaptation style, and the component-local coordi-nates specify where this style is applied. As a re-sult, increasing the number of experts expands the conditioning space without adding per-component LoRA parameters for each new expert. To see this, consider the per-component parameter cost of the expert pool. In standard MoE-LoRA, each expert stores a full low-rank adapter, giving a per-component cost of N · r · (din + dout ) that scales linearly with N . In MoEGen, the expert pool con-tributes only N · dh parameters, since each ex-pert is a compact code of dimension dh, and the component-specific cost din · dh + dout · r from P (l)
+
+and B(l) is independent of N . With dh ≪ r · din ,expanding the expert pool grows the conditioning space at negligible cost, while the per-component footprint stays constant. 
+
+3.4 Training Objective 
+
+MoEGen is trained end-to-end with the standard causal language modeling objective. We optimize 4three groups of parameters: (i) the router param-eters Wr, {ℓ(l)}Ll=1 , Wg, bg; (ii) the expert codes 
+
+{Ei}Ni=1 ; and (iii) the hypernetwork parameters 
+
+ϕLinear , {P (l), B (l)}Ll=1 . The base model weights remain frozen throughout training. To avoid rout-ing collapse and encourage balanced expert utiliza-tion, we add a load-balancing regularization loss following (Fedus et al., 2022). The full training objective is 
+
+L = LLM + λlb Lload , (10) where the language modeling loss is LLM =
+
+− PTt=1 log pθ(yt | y<t , X ). given an input-output pair (X, Y ), λlb controls the strength of the load-balancing regularization. The load-balancing loss is defined as 
+
+Lload = NL
+
+> L
+
+X
+
+> l=1
+> N
+
+X
+
+> i=1
+
+1
+
+Bk 
+
+> B
+
+X
+
+> b=1
+
+1[i ∈ T (l) 
+
+> b
+
+]
+
+!
+
+× 1
+
+B
+
+> B
+
+X
+
+> b=1
+
+w(l)
+
+> b,i
+
+!
+
+.
+
+(11) where T (l) 
+
+> b
+
+denotes the top-k expert set selected for the b-th input at component l, and w(l) 
+
+> b,i
+
+is the normalized routing weight for expert i, with w(l) 
+
+> b,i
+
+=0 if i / ∈ T (l) 
+
+> b
+
+. This regularizer couples the discrete routing decisions with the differentiable routing probabilities, encouraging more balanced expert usage across both inputs and components. 
+
+4 Experiment 
+
+4.1 Experiment Setup Datasets. Following (He et al., 2025), we use COMMONSENSE -170K, which combines the train-ing splits of eight commonsense reasoning bench-marks: BoolQ (Clark et al., 2019), PIQA (Bisk et al., 2019), SIQA (Sap et al., 2019), Hel-laSwag (Zellers et al., 2019), WinoGrande (Sak-aguchi et al., 2019), ARC-Easy (Clark et al., 2018), ARC-Challenge (Clark et al., 2018), and Open-BookQA (Mihaylov et al., 2018). We evaluate each method on the held-out test set of each benchmark. We also use a mixed-task dataset composed of four biomedical and legal-domain tasks: MedNLI (Romanov and Shivade, 2018), Pub-MedQA (Jin et al., 2019), HQS (Ben Abacha and Demner-Fushman, 2019), and BillSum (Kornilova and Eidelman, 2019). MedNLI and PubMedQA are evaluated by accuracy, while HQS and BillSum are evaluated by ROUGE-1, ROUGE-2, and ROUGE-L (Lin, 2004). For this setting, the Avg column averages one primary metric per task: accuracy for MedNLI and PubMedQA, and ROUGE-L for HQS and BillSum. 
+
+Implementation details. MoEGen uses a frozen Qwen3-Embedding-0.6B (Zhang et al., 2025) sen-tence encoder. We use N =8 expert codes with code dimension dh=32 , top-k=2 routing, and LoRA rank r=64 , and apply the generated adapters to the Q/K/V/O projections of every decoder block. All methods are trained for 3 epochs with AdamW (Loshchilov and Hutter, 2017) and bfloat16 precision. The effective batch size is 16 
+
+for commonsense reasoning and 64 for mixed-task joint training. Additional details are provided in Appendix. 
+
+4.2 Commonsense Reasoning 
+
+Table 1 reports the results across LLaMA-2-7B (Touvron et al., 2023b), LLaMA-3-8B (Grattafiori et al., 2024), and Qwen3-8B-base (Yang et al., 2025). MoEGen achieves the highest average score on all three backbones, reaching 84 .2, 87 .9, and 89 .9, respectively. Compared with the strongest static PEFT baseline on each backbone, MoEGen improves the average score by 2.4 points over SMT on LLaMA-2-7B, by 
+
+1.1 points over SMT on LLaMA-3-8B, and by 0.8
+
+points over DoRA on Qwen3-8B-base. MoEGen trains only 0.52% , 0.44% , and 0.49% of the parameters on the three backbones, respectively, showing that these improvements do not result from a larger trainable parameter budget. Compared with standard LoRA, MoEGen achieves a higher score on every evaluated bench-mark across all three backbones. On LLaMA-2-7B, it improves the average score from 77 .6 to 
+
+84 .2. On LLaMA-3-8B, the average score in-creases from 80 .8 to 87 .9. On Qwen3-8B-base, where LoRA achieves an average score of 87 .4,MoEGen reaches 89 .9. These results show that input-conditioned adaptation provides consistent benefits across model families with different base-line accuracies. Notably, the improvement remains positive even on Qwen3-8B-Base, where standard LoRA already performs strongly, suggesting that MoEGen captures useful input-dependent special-ization beyond a single static low-rank update. MoEGen also achieves higher average scores 5Base Model Method #Params(%) BoolQ PIQA SIQA HellaSwag WinoGrande ARC-e ARC-c OBQA Avg.                                                                                                                                                                                                                   
+
+> LLaMA2-7B LoRA 0.83 69.8 79.9 79.5 83.6 82.6 79.8 64.7 81.0 77.6 DoRA 0.42 72.0 83.9 81.9 89.1 83.0 84.5 71.0 81.2 80.5 SpiEL 0.83 70.5 80.6 80.8 85.5 83.4 81.2 65.8 81.8 78.3 SMT 0.84 72.0 83.3 80.8 93.3 82.8 86.7 74.0 81.0 81.8 Full FT 100 72.8 83.4 78.7 92.7 85.5 86.2 74.3 84.7 82.2 MoELoRA 0.52 73.8 85.5 81.3 94.8 85.9 87.9 75.0 84.2 83.6 MoLA 0.82 71.8 81.9 78.6 88.9 81.6 82.8 69.5 80.0 79.4
+> MoEGen(Ours) 0.52 73.3 86.4 81.3 94.8 85.9 88.9 75.4 87.4 84.2
+> LLaMA3-8B LoRA 0.70 70.8 85.2 79.9 91.7 84.3 79.8 71.2 79.0 80.8 DoRA 0.71 74.6 83.9 79.9 95.5 85.6 90.5 80.4 85.6 85.2 SpiEL 0.70 72.1 83.6 79.6 95.5 85.4 91.2 76.8 85.6 83.7 SMT 0.71 75.7 88.4 81.4 96.2 88.2 92.7 78.3 88.6 86.8 MoELoRA 0.34 74.7 88.9 81.3 96.4 89.3 92.3 81.4 89.6 86.7 MoLA 0.73 73.9 86.8 79.2 93.9 86.0 87.6 75.9 83.2 83.3
+> MoEGen(Ours) 0.44 76.1 90.9 83.0 96.6 89.1 93.3 84.4 89.4 87.9
+> Qwen3-8B-base LoRA 0.70 74.3 89.0 80.3 94.4 88.0 94.7 88.1 90.4 87.4 DoRA 0.71 72.9 90.9 82.7 95.9 88.9 97.0 90.9 93.2 89.1 SMT 0.71 74.9 88.9 81.9 94.8 86.6 95.5 88.4 92.2 87.9 MoELoRA 0.34 72.5 90.6 81.9 93.4 84.1 97.9 93.6 89.8 88.0 MoLA 1.50 74.3 90.4 80.9 95.3 86.7 96.8 91.9 92.2 88.6
+> MoEGen(Ours) 0.49 75.6 91.4 83.0 96.4 90.0 97.7 92.4 92.6 89.9
+
+Table 1: Comparison of different parameter-efficient fine-tuning methods across commonsense reasoning bench-marks. Bold indicates the best result per base model. All methods use the Alpaca prompt format. #Params(%) denotes the percentage of trainable parameters relative to the base model. 
+
+than the MoE-based PEFT methods MoELoRA and MoLA. MoELoRA and MoLA increase adapter ca-pacity by introducing multiple LoRA experts, with each expert corresponding to a fixed set of learned parameters. In contrast, MoEGen routes among compact expert codes and uses the resulting con-ditioning signal to synthesize input-specific LoRA matrices. MoEGen improves over MoELoRA by 
+
+0.6, 1.2, and 1.9 points on LLaMA-2-7B, LLaMA-3-8B, and Qwen3-8B-base, respectively. Com-pared with MoLA, the corresponding improve-ments are 4.8, 4.6, and 1.3 points. The results indicate that generating input-specific adapter pa-rameters yields higher average accuracy than se-lecting or mixing a fixed set of adapter experts in these experiments. The comparison with full fine-tuning on LLaMA-2-7B further demonstrates the parameter efficiency of MoEGen. Full fine-tuning updates all model parameters and achieves an average score of 82 .2,whereas MoEGen reaches 84 .2 while training only 
+
+0.52% of the parameters. This comparison shows that input-adaptive parameter updates can outper-form a global update of the entire model on the evaluated commonsense reasoning benchmarks. 
+
+4.3 Cross-Domain Joint Training 
+
+To evaluate MoEGen under heterogeneous multi-task adaptation, we jointly train on MedNLI, Pub-MedQA, HQS, and BillSum following (Lu et al., 2024). These tasks cover natural language infer-ence, question answering, and clinical and legal summarization. All methods use the same training data and optimization protocol and are evaluated separately on each task. Table 2 reports the results. On LLaMA-3-8B, MoEGen achieves the high-est score on every metric and improves the aver-age score by 6.2 points over MoLA, from 55 .3% 
+
+to 61 .5% . On BillSum, MoEGen reaches 43 .7% 
+
+ROUGE-L, compared with 30 .3% for the best base-line. Plain LoRA performs worst: it drops to 57 .1% 
+
+on MedNLI and 15 .8% on HQS, which indicates that a single static update struggles to accommo-date the competing adaptation requirements of all four tasks. The advantage holds on Qwen3-8B-Base. MoE-Gen reaches the highest average of 60 .4% , com-pared with 55 .8% for the strongest baseline (MoLA), obtains the best MedNLI accuracy, and matches the best PubMedQA accuracy. On Bill-Sum it reaches 42 .4% ROUGE-L against 25 .2% 
+
+for the best baseline, while on HQS it stays within 
+
+0.7 points of the best result. MoEGen also achieves the highest average score on LLaMA-2-13B, reaching 58 .8% compared with 
+
+53 .8% for MoELoRA and MoLA. It obtains the highest MedNLI and PubMedQA accuracy and im-proves BillSum ROUGE-L from 18 .8% to 38 .6% .On HQS, its scores remain within 1.2 points of the best baseline across all three ROUGE metrics. 6Model Method MedNLI HQS PubMedQA BillSum Avg Acc R-1 R-2 R-L Acc R-1 R-2 R-L LLaMA-3-8B LoRA 57.1% 17.3% 6.1% 15.8% 73.8% 42.4% 25.4% 30.3% 44.2% MoELoRA 90.6% 36.1% 14.2% 32.1% 77.0% 28.5% 13.6% 20.6% 55.1% MoLA 90.3% 35.7% 14.5% 31.3% 76.8% 30.7% 16.1% 22.8% 55.3%                                                                                  
+
+> MoEGen 91.1% 37.0% 15.2% 33.3% 77.8% 55.8% 37.4% 43.7% 61.5%
+> Qwen3-8B-Base LoRA 89.2% 36.5% 15.5% 32.7% 76.8% 31.3% 13.4% 21.0% 55.0% MoELoRA 89.8% 34.8% 13.6% 30.7% 76.8% 33.7% 15.5% 24.1% 55.3% MoLA 89.5% 36.2% 15.5% 32.5% 76.2% 36.3% 17.8% 25.2% 55.8%
+> MoEGen 90.5% 34.7% 14.3% 32.0% 76.8% 53.9% 36.4% 42.4% 60.4%
+> LLaMA-2-13B LoRA 89.1% 35.6% 13.4% 31.6% 74.4% 27.9% 10.2% 18.5% 53.4% MoELoRA 88.8% 35.1% 14.3% 32.3% 75.2% 28.3% 11.1% 18.8% 53.8% MoLA 88.9% 35.5% 14.6% 31.9% 75.4% 29.0% 11.1% 18.8% 53.8%
+> MoEGen 89.5% 34.8% 14.1% 31.1% 75.8% 50.0% 30.8% 38.6% 58.8%
+
+Table 2: Comparison on the NLP Joint benchmark with LLaMA-3-8B, Qwen3-8B-Base, and LLaMA-2-13B at epoch 3. Best results per backbone are in bold . Avg averages Acc for MedNLI/PubMedQA and R-L for BillSum/HQS. 
+
+Figure 3: Case study of MoEGen routing on eight commonsense reasoning test sets with 50 prompts per dataset and 400 cases in total. (a) t-SNE of the routed fused style produced by the hypernetwork. (b) t-SNE of the router latent representation used by the gate. 
+
+Together, the results on all three backbones show that MoEGen consistently improves overall perfor-mance under cross-domain joint training. These re-sults suggest that the bottleneck in this setting is not adapter capacity but how the adapter is conditioned on the input: the baselines remain within a narrow BillSum range despite their differing adapter struc-tures, while MoEGen generates input-conditioned updates and improves ROUGE-L on every back-bone. 
+
+4.4 Ablation Study Number of Expert. We study the effect of the expert-code pool size N ∈ { 2, 4, 8, 16 } on the cross-domain joint benchmark using LLaMA-3-8B. All variants follow the setup in Section 4.3, with 
+
+r=64 , dh=32 , top-2 routing, an effective batch size of 64 , and 3 training epochs. As shown in Ta-ble 3, N =8 achieves the highest average score and performs best on three of the four tasks. Smaller pools may provide insufficient capacity for het-#Codes MedNLI HQS PubMedQA BillSum Avg. Acc. R-L Acc. R-L                         
+
+> N= 2 90.5% 32.1% 75.6% 43.2% 60.3%
+> N= 4 91.0% 31.7% 75.6% 43.2% 60.4%
+> N= 8 91.1% 33.3% 77.8% 43.7% 61.5%
+> N= 16 91.4% 33.1% 75.6% 42.8% 60.7%
+
+Table 3: Effect of the number of expert codes on the cross-domain joint benchmark with LLaMA-3-8B. 
+
+erogeneous domains, whereas a larger pool does not yield further improvements. Notably, when 
+
+N =2 under top-2 routing, both codes are always selected, reducing the router to weighting a fixed code pair. Its lower performance suggests that input-dependent code selection contributes to the effectiveness of MoEGen. We therefore use N =8 
+
+for the cross-domain benchmark. An ablation study on the routing design and shared expert is also pro-vided in Appendix B. 
+
+Context encoder. We next ablate the source of the routing context z. By default, z is produced by a frozen Qwen3-Embedding-0.6B sentence en-coder. The MoEGen (w/o embedding) variant re-moves this external encoder entirely and instead reuses the frozen backbone’s last-layer final-token representation of the prompt as z, leaving all other components unchanged. As shown in Table 4(a), the w/o embedding variant remains competitive but consistently trails the full model, reducing the av-erage score from 61 .5% to 60 .8% , with the largest drops on PubMedQA ( 77 .8% → 76 .4% ) and HQS (33 .3% → 32 .4% ). This suggests that the dedi-cated sentence encoder provides a cleaner seman-7Method MedNLI BillSum HQS PubMedQA Avg Acc R-L R-L Acc MoEGen 91.1% 43.7% 33.3% 77.8% 61.5%                     
+
+> w/o sentence encoder 90.8% 43.6% 32.4% 76.4% 60.8%
+> (a) Task performance. Method Train Infer. Mem. Enc. (min) (ms/ex.) (GB) params MoEGen 13.1 24.6 19.3 0.6B w/o sentence encoder 14.2 25.2 17.1 N/A (b) Computational cost.
+
+Table 4: Ablation study on the context encoder. The w/o sentence encoder variant removes the frozen Qwen3-Embedding-0.6B encoder and routes on the backbone’s own last-token representation. 
+
+tic routing signal than the backbone’s own hidden states. Table 4(b) compares the computational cost of the two variants. Keeping Qwen3-Embedding-0.6B is not a bottleneck on either side: training is 
+
+8% faster with the external encoder, since encoding prompts with the 0.6B model is cheaper than the additional forward pass through the 8B backbone required by the w/o embedding variant, and per-example inference latency differs by only 0.6 ms (+2 .4% ) for the same reason. The only advantage of removing the encoder is deployment footprint, saving its 0.6B parameters and 2.2 GB of GPU memory. Given the consistent quality gains at neg-ligible time cost, we retain the external sentence encoder as the default source of the routing context. 
+
+4.5 Qualitative Study 
+
+We visualize the routing behavior of MoEGen on eight commonsense reasoning benchmarks. For each task, we randomly sample 50 test prompts and apply t-SNE to the router inputs and the fused expert representations. As shown in Figure 3, the router inputs already exhibit task-dependent structure. Distinctive tasks such as SocialIQA, WinoGrande, and BoolQ form relatively compact regions, whereas science QA benchmarks such as ARC-Challenge, ARC-Easy, and OpenBookQA are more closely distributed. After expert mixing, the fused representations preserve this organization while connecting related tasks more smoothly. This suggests that the router captures both task-specific adaptation patterns and shared structures across similar reasoning tasks. Additionally, Table 7 presents a representative example from BillSum. The reference summary de-scribes the bill by naming the act and outlining its 
+
+Table 5: Per-sample inference latency (s). Max Tok. denotes the maximum number of generated tokens used during evaluation.                          
+
+> Task Max Tok. LoRA MoE-LoRA MoLA Ours MedNLI 80.058 0.062 0.074 0.090 HQS 64 0.309 0.336 0.437 0.337 PubMedQA 256 0.283 0.324 0.798 0.306 BillSum 384 0.966 1.025 2.259 1.006
+
+main provisions. In contrast, LoRA, MoE-LoRA, and MoLA generate short legal fragments copied from the bill text, failing to capture the main actions of the legislation. The outputs of MoE-LoRA and MoLA are also highly similar, suggesting that sim-ply adding MoE-style adapters may still struggle to model diverse task behaviors under joint multi-task adaptation. MoEGen produces a more complete summary. It correctly identifies the bill title and recovers the key legislative actions, including the repeal of the excise tax and changes to fuel-related taxes. As a result, its prediction is much closer to the refer-ence summary and achieves a substantially higher ROUGE-L score. Additional examples are pro-vided in the Appendix C. 
+
+Inference Efficiency. We further evaluate the in-ference cost of MoEGen on the cross-domain joint benchmark. Table 5 reports the per-sample latency of each method using LLaMA-2-13B on a single B200 GPU with batch size 32. MoEGen intro-duces an input-dependent routing and generation cost, but the overhead remains small on longer-generation tasks. The largest relative gap appears on MedNLI, where the output is very short and the fixed routing cost is less amortized. As the gen-eration length increases, this gap becomes much smaller: MoEGen is only 9.1% slower than LoRA on HQS, 8.1% slower on PubMedQA, and 4.1% slower on BillSum. It also remains substantially faster than MoLA on the longer-generation tasks. 
+
+5 Conclusion 
+
+This paper proposes an instance-adaptive frame-work for parameter-efficient LLM adaptation. It aligns LoRA updates with input semantics through MoE-guided routing and dynamic parameter gener-ation driven by a lightweight hypernetwork. By replacing full LoRA experts with compact ex-pert codes, MoEGen expands the adaptation space while keeping the parameter cost low. Exper-8imental results show that MoEGen consistently outperforms static LoRA variants and existing MoE-based PEFT methods across commonsense, biomedical, and legal-domain benchmarks, demon-strating its advantages in accuracy and adaptation flexibility. 
+
+Limitations 
+
+MoEGen adds a lightweight routing and parameter-generation module on top of standard LoRA. Al-though this design keeps the number of trainable parameters small and introduces only modest infer-ence overhead in our experiments, it still requires implementing an additional module beyond conven-tional static PEFT methods. In addition, this work mainly studies instance-adaptive LoRA generation under supervised fine-tuning settings. Extending the same idea to other adaptation scenarios, such as preference tuning or continual learning, is an interesting direction for future work. 
+
+References 
+
+Armen Aghajanyan, Sonal Gupta, and Luke Zettle-moyer. 2021. Intrinsic dimensionality explains the effectiveness of language model fine-tuning. In Pro-ceedings of the 59th Annual Meeting of the Associa-tion for Computational Linguistics and the 11th Inter-national Joint Conference on Natural Language Pro-cessing (Volume 1: Long Papers) , pages 7319–7328, Online. Association for Computational Linguistics. Alan Ansell, Ivan Vuli´ c, Hannah Sterz, Anna Korho-nen, and Edoardo M. Ponti. 2024. Scaling sparse fine-tuning to large language models. Preprint ,arXiv:2401.16405. Asma Ben Abacha and Dina Demner-Fushman. 2019. On the summarization of consumer health questions. In Proceedings of the 57th Annual Meeting of the As-sociation for Computational Linguistics , pages 2228– 2234, Florence, Italy. Association for Computational Linguistics. Yonatan Bisk, Rowan Zellers, Ronan Le Bras, Jianfeng Gao, and Yejin Choi. 2019. Piqa: Reasoning about physical commonsense in natural language. Preprint ,arXiv:1911.11641. Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, Parker Schuh, Kensen Shi, Sasha Tsvyashchenko, Joshua Maynez, Abhishek Rao, Parker Barnes, Yi Tay, Noam Shazeer, Vin-odkumar Prabhakaran, Emily Reif, Nan Du, Ben Hutchinson, Reiner Pope, James Bradbury, Jacob Austin, Michael Isard, Guy Gur-Ari, Pengcheng Yin, Toju Duke, Anselm Levskaya, Sanjay Ghemawat, Sunipa Dev, Henryk Michalewski, Xavier Garcia, Vedant Misra, Kevin Robinson, Liam Fedus, Denny Zhou, Daphne Ippolito, David Luan, Hyeontaek Lim, Barret Zoph, Alexander Spiridonov, Ryan Sepassi, David Dohan, Shivani Agrawal, Mark Omernick, An-drew M. Dai, Thanumalayan Sankaranarayana Pil-lai, Marie Pellat, Aitor Lewkowycz, Erica Moreira, Rewon Child, Oleksandr Polozov, Katherine Lee, Zongwei Zhou, Xuezhi Wang, Brennan Saeta, Mark Diaz, Orhan Firat, Michele Catasta, Jason Wei, Kathy Meier-Hellstern, Douglas Eck, Jeff Dean, Slav Petrov, and Noah Fiedel. 2022. Palm: Scaling language mod-eling with pathways. Preprint , arXiv:2204.02311. Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. 2019. Boolq: Exploring the surpris-ing difficulty of natural yes/no questions. Preprint ,arXiv:1905.10044. Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. 2018. Think you have solved question answering? try arc, the ai2 reasoning challenge. 
+
+arXiv:1803.05457v1 .Shihan Dou, Enyu Zhou, Yan Liu, Songyang Gao, Wei Shen, Limao Xiong, Yuhao Zhou, Xiao Wang, Zhi-heng Xi, Xiaoran Fan, Shiliang Pu, Jiang Zhu, Rui Zheng, Tao Gui, Qi Zhang, and Xuanjing Huang. 2024. LoRAMoE: Alleviating world knowledge for-getting in large language models via MoE-style plu-gin. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Vol-ume 1: Long Papers) , pages 1932–1945, Bangkok, Thailand. Association for Computational Linguistics. Nan Du, Yanping Huang, Andrew M. Dai, Simon Tong, Dmitry Lepikhin, Yuanzhong Xu, Maxim Krikun, Yanqi Zhou, Adams Wei Yu, Orhan Firat, Barret Zoph, Liam Fedus, Maarten Bosma, Zongwei Zhou, Tao Wang, Yu Emma Wang, Kellie Webster, Marie Pellat, Kevin Robinson, Kathleen Meier-Hellstern, Toju Duke, Lucas Dixon, Kun Zhang, Quoc V Le, Yonghui Wu, Zhifeng Chen, and Claire Cui. 2022. Glam: Efficient scaling of language models with mixture-of-experts. Preprint , arXiv:2112.06905. William Fedus, Barret Zoph, and Noam Shazeer. 2022. Switch transformers: Scaling to trillion parameter models with simple and efficient sparsity. Preprint ,arXiv:2101.03961. Chongyang Gao, Kezhen Chen, Jinmeng Rao, Ruibo Liu, Baochen Sun, Yawen Zhang, Daiyi Peng, Xi-aoyuan Guo, and Vs Subrahmanian. 2025. MoLA: MoE LoRA with layer-wise expert allocation. In 
+
+Findings of the Association for Computational Lin-guistics: NAACL 2025 , pages 5112–5127, Albu-querque, New Mexico. Association for Computa-tional Linguistics. Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schel-ten, Alex Vaughan, Amy Yang, Angela Fan, Anirudh 
+
+9Goyal, Anthony Hartshorn, Aobo Yang, Archi Mi-tra, Archie Sravankumar, Artem Korenev, Arthur Hinsvark, Arun Rao, Aston Zhang, Aurelien Ro-driguez, Austen Gregerson, Ava Spataru, Baptiste Roziere, Bethany Biron, Binh Tang, Bobbie Chern, Charlotte Caucheteux, Chaya Nayak, Chloe Bi, Chris Marra, Chris McConnell, Christian Keller, Christophe Touret, Chunyang Wu, Corinne Wong, Cristian Canton Ferrer, Cyrus Nikolaidis, Damien Al-lonsius, Daniel Song, Danielle Pintz, Danny Livshits, Danny Wyatt, David Esiobu, Dhruv Choudhary, Dhruv Mahajan, Diego Garcia-Olano, Diego Perino, Dieuwke Hupkes, Egor Lakomkin, Ehab AlBadawy, Elina Lobanova, Emily Dinan, Eric Michael Smith, Filip Radenovic, Francisco Guzmán, Frank Zhang, Gabriel Synnaeve, Gabrielle Lee, Georgia Lewis An-derson, Govind Thattai, Graeme Nail, Gregoire Mi-alon, Guan Pang, Guillem Cucurell, Hailey Nguyen, Hannah Korevaar, Hu Xu, Hugo Touvron, Iliyan Zarov, Imanol Arrieta Ibarra, Isabel Kloumann, Is-han Misra, Ivan Evtimov, Jack Zhang, Jade Copet, Jaewon Lee, Jan Geffert, Jana Vranes, Jason Park, Jay Mahadeokar, Jeet Shah, Jelmer van der Linde, Jennifer Billock, Jenny Hong, Jenya Lee, Jeremy Fu, Jianfeng Chi, Jianyu Huang, Jiawen Liu, Jie Wang, Jiecao Yu, Joanna Bitton, Joe Spisak, Jongsoo Park, Joseph Rocca, Joshua Johnstun, Joshua Saxe, Jun-teng Jia, Kalyan Vasuden Alwala, Karthik Prasad, Kartikeya Upasani, Kate Plawiak, Ke Li, Kenneth Heafield, Kevin Stone, Khalid El-Arini, Krithika Iyer, Kshitiz Malik, Kuenley Chiu, Kunal Bhalla, Kushal Lakhotia, Lauren Rantala-Yeary, Laurens van der Maaten, Lawrence Chen, Liang Tan, Liz Jenkins, Louis Martin, Lovish Madaan, Lubo Malo, Lukas Blecher, Lukas Landzaat, Luke de Oliveira, Madeline Muzzi, Mahesh Pasupuleti, Mannat Singh, Manohar Paluri, Marcin Kardas, Maria Tsimpoukelli, Mathew Oldham, Mathieu Rita, Maya Pavlova, Melanie Kam-badur, Mike Lewis, Min Si, Mitesh Kumar Singh, Mona Hassan, Naman Goyal, Narjes Torabi, Niko-lay Bashlykov, Nikolay Bogoychev, Niladri Chatterji, Ning Zhang, Olivier Duchenne, Onur Çelebi, Patrick Alrassy, Pengchuan Zhang, Pengwei Li, Petar Va-sic, Peter Weng, Prajjwal Bhargava, Pratik Dubal, Praveen Krishnan, Punit Singh Koura, Puxin Xu, Qing He, Qingxiao Dong, Ragavan Srinivasan, Raj Ganapathy, Ramon Calderer, Ricardo Silveira Cabral, Robert Stojnic, Roberta Raileanu, Rohan Maheswari, Rohit Girdhar, Rohit Patel, Romain Sauvestre, Ron-nie Polidoro, Roshan Sumbaly, Ross Taylor, Ruan Silva, Rui Hou, Rui Wang, Saghar Hosseini, Sa-hana Chennabasappa, Sanjay Singh, Sean Bell, Seo-hyun Sonia Kim, Sergey Edunov, Shaoliang Nie, Sha-ran Narang, Sharath Raparthy, Sheng Shen, Shengye Wan, Shruti Bhosale, Shun Zhang, Simon Van-denhende, Soumya Batra, Spencer Whitman, Sten Sootla, Stephane Collot, Suchin Gururangan, Syd-ney Borodinsky, Tamar Herman, Tara Fowler, Tarek Sheasha, Thomas Georgiou, Thomas Scialom, Tobias Speckbacher, Todor Mihaylov, Tong Xiao, Ujjwal Karn, Vedanuj Goswami, Vibhor Gupta, Vignesh Ramanathan, Viktor Kerkez, Vincent Gonguet, Vir-ginie Do, Vish Vogeti, Vítor Albiero, Vladan Petro-vic, Weiwei Chu, Wenhan Xiong, Wenyin Fu, Whit-ney Meers, Xavier Martinet, Xiaodong Wang, Xi-aofang Wang, Xiaoqing Ellen Tan, Xide Xia, Xin-feng Xie, Xuchao Jia, Xuewei Wang, Yaelle Gold-schlag, Yashesh Gaur, Yasmine Babaei, Yi Wen, Yiwen Song, Yuchen Zhang, Yue Li, Yuning Mao, Zacharie Delpierre Coudert, Zheng Yan, Zhengxing Chen, Zoe Papakipos, Aaditya Singh, Aayushi Sri-vastava, Abha Jain, Adam Kelsey, Adam Shajnfeld, Adithya Gangidi, Adolfo Victoria, Ahuva Goldstand, Ajay Menon, Ajay Sharma, Alex Boesenberg, Alexei Baevski, Allie Feinstein, Amanda Kallet, Amit San-gani, Amos Teo, Anam Yunus, Andrei Lupu, An-dres Alvarado, Andrew Caples, Andrew Gu, Andrew Ho, Andrew Poulton, Andrew Ryan, Ankit Ramchan-dani, Annie Dong, Annie Franco, Anuj Goyal, Apara-jita Saraf, Arkabandhu Chowdhury, Ashley Gabriel, Ashwin Bharambe, Assaf Eisenman, Azadeh Yaz-dan, Beau James, Ben Maurer, Benjamin Leonhardi, Bernie Huang, Beth Loyd, Beto De Paola, Bhargavi Paranjape, Bing Liu, Bo Wu, Boyu Ni, Braden Han-cock, Bram Wasti, Brandon Spence, Brani Stojkovic, Brian Gamido, Britt Montalvo, Carl Parker, Carly Burton, Catalina Mejia, Ce Liu, Changhan Wang, Changkyu Kim, Chao Zhou, Chester Hu, Ching-Hsiang Chu, Chris Cai, Chris Tindal, Christoph Fe-ichtenhofer, Cynthia Gao, Damon Civin, Dana Beaty, Daniel Kreymer, Daniel Li, David Adkins, David Xu, Davide Testuggine, Delia David, Devi Parikh, Diana Liskovich, Didem Foss, Dingkang Wang, Duc Le, Dustin Holland, Edward Dowling, Eissa Jamil, Elaine Montgomery, Eleonora Presani, Emily Hahn, Emily Wood, Eric-Tuan Le, Erik Brinkman, Este-ban Arcaute, Evan Dunbar, Evan Smothers, Fei Sun, Felix Kreuk, Feng Tian, Filippos Kokkinos, Firat Ozgenel, Francesco Caggioni, Frank Kanayet, Frank Seide, Gabriela Medina Florez, Gabriella Schwarz, Gada Badeer, Georgia Swee, Gil Halpern, Grant Herman, Grigory Sizov, Guangyi, Zhang, Guna Lakshminarayanan, Hakan Inan, Hamid Shojanaz-eri, Han Zou, Hannah Wang, Hanwen Zha, Haroun Habeeb, Harrison Rudolph, Helen Suk, Henry As-pegren, Hunter Goldman, Hongyuan Zhan, Ibrahim Damlaj, Igor Molybog, Igor Tufanov, Ilias Leontiadis, Irina-Elena Veliche, Itai Gat, Jake Weissman, James Geboski, James Kohli, Janice Lam, Japhet Asher, Jean-Baptiste Gaya, Jeff Marcus, Jeff Tang, Jen-nifer Chan, Jenny Zhen, Jeremy Reizenstein, Jeremy Teboul, Jessica Zhong, Jian Jin, Jingyi Yang, Joe Cummings, Jon Carvill, Jon Shepard, Jonathan Mc-Phie, Jonathan Torres, Josh Ginsburg, Junjie Wang, Kai Wu, Kam Hou U, Karan Saxena, Kartikay Khan-delwal, Katayoun Zand, Kathy Matosich, Kaushik Veeraraghavan, Kelly Michelena, Keqian Li, Ki-ran Jagadeesh, Kun Huang, Kunal Chawla, Kyle Huang, Lailin Chen, Lakshya Garg, Lavender A, Leandro Silva, Lee Bell, Lei Zhang, Liangpeng Guo, Licheng Yu, Liron Moshkovich, Luca Wehrst-edt, Madian Khabsa, Manav Avalani, Manish Bhatt, Martynas Mankus, Matan Hasson, Matthew Lennie, Matthias Reso, Maxim Groshev, Maxim Naumov, Maya Lathi, Meghan Keneally, Miao Liu, Michael L. Seltzer, Michal Valko, Michelle Restrepo, Mihir Pa-tel, Mik Vyatskov, Mikayel Samvelyan, Mike Clark, Mike Macey, Mike Wang, Miquel Jubert Hermoso, 
+
+10 Mo Metanat, Mohammad Rastegari, Munish Bansal, Nandhini Santhanam, Natascha Parks, Natasha White, Navyata Bawa, Nayan Singhal, Nick Egebo, Nicolas Usunier, Nikhil Mehta, Nikolay Pavlovich Laptev, Ning Dong, Norman Cheng, Oleg Chernoguz, Olivia Hart, Omkar Salpekar, Ozlem Kalinli, Parkin Kent, Parth Parekh, Paul Saab, Pavan Balaji, Pe-dro Rittner, Philip Bontrager, Pierre Roux, Piotr Dollar, Polina Zvyagina, Prashant Ratanchandani, Pritish Yuvraj, Qian Liang, Rachad Alao, Rachel Rodriguez, Rafi Ayub, Raghotham Murthy, Raghu Nayani, Rahul Mitra, Rangaprabhu Parthasarathy, Raymond Li, Rebekkah Hogan, Robin Battey, Rocky Wang, Russ Howes, Ruty Rinott, Sachin Mehta, Sachin Siby, Sai Jayesh Bondu, Samyak Datta, Sara Chugh, Sara Hunt, Sargun Dhillon, Sasha Sidorov, Satadru Pan, Saurabh Mahajan, Saurabh Verma, Seiji Yamamoto, Sharadh Ramaswamy, Shaun Lind-say, Shaun Lindsay, Sheng Feng, Shenghao Lin, Shengxin Cindy Zha, Shishir Patil, Shiva Shankar, Shuqiang Zhang, Shuqiang Zhang, Sinong Wang, Sneha Agarwal, Soji Sajuyigbe, Soumith Chintala, Stephanie Max, Stephen Chen, Steve Kehoe, Steve Satterfield, Sudarshan Govindaprasad, Sumit Gupta, Summer Deng, Sungmin Cho, Sunny Virk, Suraj Subramanian, Sy Choudhury, Sydney Goldman, Tal Remez, Tamar Glaser, Tamara Best, Thilo Koehler, Thomas Robinson, Tianhe Li, Tianjun Zhang, Tim Matthews, Timothy Chou, Tzook Shaked, Varun Vontimitta, Victoria Ajayi, Victoria Montanez, Vijai Mohan, Vinay Satish Kumar, Vishal Mangla, Vlad Ionescu, Vlad Poenaru, Vlad Tiberiu Mihailescu, Vladimir Ivanov, Wei Li, Wenchen Wang, Wen-wen Jiang, Wes Bouaziz, Will Constable, Xiaocheng Tang, Xiaojian Wu, Xiaolan Wang, Xilun Wu, Xinbo Gao, Yaniv Kleinman, Yanjun Chen, Ye Hu, Ye Jia, Ye Qi, Yenda Li, Yilin Zhang, Ying Zhang, Yossi Adi, Youngjin Nam, Yu, Wang, Yu Zhao, Yuchen Hao, Yundi Qian, Yunlu Li, Yuzi He, Zach Rait, Zachary DeVito, Zef Rosnbrick, Zhaoduo Wen, Zhenyu Yang, Zhiwei Zhao, and Zhiyu Ma. 2024. The llama 3 herd of models. Preprint , arXiv:2407.21783. Zeyu Han, Chao Gao, Jinyang Liu, Jeff Zhang, and Sai Qian Zhang. 2024. Parameter-efficient fine-tuning for large models: A comprehensive survey. 
+
+Transactions on Machine Learning Research .Haoze He, Juncheng B Li, Xuan Jiang, and Heather Miller. 2025. SMT: Fine-tuning large language mod-els with sparse matrices. In The Thirteenth Interna-tional Conference on Learning Representations .Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski, Bruna Morrone, Quentin de Laroussilhe, Andrea Gesmundo, Mona Attariyan, and Sylvain Gelly. 2019. Parameter-efficient transfer learning for nlp. 
+
+Preprint , arXiv:1902.00751. Edward J Hu, yelong shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2022. LoRA: Low-rank adaptation of large language models. In International Conference on Learning Representations .Qiao Jin, Bhuwan Dhingra, Zhengping Liu, William W. Cohen, and Xinghua Lu. 2019. Pubmedqa: Adataset for biomedical research question answering. 
+
+Preprint , arXiv:1909.06146. Anastassia Kornilova and Vladimir Eidelman. 2019. BillSum: A corpus for automatic summarization of US legislation. In Proceedings of the 2nd Workshop on New Frontiers in Summarization , pages 48–56, Hong Kong, China. Association for Computational Linguistics. Aitor Lewkowycz, Anders Andreassen, David Dohan, Ethan Dyer, Henryk Michalewski, Vinay Ramasesh, Ambrose Slone, Cem Anil, Imanol Schlag, Theo Gutman-Solo, Yuhuai Wu, Behnam Neyshabur, Guy Gur-Ari, and Vedant Misra. 2022. Solving quan-titative reasoning problems with language models. 
+
+Preprint , arXiv:2206.14858. Xiang Lisa Li and Percy Liang. 2021. Prefix-tuning: Optimizing continuous prompts for gener-ation. Preprint , arXiv:2101.00190. Yixiao Li, Yifan Yu, Chen Liang, Pengcheng He, Nikos Karampatziakis, Weizhu Chen, and Tuo Zhao. 2023. Loftq: Lora-fine-tuning-aware quantization for large language models. Preprint , arXiv:2310.08659. Vladislav Lialin, Vijeta Deshpande, Xiaowei Yao, and Anna Rumshisky. 2024. Scaling down to scale up: A guide to parameter-efficient fine-tuning. Preprint ,arXiv:2303.15647. Chin-Yew Lin. 2004. ROUGE: A package for auto-matic evaluation of summaries. In Text Summariza-tion Branches Out , pages 74–81, Barcelona, Spain. Association for Computational Linguistics. Qidong Liu, Xian Wu, Xiangyu Zhao, Yuanshao Zhu, Derong Xu, Feng Tian, and Yefeng Zheng. 2024a. When moe meets llms: Parameter efficient fine-tuning for multi-task medical applications. Preprint ,arXiv:2310.18339. Shih-Yang Liu, Chien-Yi Wang, Hongxu Yin, Pavlo Molchanov, Yu-Chiang Frank Wang, Kwang-Ting Cheng, and Min-Hung Chen. 2024b. Dora: Weight-decomposed low-rank adaptation. Preprint ,arXiv:2402.09353. Ilya Loshchilov and Frank Hutter. 2017. Decou-pled weight decay regularization. arXiv preprint arXiv:1711.05101 .Lei Lu, Zhepeng Wang, Runxue Bao, Mengbing Wang, Fangyi Li, Yawen Wu, Weiwen Jiang, Jie Xu, Yanzhi Wang, and Shangqian Gao. 2024. All-in-one tun-ing and structural pruning for domain-specific llms. 
+
+Preprint , arXiv:2412.14426. Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish Sabharwal. 2018. Can a suit of armor conduct elec-tricity? a new dataset for open book question an-swering. In Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing ,
+
+11 pages 2381–2391, Brussels, Belgium. Association for Computational Linguistics. Team OLMo, Pete Walsh, Luca Soldaini, Dirk Groen-eveld, Kyle Lo, Shane Arora, Akshita Bhagia, Yul-ing Gu, Shengyi Huang, Matt Jordan, Nathan Lam-bert, Dustin Schwenk, Oyvind Tafjord, Taira An-derson, David Atkinson, Faeze Brahman, Christo-pher Clark, Pradeep Dasigi, Nouha Dziri, Allyson Ettinger, Michal Guerquin, David Heineman, Hamish Ivison, Pang Wei Koh, Jiacheng Liu, Saumya Ma-lik, William Merrill, Lester James V. Miranda, Ja-cob Morrison, Tyler Murray, Crystal Nam, Jake Poz-nanski, Valentina Pyatkin, Aman Rangapur, Michael Schmitz, Sam Skjonsberg, David Wadden, Christo-pher Wilhelm, Michael Wilson, Luke Zettlemoyer, Ali Farhadi, Noah A. Smith, and Hannaneh Hajishirzi. 2025. 2 olmo 2 furious. Preprint , arXiv:2501.00656. OpenAI, Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Ale-man, Diogo Almeida, Janko Altenschmidt, Sam Alt-man, Shyamal Anadkat, Red Avila, Igor Babuschkin, Suchir Balaji, Valerie Balcom, Paul Baltescu, Haim-ing Bao, Mohammad Bavarian, Jeff Belgum, Ir-wan Bello, Jake Berdine, Gabriel Bernadett-Shapiro, Christopher Berner, Lenny Bogdonoff, Oleg Boiko, Madelaine Boyd, Anna-Luisa Brakman, Greg Brock-man, Tim Brooks, Miles Brundage, Kevin Button, Trevor Cai, Rosie Campbell, Andrew Cann, Brittany Carey, Chelsea Carlson, Rory Carmichael, Brooke Chan, Che Chang, Fotis Chantzis, Derek Chen, Sully Chen, Ruby Chen, Jason Chen, Mark Chen, Ben Chess, Chester Cho, Casey Chu, Hyung Won Chung, Dave Cummings, Jeremiah Currier, Yunxing Dai, Cory Decareaux, Thomas Degry, Noah Deutsch, Damien Deville, Arka Dhar, David Dohan, Steve Dowling, Sheila Dunning, Adrien Ecoffet, Atty Eleti, Tyna Eloundou, David Farhi, Liam Fedus, Niko Felix, Simón Posada Fishman, Juston Forte, Isabella Ful-ford, Leo Gao, Elie Georges, Christian Gibson, Vik Goel, Tarun Gogineni, Gabriel Goh, Rapha Gontijo-Lopes, Jonathan Gordon, Morgan Grafstein, Scott Gray, Ryan Greene, Joshua Gross, Shixiang Shane Gu, Yufei Guo, Chris Hallacy, Jesse Han, Jeff Harris, Yuchen He, Mike Heaton, Johannes Heidecke, Chris Hesse, Alan Hickey, Wade Hickey, Peter Hoeschele, Brandon Houghton, Kenny Hsu, Shengli Hu, Xin Hu, Joost Huizinga, Shantanu Jain, Shawn Jain, Joanne Jang, Angela Jiang, Roger Jiang, Haozhun Jin, Denny Jin, Shino Jomoto, Billie Jonn, Hee-woo Jun, Tomer Kaftan, Łukasz Kaiser, Ali Ka-mali, Ingmar Kanitscheider, Nitish Shirish Keskar, Tabarak Khan, Logan Kilpatrick, Jong Wook Kim, Christina Kim, Yongjik Kim, Jan Hendrik Kirch-ner, Jamie Kiros, Matt Knight, Daniel Kokotajlo, Łukasz Kondraciuk, Andrew Kondrich, Aris Kon-stantinidis, Kyle Kosic, Gretchen Krueger, Vishal Kuo, Michael Lampe, Ikai Lan, Teddy Lee, Jan Leike, Jade Leung, Daniel Levy, Chak Ming Li, Rachel Lim, Molly Lin, Stephanie Lin, Mateusz Litwin, Theresa Lopez, Ryan Lowe, Patricia Lue, Anna Makanju, Kim Malfacini, Sam Manning, Todor Markov, Yaniv Markovski, Bianca Martin, Katie Mayer, Andrew Mayne, Bob McGrew, Scott Mayer McKinney, Christine McLeavey, Paul McMillan, Jake McNeil, David Medina, Aalok Mehta, Jacob Menick, Luke Metz, Andrey Mishchenko, Pamela Mishkin, Vinnie Monaco, Evan Morikawa, Daniel Mossing, Tong Mu, Mira Murati, Oleg Murk, David Mély, Ashvin Nair, Reiichiro Nakano, Rajeev Nayak, Arvind Neelakantan, Richard Ngo, Hyeonwoo Noh, Long Ouyang, Cullen O’Keefe, Jakub Pachocki, Alex Paino, Joe Palermo, Ashley Pantuliano, Giambat-tista Parascandolo, Joel Parish, Emy Parparita, Alex Passos, Mikhail Pavlov, Andrew Peng, Adam Perel-man, Filipe de Avila Belbute Peres, Michael Petrov, Henrique Ponde de Oliveira Pinto, Michael, Poko-rny, Michelle Pokrass, Vitchyr H. Pong, Tolly Pow-ell, Alethea Power, Boris Power, Elizabeth Proehl, Raul Puri, Alec Radford, Jack Rae, Aditya Ramesh, Cameron Raymond, Francis Real, Kendra Rimbach, Carl Ross, Bob Rotsted, Henri Roussez, Nick Ry-der, Mario Saltarelli, Ted Sanders, Shibani Santurkar, Girish Sastry, Heather Schmidt, David Schnurr, John Schulman, Daniel Selsam, Kyla Sheppard, Toki Sherbakov, Jessica Shieh, Sarah Shoker, Pranav Shyam, Szymon Sidor, Eric Sigler, Maddie Simens, Jordan Sitkin, Katarina Slama, Ian Sohl, Benjamin Sokolowsky, Yang Song, Natalie Staudacher, Fe-lipe Petroski Such, Natalie Summers, Ilya Sutskever, Jie Tang, Nikolas Tezak, Madeleine B. Thompson, Phil Tillet, Amin Tootoonchian, Elizabeth Tseng, Preston Tuggle, Nick Turley, Jerry Tworek, Juan Fe-lipe Cerón Uribe, Andrea Vallone, Arun Vijayvergiya, Chelsea Voss, Carroll Wainwright, Justin Jay Wang, Alvin Wang, Ben Wang, Jonathan Ward, Jason Wei, CJ Weinmann, Akila Welihinda, Peter Welinder, Ji-ayi Weng, Lilian Weng, Matt Wiethoff, Dave Willner, Clemens Winter, Samuel Wolrich, Hannah Wong, Lauren Workman, Sherwin Wu, Jeff Wu, Michael Wu, Kai Xiao, Tao Xu, Sarah Yoo, Kevin Yu, Qim-ing Yuan, Wojciech Zaremba, Rowan Zellers, Chong Zhang, Marvin Zhang, Shengjia Zhao, Tianhao Zheng, Juntang Zhuang, William Zhuk, and Bar-ret Zoph. 2024. Gpt-4 technical report. Preprint ,arXiv:2303.08774. Jonas Pfeiffer, Aishwarya Kamath, Andreas Rücklé, Kyunghyun Cho, and Iryna Gurevych. 2021. Adapterfusion: Non-destructive task composition for transfer learning. Preprint , arXiv:2005.00247. Alexey Romanov and Chaitanya Shivade. 2018. Lessons from natural language inference in the clini-cal domain. In Proceedings of the 2018 Conference on Empirical Methods in Natural Language Process-ing , pages 1586–1596, Brussels, Belgium. Associa-tion for Computational Linguistics. Baptiste Rozière, Jonas Gehring, Fabian Gloeckle, Sten Sootla, Itai Gat, Xiaoqing Ellen Tan, Yossi Adi, Jingyu Liu, Romain Sauvestre, Tal Remez, Jérémy Rapin, Artyom Kozhevnikov, Ivan Evtimov, Joanna Bitton, Manish Bhatt, Cristian Canton Ferrer, Aaron Grattafiori, Wenhan Xiong, Alexandre Défossez, Jade Copet, Faisal Azhar, Hugo Touvron, Louis Mar-tin, Nicolas Usunier, Thomas Scialom, and Gabriel 
+
+12 Synnaeve. 2024. Code llama: Open foundation mod-els for code. Preprint , arXiv:2308.12950. Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavat-ula, and Yejin Choi. 2019. Winogrande: An adver-sarial winograd schema challenge at scale. Preprint ,arXiv:1907.10641. Maarten Sap, Hannah Rashkin, Derek Chen, Ronan Le Bras, and Yejin Choi. 2019. Social IQa: Com-monsense reasoning about social interactions. In 
+
+Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Lan-guage Processing (EMNLP-IJCNLP) , pages 4463– 4473, Hong Kong, China. Association for Computa-tional Linguistics. Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le, Geoffrey Hinton, and Jeff Dean. 2017. Outrageously large neural net-works: The sparsely-gated mixture-of-experts layer. 
+
+Preprint , arXiv:1701.06538. Chunlin Tian, Zhan Shi, Zhijiang Guo, Li Li, and Chengzhong Xu. 2024. Hydralora: An asymmetric lora architecture for efficient fine-tuning. Preprint ,arXiv:2404.19245. Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothée Lacroix, Baptiste Rozière, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. 2023a. Llama: Open and efficient foundation language models. Preprint ,arXiv:2302.13971. Hugo Touvron, Louis Martin, Kevin Stone, Peter Al-bert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, Dan Bikel, Lukas Blecher, Cristian Canton Ferrer, Moya Chen, Guillem Cucurull, David Esiobu, Jude Fernandes, Jeremy Fu, Wenyin Fu, Brian Fuller, Cynthia Gao, Vedanuj Goswami, Naman Goyal, An-thony Hartshorn, Saghar Hosseini, Rui Hou, Hakan Inan, Marcin Kardas, Viktor Kerkez, Madian Khabsa, Isabel Kloumann, Artem Korenev, Punit Singh Koura, Marie-Anne Lachaux, Thibaut Lavril, Jenya Lee, Di-ana Liskovich, Yinghai Lu, Yuning Mao, Xavier Mar-tinet, Todor Mihaylov, Pushkar Mishra, Igor Moly-bog, Yixin Nie, Andrew Poulton, Jeremy Reizen-stein, Rashi Rungta, Kalyan Saladi, Alan Schelten, Ruan Silva, Eric Michael Smith, Ranjan Subrama-nian, Xiaoqing Ellen Tan, Binh Tang, Ross Tay-lor, Adina Williams, Jian Xiang Kuan, Puxin Xu, Zheng Yan, Iliyan Zarov, Yuchen Zhang, Angela Fan, Melanie Kambadur, Sharan Narang, Aurelien Ro-driguez, Robert Stojnic, Sergey Edunov, and Thomas Scialom. 2023b. Llama 2: Open foundation and fine-tuned chat models. Preprint , arXiv:2307.09288. An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Dayi-heng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jing Zhou, Jingren Zhou, Junyang Lin, Kai Dang, Keqin Bao, Kexin Yang, Le Yu, Lianghao Deng, Mei Li, Mingfeng Xue, Mingze Li, Pei Zhang, Peng Wang, Qin Zhu, Rui Men, Ruize Gao, Shixuan Liu, Shuang Luo, Tianhao Li, Tianyi Tang, Wenbiao Yin, Xingzhang Ren, Xinyu Wang, Xinyu Zhang, Xu-ancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yinger Zhang, Yu Wan, Yuqiong Liu, Zekun Wang, Zeyu Cui, Zhenru Zhang, Zhipeng Zhou, and Zi-han Qiu. 2025. Qwen3 technical report. Preprint ,arXiv:2505.09388. Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. 2019. Hellaswag: Can a machine really finish your sentence? Preprint ,arXiv:1905.07830. Qingru Zhang, Minshuo Chen, Alexander Bukharin, Nikos Karampatziakis, Pengcheng He, Yu Cheng, Weizhu Chen, and Tuo Zhao. 2023. Adalora: Adap-tive budget allocation for parameter-efficient fine-tuning. Preprint , arXiv:2303.10512. Yanzhao Zhang, Mingxin Li, Dingkun Long, Xin Zhang, Huan Lin, Baosong Yang, Pengjun Xie, An Yang, Dayiheng Liu, Junyang Lin, Fei Huang, and Jingren Zhou. 2025. Qwen3 embedding: Advancing text embedding and reranking through foundation models. 
+
+Preprint , arXiv:2506.05176. 
+
+13 Method MedNLI BillSum HQS PubMedQA Avg. Acc. R-L R-L Acc. Top-1 0.8924 0.3838 0.3154 0.7460 0.5844 Top-2 + shared 0.8924 0.3824 0.3138 0.7420 0.5827 Top-2 0.8952 0.3861 0.3113 0.7580 0.5877 
+
+> Table 6: Ablation study on routing design choices.
+
+A Implementation Details 
+
+We keep the backbone LLM frozen for all PEFT methods and update only the adapter-related param-eters. Unless otherwise specified, all methods are trained for 3 epochs with AdamW (Loshchilov and Hutter, 2017), a learning rate of 2 × 10 −4, cosine learning-rate decay, and the Alpaca prompt format. For static PEFT baselines, including LoRA, DoRA, and SMT, we follow the experimental setup of SMT for training-related hyperparame-ters, including the learning rate, number of epochs, warmup steps, scheduler, and prompt format. We keep each method’s adaptation modules consistent with the SMT setting whenever applicable: LoRA and DoRA are applied to the Q/K/V/O attention projections and the Gate/Up/Down feed-forward projections, while SMT is applied to the Q/K/V attention projections. For the MoE-LoRA and MoLA baselines, we generally follow the hyperparameter settings used in their original papers and keep the implementa-tion consistent with their routing designs. Specif-ically, MoE-LoRA uses N =4 LoRA experts with rank r=32 and a task-conditioned soft mixture, while MoLA uses N =8 LoRA experts with rank 
+
+r=32 and token-level top-k routing with k=2 .Both baselines are applied to the Q/K/V/O attention projections and the Gate/Up/Down feed-forward projections. 
+
+B Ablation Study on Routing Design Choices 
+
+We ablate two routing design choices in MoEGen: the number of activated experts and the use of an always-on shared expert. All variants are evaluated on the cross-domain joint benchmark with LLaMA-2-13B as the backbone, following the same training setup as Section 4.3. They use LoRA rank r=64 ,scaling factor α=128 , expert dimension 32 , and 
+
+3 epochs of supervised fine-tuning. The variants differ only in the routing strategy. Table 6 shows that top-2 routing achieves the best overall performance, improving the average score from 0.5844 to 0.5877 over top-1 routing. The gains on MedNLI, BillSum, and PubMedQA suggest that combining two routed expert codes provides a more flexible adaptation space than se-lecting a single expert. HQS is the only excep-tion, where top-1 routing gives a slightly higher ROUGE-L score, possibly because its summariza-tion format is more constrained and benefits from stronger routing sparsity. Adding an always-on shared expert does not im-prove performance. Compared with standard top-2 routing, the shared-expert variant reduces the av-erage score from 0.5877 to 0.5827 , with drops on BillSum, HQS, and PubMedQA. This suggests that, under a fixed parameter budget, the shared expert may absorb part of the learning signal and weaken the specialization of routed experts. Therefore, we use top-2 routing without a shared expert as the default configuration. 
+
+C Additional Qualitative Study 
+
+We provide two additional BillSum predictions in Table 8, drawn from the same joint cross-domain training run as Table 7. The two examples illustrate distinct failure modes of the static LoRA-based baselines on legal long-document inputs: collapse into a repetitive “subsection X does not apply” loop in Example 1, and emission of mid-clause rules-of-the-House boilerplate in Example 2. In both cases MoEGen opens with the act name followed by “Amends . . . to. . . ”—the canonical BillSum register—and enumerates the substantive actions present in the reference. None of these behaviors require extra parameters: MoEGen uses fewer train-able parameters than LoRA and MoLA and roughly the same as MoE-LoRA in Table 2, so the differ-ence is attributable to the input-conditioned param-eterization rather than to capacity. In particular, MoLA uses more than twice as many trainable parameters as MoEGen yet exhibits the same quali-tative failures as the other two static baselines on these inputs. We further evaluate the inference cost of MoE-Gen on the cross-domain joint benchmark. Table 5 reports the per-sample latency of each method us-ing LLaMA-2-13B on a single B200 GPU with batch size 32. MoEGen introduces an input-dependent routing and generation cost, but the over-head remains small on longer-generation tasks. The largest relative gap appears on MedNLI, where the output is very short and the fixed routing cost is 14 Figure 4: Training Loss Example. Table 7: Qualitative example on BillSum ( Heavy Truck Tax Fairness Act of 2010 ). 
+
+Method Predicted summary 
+
+Reference Heavy Truck Tax Fairness Act of 2010 - Amends the Internal Revenue Code to: (1) repeal the excise tax on heavy trucks and trailers sold at retail; (2) increase the rate of tax on diesel fuel or kerosene to 31.6 cents per gallon; and (3) impose a floor stocks tax with respect to certain taxable fuels. LoRA und of such tax is not allowable under section 6427(e) of the Internal Revenue Code of 1986. 
+
+MoE-LoRA und of such tax is allowable under section 6427 of the Internal Revenue Code of 1986. 
+
+MoLA und of such tax is allowable under section 6427 of the Internal Revenue Code of 1986. 
+
+MoEGen (Ours) Heavy Truck Tax Fairness Act of 2010 - Amends the Internal Revenue Code to repeal the excise tax on heavy trucks and trailers. Increases the tax on diesel fuel and kerosene. Imposes a floor stocks tax on any taxable liquid held on the enactment date by any person. 
+
+less amortized. As the generation length increases, this gap becomes much smaller: MoEGen is only 9.1% slower than LoRA on HQS, 8.1% slower on PubMedQA, and 4.1% slower on BillSum. It also remains substantially faster than MoLA on the longer-generation tasks. 15 Table 8: Additional BillSum qualitative examples illustrating two distinct failure modes of the static LoRA-based baselines: a repetitive-loop failure on the Comprehensive Immunosuppressive Drug Coverage Act (top) and a mid-clause-boilerplate failure on the Federal Election Law Reform Commission Act (bottom). All methods are trained jointly on the cross-domain mixture (MedNLI, PubMedQA, HQS, BillSum) with Llama-2-13B. 
+
+Method R-L Predicted summary 
+
+Example 1: Comprehensive Immunosuppressive Drug Coverage Act (repetitive-loop failure). 
+
+Reference – Comprehensive Immunosuppressive Drug Coverage for Kidney Transplant Patients Act of 2016. This bill amends titles II and XVIII (Medicare) of the Social Security Act to indefinitely extend Medicare coverage of immunosuppressive drugs for kidney transplant recipients. Under current law, such coverage is limited to 36 months following a transplant. LoRA 0.182 (c) of this section shall apply to such an individual in the same manner as they apply to an individual who is entitled to benefits under part A. 
+
+MoE-LoRA 0.047 (c) of this section shall not apply to such an individual. The provisions of subsection (d) of this section shall not apply to such an individual. . . The provisions of subsection (e) of this section shall not apply to such an individual. . . (the pattern repeats for subsections (f), (g), . . . ) MoLA 0.069 (c) shall apply to such individual’s coverage period in the same manner as they apply to the coverage period of an individual who is entitled to benefits under part A. The provisions of subsection (d) shall apply to such individual’s coverage period. . . The provisions of subsection (e) shall apply. . . (the pattern repeats for subsections (f), (g), . . . ) 
+
+MoEGen (Ours) 0.571 Comprehensive Immunosuppressive Drug Coverage for Kidney Transplant Patients Act of 2016. This bill amends title XVIII (Medicare) of the Social Security Act to re-quire the Medicare program to provide immunosuppressive drug coverage for kidney transplant recipients. The bill also requires the program to provide immunosuppres-sive drug coverage for individuals whose entitlement to Medicare Part A hospital insurance benefits has ended by reason of the 36-month limit on such benefits. 
+
+Example 2: Federal Election Law Reform Commission Act (mid-clause-boilerplate failure). 
+
+Reference – Federal Election Law Reform Commission Act - Establishes the Federal Election Law Reform Commission to recommend Federal election law reform. Requires a Federal election bill to be introduced in the House and the Senate within a specified time of the Commission’s submittal of draft legislation. Authorizes appropriations. LoRA 0.135 . . . be considered as part of the rules of each House, respectively, and such rules shall supersede other rules only to the extent that they are inconsistent therewith. 
+
+MoE-LoRA 0.135 . . . be considered as part of the rules of each House, respectively, and such rules shall supersede other rules only to the extent that they are inconsistent therewith. 
+
+MoLA 0.139 . . . be considered a part of the rules of each House, respectively, and shall supersede other rules only to the extent that they are inconsistent therewith. 
+
+MoEGen (Ours) 0.522 Federal Election Law Reform Commission Act - Establishes the Federal Election Law Reform Commission to study and recommend reforms in Federal election laws. 
+
+16

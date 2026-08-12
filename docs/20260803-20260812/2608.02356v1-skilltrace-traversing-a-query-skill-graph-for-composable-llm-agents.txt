@@ -1,0 +1,411 @@
+Title: SkillTrace: Traversing a Query-Skill Graph for Composable LLM Agents
+
+URL Source: https://arxiv.org/pdf/2608.02356v1
+
+Published Time: Tue, 04 Aug 2026 02:34:36 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# SkillTrace: Traversing a Query–Skill Graph for Composable LLM Agents 
+
+## Yue Yao 1, Shengyuan Wang 2, Xin Chen 1, Minke Zhang 1, Jia He 1, Bingjun Luo 3∗, Tom Gedeon 4
+
+> 1
+
+Shandong University, 
+
+> 2
+
+The Australian National University, 
+
+> 3
+
+Tsinghua University, 
+
+> 4
+
+Curtin University 
+
+Abstract 
+
+Large language model agents increasingly solve complex tasks by composing reusable skills from a library. To address this, the key challenge is not merely to retrieve individually relevant skills, but to identify a complete and executable skill compo-sition. In this paper, we argue that this problem can be solved in a graph with three levels: compositional relations among skill queries, similarity between queries and candidates in the skill library, and the dependencies among the selected can-didates. We introduce SkillTrace, which organizes the user query into a semantic hierarchy, matches skill queries and candidates, and propagates over the skill dependencies. Exper-iments on SkillsBench and ALFWorld demonstrate that Skill-Trace achieves state-of-the-art performance, reaching a suc-cess rate of 53.17% on SkillsBench and 91.43% on ALFWorld. SkillTrace also delivers consistent improvements across differ-ent backbone language models, demonstrating the generality and robustness of graph-based skill retrieval. 
+
+## Introduction 
+
+Large language model agents have shown increasing promise in solving complex tasks through reasoning, planning, and in-teraction with external environments. A growing line of work equips these agents with reusable skills, where each skill en-capsulates a task-specific capability, executable procedure, or tool-use routine that can be invoked when needed (Wang et al. 2023). For example, SkillsBench represents skills as structured packages of procedural knowledge, including in-structions, scripts, and resources for completing expertise-intensive workflows (Li et al. 2026c). ToolBench evaluates API-based capabilities, where an agent must select appropri-ate tools and compose them into a valid sequence of calls to fulfill single- or multi-tool instructions (Qin et al. 2023). In embodied environments such as ALFWorld, reusable ca-pabilities can take the form of high-level policies (Shridhar et al. 2020). Despite their different forms, these benchmarks share a common requirement: an agent is required to identify and coordinate the capabilities needed to complete a complex task. Unlike conventional information retrieval (Karpukhin et al. 2020), retrieval-augmented generation (Lewis et al. 2020), and tool selection (Patil et al. 2024; Qin et al. 2023), composable skill retrieval requires identifying a coherent set of skills that jointly enable task execution. This set-ting introduces three key challenges. First, a complex user 
+
+> ∗
+
+Corresponding author. Copyright © 2027, Association for the Advancement of Artificial Intelligence (www.aaai.org). All rights reserved. Q1: research paper S3 
+
+Search w./o. Dependency Query-Skill Graph    
+
+> S1 S2 S3
+> Query
+> S5 S1 S4
+> create PPT from research paper S2 ✓
+> S5
+> ✓
+> S4
+> ✓
+
+× Skill Definitions 
+
+> S3 S1 S2 S5 S4
+> Paper Analysis Content Planning Slide Generation Layout Optimization Quality Verification
+> Q2: create PPT
+
+Figure 1: Motivation. We argue that independent skill re-trieval may overlook skill dependencies, while SkillTrace connects atomic queries and skills through a query–skill graph, enabling dependency-aware traversal to retrieve a composable skill set. query should be decomposed into atomic skill queries while preserving their compositional relations. Second, matching skill queries to candidate skills requires both semantic align-ment in task functionality and compatibility between their in-put–output specifications. Third, the selected skills should be completed according to their dependencies, since prerequi-site or complementary skills may not be explicitly specified in the original query. These challenges motivate a unified graph formulation that jointly models relations among skill queries, connections between skill queries and candidate skills, and dependencies among skills. In this paper, we argue that this challenge can be naturally formulated as graph search. As shown in Fig. 1, specifically, according to the challenge mentioned above, skill retrieval also involves three levels of relations. First, a complex query can be decomposed into finer-grained skill queries that are compositionally related to one another. These relations pre-serve how atomic requirements jointly constitute the original task. Second, each skill query is semantically connected to candidate skills in the library, reflecting which skill can best fulfill a particular requirement. Third, candidate skills are themselves connected through dependency relations, since executing one skill may require prerequisite or complemen-tary skills that are not explicitly mentioned in the user query. Together, these relations form a Query–Skill Graph that con-nects the internal structure of the query with the organization of the skill library. Searching this graph provides a principled arXiv:2608.02356v1 [cs.AI] 3 Aug 2026 way to move beyond isolated semantic retrieval and identify a coherent skill composition. We evaluate SkillTrace on two well-established bench-marks, i.e. , SkillsBench (Li et al. 2026c) and ALF-World (Shridhar et al. 2020), covering cross-domain proce-dural task solving and embodied multi-step interaction. Skill-Trace achieves state-of-the-art performance on both bench-marks, reaching 53.17% success rate on SkillsBench and 91.43% success rate on ALFWorld. It also consistently im-proves different backbone language models, demonstrating the generality of the proposed Query–Skill Graph formu-lation. These results further validate the benefit of explic-itly structuring skill retrieval as a graph, which enables the agent to jointly exploit query composition, query–skill cor-respondence, and inter-skill dependencies when identifying executable skill compositions. 
+
+## Related Work 
+
+Composable skills for LLM agents. LLM agents increas-ingly rely on reusable skills to solve complex tasks. A skill packages procedural knowledge for a specific capability. It may include instructions, executable scripts, reference mate-rials, and task-solving routines. Skills can be reused across tasks rather than generated from scratch for each request. More importantly, complex tasks often require several skills to work together. These skills may cover different subtasks, depend on one another, or need to be applied in a particular order. Effective skill augmentation therefore requires more than retrieving a single relevant skill. The agent needs to identify a suitable skill set and use its members coherently during execution. SkillsBench shows that skill utility varies across tasks and that poorly matched skills can reduce agent performance (Li et al. 2026c). SRA-Bench further divides skill augmentation into retrieval, incorporation, and execu-tion, showing that successful retrieval does not guarantee successful use (Su et al. 2026). Skills in the Wild studies large and noisy skill repositories, where distractors and overly gen-eral skills make suitable capabilities harder to identify and combine (Liu et al. 2026b). 
+
+Skill retrieval methods. As skill libraries grow, placing all available skills in the prompt becomes increasingly ineffec-tive. Recent methods therefore retrieve a compact set of task-relevant skills before execution. SkillRet improves query– skill matching through retrieval-specific training, while Skill-Router adopts a retrieve-and-rerank pipeline that considers more complete skill content (Cho, Kang, and Kim 2026; Zheng et al. 2026). However, these methods largely score skills as independent candidates and return a ranked top-k
+
+list. Such a list can identify individually relevant skills, but it cannot determine whether they depend on one another, conflict with each other, provide redundant functionality, or require a specific execution order. To move beyond inde-pendent skill ranking, graph-based methods explicitly model relations among skills. SkillNet organizes skills with an on-tology and a relation graph, while AgentSkillOS retrieves skills through a capability tree and composes them into task-specific directed acyclic graphs (Liang et al. 2026; Li et al. 2026a). Graph-of-Skills further uses graph propagation to ex-pand initially relevant skills with their prerequisites (Liu et al. 2026a). SkillGraph and SkillDAG incorporate execution ex-perience to update skill nodes and relations (Li et al. 2026b; Bai et al. 2026). Nevertheless, constructing a skill graph does not directly determine which connected skills should be se-lected together for a specific task. Existing methods often rely on fixed propagation, predefined update rules, or LLM-based orchestration, rather than jointly learning a task-specific exe-cutable subgraph under dependency and context-budget con-straints. 
+
+## Method 
+
+Problem Definition 
+
+Our goal is to retrieve a set of skills from the skill library for a given complex query, ensuring that the selected skills cover the query requirements and include the dependencies needed for successful execution. This approach enables an LLM agent to complete the target task with a complete and executable skill composition. In order to retrieve the desired skill set effectively, we propose the SkillTrace framework. Given a user query x and a skill library S = {s1, . . . , s M },our goal is to retrieve a subset of skills that can be composed to accomplish the task specified by x. Let selected skill subset 
+
+S′ ⊆ S , and let R(x, S′) measure the resulting task success rate. The objective of composable skill retrieval is formulated as 
+
+S∗ 
+
+> x
+
+= arg max 
+
+> S′⊆S
+
+R (x, S′) . (1) Unlike independent skill retrieval, the utility of a skill sub-set is determined jointly by its constituent skills. The selected skills should collectively cover the requirements of the query, match the corresponding task content and input-output spec-ifications, and include the dependencies required for execu-tion. Importantly, retrieving more skills does not necessarily improve task performance, since irrelevant, redundant, or in-compatible skills may interfere with skill composition and agent execution. Directly optimizing Eq. (1) is usually not practical as eval-uating a candidate skill composition requires executing the complete downstream task, which is often time-consuming and computationally expensive. Moreover, task performance can be observed only after execution and generally provides no tractable differentiable objective for directly optimizing the discrete skill subset. Exhaustively evaluating possible skill combinations is also infeasible as the search space ( i.e. ,skill library size) grows exponentially with the size of the skill library. We therefore formulate composable skill re-trieval as a structured search problem and develop SkillTrace to efficiently identify promising skill compositions without repeatedly executing the downstream task. 
+
+Query-Skill Graph Construction. 
+
+As shown in Fig. 2, SkillTrace instead addresses this objec-tive through a structured graph traversal process. Given an input query x and a skill library S, SkillTrace first decom-poses x into atomic skill queries, then identifies a primary skill for each atomic requirement through query–skill assign-ment, and finally traverses the dependencies among skills to atomic skill queries                             
+
+> Q1 Extract paper content (PDF → text)
+> Q2 Summarize method section (text → summary)
+> Q3 Extract experimental results (text → result summary)
+> Q4 Create presentation outline (summary → outline)
+> Q5 Generate slides from outline (outline → slides)
+> bipartite query-skill match
+> S1 PDF parsing
+> S2 OCR parsing
+> S3 summarization
+> S4 key point extraction
+> S5 outline planning
+> S6 slide generation
+> S7 visualization
+> S8 verification
+> S9 citation checking table/figure extraction
+> ... ... ... ... ... Q1 Q2 Q3 Q4 Q5 S10
+> Query
+> Summarize a research paper and generate presentation slides. Research presentation task Understand paper Create slides PDF → text method text → summary experiment text → results summary → outline outline → slides
+> hierarchical query decomposition
+> skill subgraph
+> S1 S2 S5 S3 S4 S6 S7 S8 S9 S10
+> personalized pagerank
+> S1 S2 S5 S3 S4 S6 S7 S8 S9 S10
+> skill library
+> selection constraints retrieved relevant skill bundle
+> S8
+> S1 S3 S4 S5 S6 S1 S4 S5 S6
+> S1 S5 S6
+
+Figure 2: Overview of SkillTrace with an intuitive example. SkillTrace decomposes a complex query into atomic skill queries, performs bipartite query–skill matching to identify seed skills, and traverses the skill subgraph with personalized PageRank and selection constraints to retrieve a composable skill bundle. retrieve the supporting skills required for execution. We or-ganize these relations into a Query-Skill Graph: 
+
+Gx, S = Tx ∪ B x, S ∪ D S , (2) with Tx, Bx, S , and DS being the hierarchical query tree, the query-skill bipartite graph, and the skill dependency graph, respectively. Here, Tx is determined by the input query x,
+
+Bx, S jointly depends on the query x and the skill library S,and DS represents the global dependency structure defined over S.
+
+Hierarchical query tree. Given an input query x, we prompt a language model pθ to organize its requirements into a hierarchical semantic tree. Formally, the tree is gener-ated by 
+
+Tx ∼ pθ (T | x, p atom ) , (3) where patom is the atomic decomposition prompt that speci-fies the output schema and the atomicity constraints. Internal nodes represent higher-level actions that group related re-quirements, whereas each leaf represents a self-contained atomic skill query. The atomic skill query set is obtained as 
+
+Ax = Leaf ( Tx) . Each atomic skill query specifies one task requirement, its input and output types, and a rationale for why it can be primarily fulfilled by one skill. The prompt requires each leaf to describe exactly one input–output trans-formation, prohibits decomposition below the skill level, and prevents the introduction of requirements absent from the original query. 
+
+Query-Skill bipartite graph. Given the atomic skill queries Ax and the skill library S, SkillTrace constructs a weighted query–skill bipartite graph 
+
+Bx, S =  Ax, S, EBx, S , WBx, S
+
+ , (4) where Ax and S are two disjoint node sets, EBx, S ⊆ A x × S 
+
+denotes the query–skill edges, and WBx, S denotes their se-mantic compatibility scores. Specifically, the edge weight between an atomic skill query qi ∈ A x and a skill sj ∈ S 
+
+is defined as wij = sim ( fQ(qi), f S (sj )) , where fQ(·) and 
+
+fS (·) encode atomic skill queries and skills into a shared rep-resentation space, respectively, and sim( ·, ·) denotes cosine similarity. Since each atomic skill query is designed to be fulfilled by one primary skill, SkillTrace selects the highest-scoring skill for each query: 
+
+s∗ 
+
+> i
+
+= argmax  
+
+> sj∈S
+
+wij , qi ∈ A x. (5) The resulting primary skill set is Px, S = {s∗ 
+
+> i
+
+| qi ∈ A x}.These primary skills directly address the atomic require-ments represented by the leaf nodes of Tx and serve as seed nodes for subsequent dependency-aware traversal over the skill graph. SkillTrace then performs maximum-weight bipartite matching over Bx, S to identify the primary skills. The match-ing maximizes the total semantic compatibility of the se-lected query–skill edges, subject to the constraint that each atomic skill query is matched with exactly one skill and each skill is matched with at most one atomic skill query. This one-to-one constraint prevents multiple atomic queries from selecting the same skill and encourages the matched skills to jointly cover the distinct atomic requirements of the input query. The skills incident to the matched edges constitute the primary skill set Px, S . These primary skills directly address the atomic requirements represented by the leaf nodes of Tx
+
+and serve as seed nodes for subsequent dependency-aware traversal over the skill graph. 
+
+Skill dependency subgraph. Primary-skill assignment alone may not produce an executable skill composition be-cause a selected skill can require additional prerequisite or supporting skills. We therefore organize the skill library as a directed skill dependency graph: 
+
+DS =  S, ED 
+
+> S
+
+, WD
+
+> S
+
+ , (6) where S denotes the skill-node set, ED 
+
+> S
+
+⊆ S × S de-notes the directed dependency-edge set, and WD 
+
+> S
+
+contains the corresponding dependency weights. A directed edge 
+
+(si, s j ) ∈ E D 
+
+> S
+
+indicates that executing skill si requires the capability, state, or output provided by skill sj .A directed edge (si, s j ) ∈ E D 
+
+> S
+
+indicates that the output of skill si can be consumed by skill sj . The dependency edges and their weights are defined as 
+
+wDij = overlap ( Oi, Ij ) ,
+
+ED 
+
+> S
+
+= (si, s j ) | wDij ≥ δD , (7) where Oi and Ij denote the output and input schema of skills 
+
+si and sj , respectively. Overlap function measures whether input and output are matched. 
+
+Skill augmentation. SkillTrace follows the Reverse Per-sonalized PageRank (ReversePPR) paradigm (Yang et al. 2024) to augment the primary skill set with structurally rele-vant supporting skills. Specifically, we treat Px, S as person-alized seed nodes and propagate their relevance through the skill dependency graph. The query–skill matching scores of the primary skills are normalized to form the personalization vector p, whose nonzero entries correspond to Px, S .Let AD denote the weighted adjacency matrix of DS ,where ADij = wDij if (si, s j ) ∈ E D 
+
+> S
+
+, and ADij = 0 otherwise. Since a dependency edge is directed from a supporting skill to the skill that consumes its output, we additionally include reverse transitions to propagate relevance from a primary skill toward its prerequisites. The resulting reverse-aware PPR process is 
+
+TD = RowNorm  AD + ( AD )⊤ ,
+
+r(t+1) = αp + (1 − α)( TD )⊤r(t). (8) Here, RowNorm( ·) denotes row normalization, TD is the reverse-aware dependency transition matrix, and r(t) is the skill relevance vector at iteration t, initialized as r(0) = p.Algorithm 1: SkillTrace for Composable Skill Retrieval  
+
+> 1:
+
+Input: query x, skill library S, dependency threshold 
+
+δD , number of supporting skills K, and restart probabil-ity α. 
+
+> 2:
+
+Begin:  
+
+> 3:
+
+DS ← (S, ∅, ∅) ▷ dependency graph init.  
+
+> 4:
+
+for each ordered pair (si, s j ) ∈ S × S do  
+
+> 5:
+
+wDij ← overlap( Oi, Ij ) 
+
+> 6:
+
+if wDij ≥ δD then  
+
+> 7:
+
+Add (si, s j , w Dij ) to DS 
+
+> 8:
+
+end if  
+
+> 9:
+
+end for ▷ dependency construction  
+
+> 10:
+
+Tx ∼ pθ (T | x, p atom ), Ax ← Leaf( Tx) ▷ query decomposition  
+
+> 11:
+
+Bx, S ← { wij = sim( fQ(qi), f S (sj )) } ▷ query–skill graph  
+
+> 12:
+
+σ∗ ← Hungarian( Bx, S ) ▷ primary matching  
+
+> 13:
+
+Px, S ← { sσ∗(i) | qi ∈ A x} 
+
+> 14:
+
+p ← Normalize( {wi,σ ∗(i)}) ▷ seed initialization  
+
+> 15:
+
+r∗ ← ReversePPR( DS , p, α ) ▷ dependency propagation  
+
+> 16:
+
+S∗ 
+
+> x
+
+← P x, S ∪ TopK S\P x, S (r∗) ▷ skill augmentation  
+
+> 17:
+
+return S∗
+
+> x
+
+The restart probability α ∈ (0 , 1) controls the balance be-tween retaining relevance on the primary skills and propa-gating it through their dependency neighborhoods. The it-eration continues until convergence, yielding the stationary relevance vector r∗.Finally, SkillTrace retains the primary skills and augments them with the K highest-scoring supporting skills: 
+
+S∗ 
+
+> x
+
+= Px, S ∪ TopK si∈S\P x, S (r∗ 
+
+> i
+
+) , (9) where K specifies the maximum number of supporting skills added through dependency-aware propagation. Algorithm 1 summarizes the complete traversal of the Query-Skill Graph. Overall, SkillTrace first traverses query composition through Tx, then resolves query–skill corre-spondence through global bipartite matching on Bx, and fi-nally recovers execution dependencies through reverse-aware propagation on GS . This staged traversal converts a complex query into a query-aligned and dependency-aware skill com-position. 
+
+## Experiment 
+
+We evaluate whether traversing the Query-Skill Graph im-proves task performance, skill retrieval quality, and execution efficiency compared with full-library access and existing skill retrieval methods. 
+
+Experiment Setup 
+
+Benchmarks. We evaluate SkillTrace on two benchmarks, SkillsBench (Li et al. 2026c) and ALFWorld (Shridhar et al. 2020). SkillsBench contains expertise-intensive technical tasks spanning eight domains, with skills represented as structured packages of instructions, scripts, templates, and Table 1: Main results on SkillsBench and ALFWorld. We show the superiority of SkillTrace over existing methods. Core, Extended, and Extreme are the three subsets divided in SkillsBench, while Easy, Medium, and Hard group ALFWorld tasks according to the number of required atomic skills. Category columns report the number of successful tasks, and SR reports the overall success rate (%) on SkillsBench or ALFWorld. The best and second-best results in each column are highlighted in dark green and light green, respectively.                                                  
+
+> Method SkillsBench ALFWorld
+> Core Extended Extreme SR (%) Easy Medium Hard SR (%) Vanilla Skills 217 10 36.69 38 68 20 90.00 Vector Skills 422 10 42.12 37 65 21 87.86 SkillDAG (Bai et al. 2026) 320 12 41.38 37 68 21 90.00 GoS (Liu et al. 2026a) 324 12 46.49 36 66 19 86.43 SkillTrace 526 13 53.17 39 68 21 91.43
+
+reference materials (Li et al. 2026c). Many tasks require multiple skills to be identified and combined into a complete workflow. We conduct experiments on its Core, Extended, and Extreme subsets. ALFWorld is a text-based embodied benchmark, and we evaluate 140 tasks from its development in-distribution split. These tasks involve multi-step house-hold interactions, including navigation, object search, and object manipulation (Shridhar et al. 2020). For analysis, we stratify the 140 ALFWorld episodes by the number of atomic skill queries identified through hierarchical query decom-position. We use this number as a proxy for compositional difficulty: more atomic skill queries indicate that a task con-tains more distinct requirements and therefore requires the agent to retrieve, coordinate, and execute a larger set of skills. Accordingly, episodes with one atomic skill query are cat-egorized as Easy (43 episodes), those with two as Medium (73 episodes), and those with three or more as Hard (24 episodes). Together, the two benchmarks evaluate SkillTrace on both cross-domain technical problem solving and sequen-tial embodied interaction. 
+
+Baselines. We compare SkillTrace with four baselines. 
+
+Vanilla Skills provides the entire skill library to the agent without retrieval, allowing full access to all skills but intro-ducing a large and potentially noisy context. Vector Skills 
+
+retrieves a fixed number of skills according to the semantic similarity between the original query and each skill descrip-tion. It treats skills independently and does not consider their dependencies. SkillDAG organizes skills and their relations as a directed acyclic graph, enabling graph-based skill selec-tion while retaining the original query as a single retrieval unit (Bai et al. 2026). GoS first retrieves query-relevant seed skills and then propagates their relevance over a skill graph to identify additional skills connected through structural re-lations (Liu et al. 2026a). 
+
+Models and evaluation metrics. For the main compari-son, we use GPT-5.6 as the backbone language model for all methods, so that the performance differences primarily re-flect the effectiveness of different skill retrieval strategies. On SkillsBench, we report the number of successfully completed tasks on the Core, Extended, and Extreme subsets, together with the overall success rate SR (%). On ALFWorld, we re-port the number of successfully completed tasks in the Easy, Medium, and Hard groups, together with the overall success rate SR (%). Higher values indicate better task performance. Since the effectiveness of a skill retrieval method may vary across backbone models, we further evaluate SkillTrace with DeepSeek-V3.2 (Liu et al. 2025), Kimi-K2.5 (Kimi Team et al. 2026), Qwen3.5-397B-A17B (Qwen Team 2026), and Gemini 3.1 Flash-Lite (Google DeepMind 2026). In this cross model evaluation, we compare SkillTrace with GoS under the same skill library, task instructions, retrieval bud-get, and execution environment. 
+
+Main Results 
+
+SkillTrace achieves the strongest overall performance on both benchmarks. As shown in Table 1, SkillTrace achieves the highest overall success rate of 53.17% on SkillsBench and the highest success rate of 91.43% on ALFWorld. On SkillsBench, it outperforms GoS, the strongest baseline, by 6.68 percentage points, and exceeds SkillDAG, Vector Skills, and Vanilla Skills by 11.79, 11.05, and 16.48 points, respec-tively. These substantial gains over both graph-based and similarity-based baselines indicate that semantic relevance or dependency modeling alone is insufficient; effective skill retrieval requires jointly covering the query requirements and completing the dependencies needed for execution. On ALFWorld, SkillTrace surpasses SkillDAG, the strongest baseline, by 1.43 percentage points and improves over GoS and Vector Skills by 5.00 and 3.57 points, re-spectively. The consistent improvements across SkillsBench and ALFWorld demonstrate that SkillTrace generalizes well to substantially different settings, ranging from expertise-intensive technical tasks to long-horizon embodied interac-tions. This suggests that its query decomposition, query–skill matching, and dependency-aware traversal together produce skill compositions that are not only relevant but also com-plete and executable. 
+
+The overall improvements are consistent across task subsets. The advantage of SkillTrace is not driven by a single task category. On SkillsBench, it achieves the best results on Core, Extended, and Extreme, successfully completing 5, 26, and 13 tasks, respectively. Compared with the strongest baseline in each subset, SkillTrace solves one more Core task, two more Extended tasks, and one more Extreme task. On ALFWorld, SkillTrace successfully completes 39 Easy, 68 Medium, and 21 Hard tasks. It achieves the best result 010 20 30 40 50 60     
+
+> Success Rate (%)
+> 15.31 46.49 24.19 16.84 13.85 16.00 53.17 26.30 20.76 15.90
+> DeepSeek-v3.2 GPT-5.6 Kimi-K2.5 Qwen3.5-397B-A17B
+> Gemini 3.1 Flash-Lite
+> Method GoS SkillTrace
+
+Figure 3: Success rate comparison between GoS and Skill-Trace across five backbone language models on SkillsBench. on Easy and matches the strongest results on Medium and Hard. The consistent category-wise performance shows that SkillTrace remains effective across tasks requiring different numbers and combinations of skills. 
+
+Task-specific graph traversal is more effective than flat retrieval and graph organization alone. On SkillsBench, Vanilla Skills provides the entire skill library to the agent and obtains an overall success rate of 36.69%, while Vector Skills independently retrieves skills according to semantic similar-ity and reaches 42.12%. SkillDAG obtains 41.38%, indicat-ing that organizing skills into a graph does not by itself guar-antee improved task performance. GoS increases the success rate to 46.49% by propagating relevance over skill relations, while SkillTrace further improves it to 53.17% by aligning atomic task requirements with primary skills and recovering their dependencies through graph traversal. A similar advan-tage is observed on ALFWorld, where SkillTrace achieves 91.43%, outperforming all flat and graph-based baselines. These results show that effective skill retrieval requires not only modeling skill relations, but also traversing them ac-cording to the specific requirements of each query. 
+
+Cross Model Generalization 
+
+In the Table 1, we use GPT-5.6 as the common backbone model to control the influence of model capability and focus the comparison on different skill retrieval methods. How-ever, results obtained with a single backbone cannot deter-mine whether the improvement of SkillTrace comes from its retrieval mechanism or from the particular reasoning and execution capabilities of GPT-5.6. We therefore conduct an additional cross model experiment to examine whether Skill-Trace remains effective when paired with backbone models of different capability levels. Specifically, we compare Skill-Trace with GoS using five language models under the same skill library, retrieval budget, task instructions, and execution environment. As shown in Fig. 3, SkillTrace consistently outperforms GoS across five backbone models. It improves the success rate by 0.69 points on DeepSeek-V3.2, 6.68 points on GPT-5.6, 2.11 points on Kimi-K2.5, 3.92 points on Qwen3.5-397B-A17B, and 2.05 points on Gemini 3.1 Flash-Lite. Al-though the magnitude of improvement varies across models, SE I&PS NS O&WC F&E M&OR Cyber. M&CP                                    
+
+> 49.1 37.9 60.4 78.6 44.4 50.0 52.3 40.0 19.1 21.4 13.3 14.3 11.1 12.5 14.3 20.0 19.1 30.2 28.6 28.6 11.1 32.5 42.9 20.0 19.4 21.4 13.3 21.4 33.3 26.2 28.6 0.0 4.8 14.3 27.9 7.1 22.2 12.5 30.9 20.0
+> 020 40 60 80 100
+> Success Rate (%)
+
+Figure 4: Category-wise performance of SkillTrace with five backbone language models across the eight SkillsBench task domains. The full names of the category abbreviations are provided in the appendix. the gain remains positive in every case. This result indicates that the advantage of SkillTrace is not specific to GPT-5.6 and can generalize to backbones with different reasoning, composition, and execution capabilities. The overall success rate nevertheless varies substantially across backbone models. With SkillTrace, GPT-5.6 achieves a success rate of 53.17%, whereas DeepSeek-V3.2, Kimi-K2.5, Qwen3.5-397B-A17B, and Gemini 3.1 Flash-Lite ob-tain 16.00%, 26.30%, 20.76%, and 15.90%, respectively. This variation suggests that skill retrieval determines whether relevant and composable skills are provided, while the back-bone model still affects how accurately these skills are un-derstood and executed. To further examine whether these differences are uni-formly distributed across task domains, we report the category-wise performance of SkillTrace in Fig. 4. GPT-5.6 achieves the highest performance across all eight SkillsBench categories, with particularly strong results in Office & White Collar and Natural Science. The remaining models exhibit more pronounced domain-specific variation. Kimi-K2.5 per-forms relatively well in Industrial & Physical Systems, Math-ematics & OR, and Cybersecurity, while Gemini 3.1 Flash-Lite obtains its strongest relative result in Finance & Eco-nomics. These results show that different backbones retain distinct domain strengths and weaknesses, while the con-sistent improvements over GoS demonstrate that SkillTrace provides a generally effective retrieval mechanism across models. 
+
+Ablation Study 
+
+We conduct ablation experiments on SkillsBench to exam-ine the contributions of the Hierarchical Query Tree (HQT), Query-Skill Bipartite Graph (QSBG), and Skill Dependency Subgraph (SDS). As shown in Fig. 5 (a) and (b), the full SkillTrace achieves an overall success rate of 53.17%, com-pleting 5, 26, and 13 tasks in the Core, Extended, and Ex-treme subsets, respectively. Without HQT, the original query is used as a single retrieval unit for primary-skill retrieval be-fore dependency-aware augmentation. This variant achieves 46.49%, corresponding to a decrease of 6.68 percentage points, showing that atomic query decomposition improves the coverage of distinct task requirements. Retaining the HQT but removing the QSBG further re-duces the success rate to 43.95%, a decrease of 9.22 per-centage points. Successful Extended tasks drop from 26 to 36 38 40 42 44 46 48 50 52 54 56                    
+
+> Success Rate w/o HQT w/o QSBG w/o SDS
+> ① Dumbbell: Ablation vs Full
+> Full (53.17%)
+> -6.68 pp -9.22 pp -12.95 pp 46.49% 53.17% 43.95% 53.17% 40.22% 53.17%
+> w/o HQT w/o QSBG w/o SDS Full Ablation Setting
+> 0612 18 24 30
+> Count of Success
+> Core / Extreme / Extended
+> 332512 12 913 24 20 20 26 Core Extreme Extended
+> 400 500 600 700 800 900
+> Running Time
+> 10 20 30 40 50 60
+> Success Rate
+> Mean (742, 26.4)
+> Correlation between Time and Pass Rate
+> ideal region
+> Closed-source Open-source
+> DeepSeek-V3.2 GPT 5.6 Kimi-K2.5 Gemini 3.1 Flash Lite Qwen3.5-397B
+> (a) (b) (c)
+
+Figure 5: Additional analysis. (a) Overall success rates of the full SkillTrace and its variant ablations without the Hierarchical Query Tree ( w/o HQT ), Query-Skill Bipartite Graph ( w/o QSBG ), or Skill Dependency Subgraph ( w/o SDS ). (b) Numbers of successfully completed tasks on the Core, Extreme, and Extended subsets under each ablation setting. (c) Execution time and success rate of SkillTrace across five backbone models, where we have the success rate (%) and the end-to-end execution time in seconds. 20, suggesting that structured query–skill assignment pre-vents redundant skill selections from becoming propagation seeds. Finally, removing the SDS and directly returning the primary skills identified by the HQT and QSBG produces the largest performance degradation. The success rate de-creases to 40.22%, while the numbers of successful Core, Extended, and Extreme tasks fall to 2, 20, and 9, respec-tively. This 12.95-point decrease highlights the importance of dependency-aware propagation for recovering prerequi-site and supporting skills not explicitly expressed in the input query. Overall, the three components are complementary, i.e. ,the HQT represents atomic requirements, the QSBG identi-fies primary skills, and the SDS completes the executable skill composition. 
+
+Efficiency Analysis 
+
+SkillTrace models richer graph structures while maintain-ing manageable computational complexity. Let N and E
+
+denote the numbers of skills and dependency edges, respec-tively, Q the number of atomic skill queries, and K the number of propagation iterations. The skill embeddings and dependency graph are constructed offline and reused across queries. Although dependency-graph construction may re-quire pairwise comparisons among skills, this cost is in-curred only once and is amortized over subsequent tasks. At inference time, constructing the query-skill similarity matrix requires O(QN ) computations. Maximum-weight bipartite matching requires O(Q2N ) time when Q ≤ N , while per-sonalized PageRank requires O(K(N +E)) time. Therefore, the online graph-retrieval complexity is 
+
+O QN + Q2N + K(N + E). (10) In practice, Q and K are small, and the skill dependency graph is sparse. SkillTrace therefore avoids exhaustive search over skill combinations and remains approximately linear in the size of the skill library. The end-to-end runtime results are consistent with the practical efficiency of SkillTrace. On SkillsBench, SkillTrace takes 765.00 seconds, compared with 668.80 seconds for GoS. This increase of 14.38% is accompanied by a 6.68-point improvement. On ALFWorld, SkillTrace takes 73.66 seconds, which is 6.57% less than GoS, while improving the success rate by 5.00 percentage points. To examine whether stronger task performance is simply associated with longer execution time, Fig. 5 (c) compares the runtime and success rate of SkillTrace across five back-bone language models. The Pearson correlation coefficient is only r = 0 .08 , indicating no clear linear relationship be-tween runtime and task success rate on this yet. For example, GPT-5.6 achieves the highest success rate without having the longest runtime, whereas Qwen3.5-397B-A17B has the longest runtime but one of the lowest success rate. Given the limited number of evaluated backbones, this result should be interpreted as descriptive evidence rather than a statisti-cally conclusive correlation test. Overall, these results show that the performance gains of SkillTrace cannot be explained solely by increased execution time. 
+
+## Conclusion 
+
+In this paper, we introduced SkillTrace, a graph-based frame-work for retrieving composable skills for large language model agents. SkillTrace formulates skill retrieval through three levels of relations: compositional relations among skill queries, semantic correspondences between queries and can-didate skills, and dependency relations among skills. It first organizes a complex user query into a semantic hierarchy, then identifies seed skills through query–skill matching, and finally traverses the skill graph to complete the required skill composition. Experiments on SkillsBench and ALF-World show that SkillTrace achieves state-of-the-art perfor-mance, reaching 53.17% success rate on SkillsBench and 91.43% success rate on ALFWorld. Its consistent improve-ments across different backbone language models further demonstrate the generality and robustness of the proposed formulation. These results suggest that explicitly modeling query composition and skill dependencies is important for retrieving complete and executable skill sets, providing a promising direction for building more capable skill-based language model agents. References 
+
+Bai, T.; Wan, Z.; Zhou, P.; Yu, X.; You, Y.; and Tsang, I. W. 2026. SkillDAG: Self-Evolving Typed Skill Graphs for LLM Skill Selection at Scale. arXiv preprint arXiv:2606.03056 .Cho, H.; Kang, R.; and Kim, Y. 2026. SkillRet: A large-scale benchmark for skill retrieval in LLM agents. arXiv preprint arXiv:2605.05726 .Google DeepMind. 2026. Gemini 3.1 Flash-Lite Model Card. https://deepmind.google/models/model-cards/ gemini-3-1-flash-lite/. Accessed: 2026-07-29. Karpukhin, V.; Oguz, B.; Min, S.; Lewis, P.; Wu, L.; Edunov, S.; Chen, D.; and Yih, W.-t. 2020. Dense passage retrieval for open-domain question answering. In Proceedings of the 2020 conference on empirical methods in natural language processing (EMNLP) , 6769–6781. Kimi Team; Bai, T.; Bai, Y.; Bao, Y.; Cai, S.; Cao, Y.; Charles, Y.; Che, H.; Chen, C.; Chen, G.; et al. 2026. Kimi K2. 5: Vi-sual Agentic Intelligence. arXiv preprint arXiv:2602.02276 .Lewis, P.; Perez, E.; Piktus, A.; Petroni, F.; Karpukhin, V.; Goyal, N.; Küttler, H.; Lewis, M.; Yih, W.-t.; Rocktäschel, T.; et al. 2020. Retrieval-augmented generation for knowledge-intensive nlp tasks. Advances in neural information process-ing systems , 33: 9459–9474. Li, H.; Mu, C.; Chen, J.; Ren, S.; Cui, Z.; Zhang, Y.; Bai, L.; and Hu, S. 2026a. Organizing, orchestrating, and bench-marking agent skills at ecosystem scale. arXiv preprint arXiv:2603.02176 .Li, X.; Li, M.; Bao, K.; Ma, Y.; Wang, W.; Liu, D.; and Feng, F. 2026b. SkillGraph: Skill-Augmented Reinforce-ment Learning for Agents via Evolving Skill Graphs. arXiv preprint arXiv:2605.12039 .Li, X.; Liu, Y.; Chen, W.; You, B.; Di, Z.; He, Y.; Zheng, S.; Choe, K. W.; Sun, J.; Wang, S.; et al. 2026c. SkillsBench: Benchmarking how well agent skills work across diverse tasks. arXiv preprint arXiv:2602.12670 .Liang, Y.; Zhong, R.; Xu, H.; Jiang, C.; Zhong, Y.; Fang, R.; Gu, J.-C.; Deng, S.; Yao, Y.; Wang, M.; et al. 2026. Skill-net: Create, evaluate, and connect ai skills. arXiv preprint arXiv:2603.04448 .Liu, A.; Mei, A.; Lin, B.; Xue, B.; Wang, B.; Xu, B.; Wu, B.; Zhang, B.; Lin, C.; Dong, C.; et al. 2025. Deepseek-v3. 2: Pushing the frontier of open large language models. arXiv preprint arXiv:2512.02556 .Liu, D.; Li, Z.; Du, H.; Wu, X.; Gui, S.; Kuang, Y.; and Sun, L. 2026a. Graph-of-Skills: Dependency-Aware Struc-tural Retrieval for Massive Agent Skills. arXiv preprint arXiv:2604.05333 .Liu, Y.; Ji, J.; An, L.; Jaakkola, T.; Zhang, Y.; and Chang, S. 2026b. How well do agentic skills work in the wild: Benchmarking llm skill usage in realistic settings. arXiv preprint arXiv:2604.04323 .Patil, S. G.; Zhang, T.; Wang, X.; and Gonzalez, J. E. 2024. Gorilla: Large language model connected with massive apis. 
+
+Advances in Neural Information Processing Systems , 37: 126544–126565. Qin, Y.; Liang, S.; Ye, Y.; Zhu, K.; Yan, L.; Lu, Y.; Lin, Y.; Cong, X.; Tang, X.; Qian, B.; et al. 2023. Toolllm: Facil-itating large language models to master 16000+ real-world apis. In The twelfth international conference on learning representations .Qwen Team. 2026. Qwen3.5: Towards Native Multimodal Agents. Shridhar, M.; Yuan, X.; Côté, M.-A.; Bisk, Y.; Trischler, A.; and Hausknecht, M. 2020. Alfworld: Aligning text and em-bodied environments for interactive learning. arXiv preprint arXiv:2010.03768 .Su, W.; Long, J.; Ai, Q.; He, Q.; Tang, Y.; Wang, C.; Tu, Y.; Wang, Y.; and Liu, Y. 2026. Skill retrieval augmentation for agentic ai. arXiv preprint arXiv:2604.24594 .Wang, G.; Xie, Y.; Jiang, Y.; Mandlekar, A.; Xiao, C.; Zhu, Y.; Fan, L.; and Anandkumar, A. 2023. Voyager: An open-ended embodied agent with large language models. arXiv preprint arXiv:2305.16291 .Yang, M.; Wang, H.; Wei, Z.; Wang, S.; and Wen, J.-R. 2024. Efficient Algorithms for Personalized PageRank Computa-tion: A Survey. IEEE Transactions on Knowledge and Data Engineering , 36(9): 4582–4602. Zheng, Y.; Zhang, Z.; Ma, C.; Yu, Y.; Zhu, J.; Dong, B.; and Zhu, H. 2026. Skillrouter: Retrieve-and-rerank skill selection for llm agents at scale. arXiv preprint arXiv:2603.22455 , 4. Figure 6: Benchmark subset statistics used in the main ex-periments. 
+
+## Technical Appendix 
+
+Dataset Details and Subset Statistics 
+
+We use two public benchmarks with complementary forms of compositionality. SkillsBench (Li et al. 2026c) evaluates whether an agent can identify and apply reusable skill pack-ages to expertise-intensive technical tasks, whereas ALF-World (Shridhar et al. 2020) evaluates sequential planning and execution in text-based household environments. This combination lets us measure skill retrieval in both artifact-producing technical workflows and long-horizon embodied interaction. 
+
+SkillsBench. We evaluate all 87 tasks in the public bench-mark split. The tasks span eight domains and are grouped into the Core, Extended, and Extreme subsets used in the main paper. The split contains 6 Core, 53 Extended, and 28 Extreme tasks. Figure 6 reports their exact proportions, and Table 2 reports the domain composition. 
+
+ALFWorld. We evaluate all 140 episodes in the public development in-distribution (valid_seen) split. The official task types describe the household objective, rather than re-trieval difficulty, and comprise Pick & Place, Examine in Light, Clean & Place, Heat & Place, Cool & Place, and Pick Two & Place. For the compositional analysis in the main paper, we create a fixed task-to-stratum mapping from the number of atomic skill queries in the hierarchical decom-position and reuse this mapping for every method. Episodes containing one atomic query are labeled Easy, those contain-ing two are labeled Medium, and those containing three or more are labeled Hard. These labels are an analysis stratifica-tion introduced in this work, not official ALFWorld difficulty annotations. They measure the number of distinct require-ments that must be coordinated, rather than merely the length of an observed action trajectory. 
+
+Hardware and Software Environment 
+
+Experiments were orchestrated on a Linux server with two AMD EPYC 9454 48-core processors (96 physical cores and 192 logical CPUs) and 125 GiB of system memory. The host ran Ubuntu 22.04.5 LTS with Linux kernel 6.8.0-124-generic. SkillsBench tasks were isolated in Docker containers and were allocated the CPU, memory, storage, network, and timeout limits declared by each task’s public task.toml .ALFWorld was executed through its TextWorld interface. Table 2: Task-category composition of the evaluated bench-mark splits.                                
+
+> Benchmark Category nShare (%) SkillsBench Software Engineering 16 18.39 Industrial & Physical Systems 14 16.09 Natural Science 14 16.09 Office & White Collar 14 16.09 Finance & Economics 910.34 Mathematics & OR 89.20 Cybersecurity 78.05 Media & Content Production 55.75 ALFWorld Pick & Place 35 25.00 Examine in Light 13 9.29 Clean & Place 27 19.29 Heat & Place 16 11.43 Cool & Place 25 17.86 Pick Two & Place 24 17.14
+
+The backbone LLM and text-embedding model were ac-cessed through OpenAI-compatible hosted APIs. The server was additionally equipped with seven NVIDIA GeForce RTX 4090 D GPUs, each providing 49,140 MiB of memory. The Python environment was managed from a locked dependency file and used Python 3.12.13. The principal package versions were ALFWorld 0.4.2, TextWorld 1.7.0, NumPy 2.4.3, SciPy 1.17.1, NetworkX 3.6.1, Pydantic 2.12.5, OpenAI Python SDK 1.109.1, LiteLLM 1.80.0, and FastGraphRAG 0.0.5. 
+
+Hyperparameters and Experimental Configuration 
+
+All methods in a benchmark use the same task instances, skill library, backbone model, and task verifier. The main comparison uses GPT-5.6 as the agent backbone. Skills-Bench uses a 200-skill library, while ALFWorld uses the 37 ALFWorld-specific skills contained in the same skill collection. Skill and query embeddings are produced by 
+
+text-embedding-3-large with 3,072 dimensions. Embeddings and the skill graph are constructed once and cached. The cache is shared across queries but not across different skill libraries. For graph construction, each skill considers eight linking candidates and a dependency edge is retained at a matching threshold of 0.6. For GoS on SkillsBench, four seed skills are selected and at most five skills are returned. On ALFWorld, GoS uses five seeds and returns at most four skills in the ini-tial bundle. Personalized PageRank uses restart probability 
+
+α = 0 .2, at most 50 iterations, and an ℓ1 convergence toler-ance of 10 −6. In the GoS baseline implementation, reverse transitions are weighted by relation type: 1.0 for dependency, 0.5 for workflow, 0.2 for semantic, and 0.1 for alternative rela-tions. SkillTrace instead uses the reverse-aware dependency transition defined in the Method section. The SkillTrace retrieval procedure follows the Method sec-tion. Here we report only implementation and evaluation set-tings omitted from the main text. In particular, SkillTrace uses the same PPR convergence settings reported above, and its ALFWorld retrieval bundle is capped at six skills. On ALFWorld, every method receives the same textual ob-servation and action grammar, domain randomization is dis-abled, the environment seed is 42, and an episode is capped at 30 agent steps. On SkillsBench, one attempt is scheduled for each task in the main comparison and the task-specific verifier determines success. Infrastructure retries are limited to one and do not change the task success rate. Invalid or incomplete trials are recorded as errors rather than silently counted as successful completions.
