@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-12</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-13</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 9 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 10 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>3</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>5</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-12 21:03:28 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-13 21:02:22 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-08-12 完成9篇AI智能体领域论文研读，6篇精读3篇速读。</p>
-<p>最值得关注的是两篇满分智能体自进化方向研究，分别是LinkedIn落地的自进化智能客服系统，以及超越人类设计的智能体共进化研究。</p>
-<p>关注AI智能体发展的普通读者，可优先阅读这两篇高分精读论文。</p>
+<p>2026年8月13日完成10篇AI智能体领域论文研读，含5篇精读、5篇速读。</p>
+<p>两篇满分精读均聚焦智能体自主演化方向，是本次最值得关注的前沿研究方向。</p>
+<p>对下一代AI感兴趣的普通读者，可重点跟进该方向的后续研究进展。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +73,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Self-evolving Agentic Customer Support System at LinkedIn">Self-evolving Agentic Customer Support System at LinkedIn</span></li><li><span class="dpr-home-dashboard-paper-title" title="Co-Evolution in Agentic Systems: Toward Self-Directed Evolution Beyond Human Design">Co-Evolution in Agentic Systems: Toward Self-Directed Evolution Beyond Human Design</span></li><li><span class="dpr-home-dashboard-paper-title" title="MEGA: Self-Evolving Agent Optimization Infrastructure via Wisdom Graph">MEGA: Self-Evolving Agent Optimization Infrastructure via Wisdom Graph</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Co-Evolution in Agentic Systems: Toward Self-Directed Evolution Beyond Human Design">Co-Evolution in Agentic Systems: Toward Self-Directed Evolution Beyond Human Design</span></li><li><span class="dpr-home-dashboard-paper-title" title="MEGA: Self-Evolving Agent Optimization Infrastructure via Wisdom Graph">MEGA: Self-Evolving Agent Optimization Infrastructure via Wisdom Graph</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Embodied Agents via Skill-Harness Evolution">Self-Evolving Embodied Agents via Skill-Harness Evolution</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>6</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SBCO: Self-Supervised, Verifier-Grounded Harness Optimization For Planning Agents">SBCO: Self-Supervised, Verifier-Grounded Harness Optimization For Planning Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Correcting Long-Horizon Search Agents via Tree-Structured Memory">Self-Correcting Long-Horizon Search Agents via Tree-Structured Memory</span></li><li><span class="dpr-home-dashboard-paper-title" title="Guixu: Valuation-Driven Data Discovery for Autonomous AI Agents with On-Chain Attestation">Guixu: Valuation-Driven Data Discovery for Autonomous AI Agents with On-Chain Attestation</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Agent Memory Distillation: Empowering Small LLM Agents with Hierarchical Teacher Memory">Agent Memory Distillation: Empowering Small LLM Agents with Hierarchical Teacher Memory</span></li><li><span class="dpr-home-dashboard-paper-title" title="Bidirectional Context Self-Distillation for Reinforcement Learning of Skill-Based LLM Agents">Bidirectional Context Self-Distillation for Reinforcement Learning of Skill-Based LLM Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Trial-and-Error: Agentic Optimization for Image-to-Video Adherence">Beyond Trial-and-Error: Agentic Optimization for Image-to-Video Adherence</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span></div>
 </section>
 </div>
 
