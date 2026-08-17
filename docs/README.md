@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-16</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-17</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 20 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 13 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>13</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>8</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-16 19:45:06 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-17 20:06:40 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026年8月16日完成20篇AI前沿论文梳理，含13篇精读、7篇速读。</p>
-<p>两篇满分高评论文核心聚焦智能体脱离人工设计的可验证自主进化方向。</p>
-<p>对该方向感兴趣的普通读者可优先精读这两篇满分工作。</p>
+<p>2026年8月17日完成13篇AI领域论文研读，含8篇精读、5篇速读。</p>
+<p>本次两篇满分精读均聚焦智能体自我进化技术方向，是当前前沿研究核心热点。</p>
+<p>对AI智能体发展感兴趣的普通读者，可优先研读这两篇满分论文了解最新进展。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +73,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">13 篇</strong>
+    <strong class="dpr-home-dashboard-count">8 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="OpenLoopEvolve: A Verifiable Self-Evolution Framework for Loop Policies in Long-Horizon Complex Tasks">OpenLoopEvolve: A Verifiable Self-Evolution Framework for Loop Policies in Long-Horizon Complex Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="Co-Evolution in Agentic Systems: Toward Self-Directed Evolution Beyond Human Design">Co-Evolution in Agentic Systems: Toward Self-Directed Evolution Beyond Human Design</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Embodied Agents via Skill-Harness Evolution">Self-Evolving Embodied Agents via Skill-Harness Evolution</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="OpenLoopEvolve: A Verifiable Self-Evolution Framework for Loop Policies in Long-Horizon Complex Tasks">OpenLoopEvolve: A Verifiable Self-Evolution Framework for Loop Policies in Long-Horizon Complex Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="MEGA: Self-Evolving Agent Optimization Infrastructure via Wisdom Graph">MEGA: Self-Evolving Agent Optimization Infrastructure via Wisdom Graph</span></li><li><span class="dpr-home-dashboard-paper-title" title="Latent On-Policy Self-Distillation">Latent On-Policy Self-Distillation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>13</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>8</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Practice Makes Unsafe: Skill Misevolution in Self-Improving LLM Agents">Practice Makes Unsafe: Skill Misevolution in Self-Improving LLM Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="SKILLER: Language-Level Reinforcement Learning for Reusable Skill Extraction in Small Language Models">SKILLER: Language-Level Reinforcement Learning for Reusable Skill Extraction in Small Language Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="Optimize Cheap, Deploy Strong: Cost-Aware Cross-Tier Transfer for Evolutionary Optimization">Optimize Cheap, Deploy Strong: Cost-Aware Cross-Tier Transfer for Evolutionary Optimization</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Learning from Online User Feedback for Shopping Agents">Learning from Online User Feedback for Shopping Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="AI Research Preference Models">AI Research Preference Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="Discovering Diverse Planning Policies for Multimodal Embodied Agents with Quality-Diversity Optimization">Discovering Diverse Planning Policies for Multimodal Embodied Agents with Quality-Diversity Optimization</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>7</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span></div>
 </section>
 </div>
 

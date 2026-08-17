@@ -1,0 +1,732 @@
+Title: AI Research Preference Models
+
+URL Source: https://arxiv.org/pdf/2608.13940v1
+
+Published Time: Mon, 17 Aug 2026 00:28:23 GMT
+
+Number of Pages: 34
+
+Markdown Content:
+# AI Research Preference Models 
+
+Thomas Simon Foster 1,2,†, Bassel Al Omari 1,†, Tingchen Fu 1,2,†, Thomas Mann 1,∗, Carl Domond 1,∗,
+
+Lucia Cipolina-Kun 1,, Bhavul Gauri 1,, Muna Aghamelu 1,, Alexander D. Goldie 1,2,, Eryk Helenowski 1,,
+
+Jean-Christophe Gagnon-Audet 1, Alberto Pepe 1, Saba Nazir 1, Daniel Izcovich 1, Noam Levi 1, Rishi Hazra 1, Karen Hambardzumyan 1,3, Nicolas Baldwin 1, Xian Li 1, Martin Josifoski 1, Paris Giampouras 1,
+
+Masoud Jalili Sabet 1, Anya Sims 1, Hela Momand 1, Tatiana Shavrina 1, Despoina Magka 1, Jason Weston 1, Yulin Wang 2, Anirudh Goyal 1, João Henriques 2, Yoram Bachrach 1, Emily McMilin 1,‡, Jakob Nicolaus Foerster 1,2,‡
+
+> 1
+
+FAIR at Meta, 2University of Oxford, 3University College London 
+
+> †
+
+Lead Authors , ∗Core Contribution , ‡Equal Supervision 
+
+AI research agents (AIRA) can now propose, implement, and evaluate their own machine learning experiments, but progress on frontier tasks is throttled by cost: a candidate solution can be written in minutes, whereas evaluating it can take hours to days of GPU time. An agent can therefore propose far more candidates than it can afford to run, and its progress depends on its research preference : how it allocates a fixed execution budget across many candidates. We introduce AI Research Preference Models (RPMs) that predict which of multiple candidate solutions are most worth executing, without paying the cost of executing them all. We build RPMs from frozen pretrained language models (with no task-specific training), in two forms: an inference-only model that reasons over candidate plans, code, and prior executed solutions, and an agentic model that additionally runs small-scale pilot experiments before deciding. We integrate both into the AIRA-dojo search agent and evaluate on 
+
+AIRS-Bench , a recent benchmark of machine learning research tasks for AI research agents. The two variants raise the average normalized score from 0.684 to 0.711 and 0.729 respectively, and reach the unguided agent’s 24-hour performance in roughly 15 hours, using less than two-thirds of its execution budget. Our best RPMs also yield new state-of-the-art results on two AIRS-Bench tasks.  
+
+> Correspondence:
+
+Bassel Al Omari at balomari@meta.com 
+
+# 1 Introduction 
+
+Language model agents have advanced rapidly in domains such as mathematics, coding, and computer use, where candidate actions can be evaluated accurately and efficiently: a mathematical answer can be checked against a reference, a program run against a test suite, and a computer-use task verified against its target state. These evaluation functions provide the reward signal that lets agents iterate and improve, driving rapid progress on benchmarks such as SWE-bench Verified (Jimenez et al., 2024), Terminal Bench (Merrill et al., 2026), and MLE-bench (Chan et al., 2025). Progress has been slower for AI research agents that autonomously propose, implement, and evaluate their own experiments, despite recent efforts such as the AI Scientist (Lu et al., 2024), AIRA-dojo (Toledo et al., 2025), and AIRA 2 (Hambardzumyan et al., 2026). Frontier machine learning research lacks cheap feedback: proposing or modifying candidate code can be quick, but executing it to train a model and measuring its performance can consume hours to days of GPU time. Because an agent can propose far more candidates than it can afford to run, the primary lever on research progress becomes research preference : deciding which research directions are promising enough to allocate compute budget to, and which directions to drop. We study this allocation problem directly by introducing a dedicated Research Preference Model (RPM) into the AIRA-dojo search harness. The RPM receives the full context of previously executed solutions, and uses it to decide which of N newly generated candidate solutions will be most valuable to execute next. 1arXiv:2608.13940v1 [cs.AI] 14 Aug 2026 0.44        
+
+> 0.51 0.60
+> 0.55
+> 0.44
+> 0.51 0.60
+> 0.55
+> AB
+> C
+> 0.44
+> 0.51 0.60
+> 0.55
+> AB
+> C
+> A
+> RPM
+> 0.44
+> 0.51 0.60
+> 0.55 0.63
+> Select Node
+> to Mutate
+> Generate Candidate
+> Mutations
+> Select Child
+> Using RPM
+> Evaluate Selection
+> and Update Tree
+> Repeat
+
+Figure 1 : Overview of an AI research agent with RPM-augmented child creation. Each node represents a solution within the search tree, labeled with its evaluation score. The agent (1) selects a promising parent node from the active tree, (2) generates a batch of candidate child solutions, (3) utilizes the RPM to select the most promising candidate, using the full context of previously executed solutions and (4) executes and scores only the selected candidate to expand the tree. This mechanism eliminates the compute overhead of running unpromising candidates. For clarity we depict an illustrative batch; in our experiments each step generates N =15 candidate children, and the RPM selects one to execute via a pairwise tournament knockout (Section 3.3). 
+
+We summarize our contributions below: • We introduce AI Research Preference Models (RPMs) to study experimental compute allocation in AI research agents. This is motivated by the observation that AI Research Agents on frontier research tasks (Lupidi et al., 2026) are bottlenecked not by their ability to generate candidate solutions, but by the compute to execute them. • We develop Inference-only RPMs , frozen-weight LLMs that reason over candidate plans, code and previous solutions, and demonstrate that it raises performance of the AIRA-dojo agent on AIRS-Bench 
+
+from 0.684 to 0.711 .• We further propose Agentic RPMs , an extension of Inference-only RPMs with the ability to run small-scale pilot experiments. Integrated within AIRA-dojo, Agentic RPMs further raise performance on 
+
+AIRS-Bench to 0.729 , approaching the validation oracle ceiling of 0.748 .• On AIRS-Bench , agents equipped with our best RPMs yield new state-of-the-art results on two tasks and match the unguided agent’s 24-hour performance in roughly 15 hours, using less than two-thirds of its execution budget (Fig. 2). 
+
+# 2 Background 
+
+In line with the broader agent research literature, we view an agent as a computer system that is situated in some environment and is able to act autonomously in this environment in order to achieve its design objectives (Wooldridge and Jennings, 1995). In our setting, an AIRA acts by generating and executing code. The objective is to produce an artifact (such as model weights, an optimised code snippet, or answer to a question) that, when evaluated by some task-specific reward function, achieves a high score. 
+
+2.1 AI Research Agent Benchmarks 
+
+Recent benchmarks evaluate large language model agents across complex, long-horizon workflows. For software engineering, popular suites like SWE-bench (Jimenez et al., 2024) assess an agent’s ability to resolve real GitHub issues and modify multi-file codebases. Within the data science domain, platforms like MLE-bench (Chan et al., 2025) evaluate agent capabilities through structured machine learning engineering competitions. 2We base the majority of our experiments on AIRS-Bench (Lupidi et al., 2026), a comprehensive suite of 20 machine learning tasks sourced from state-of-the-art papers. These tasks span diverse domains, including language modeling, mathematics, bioinformatics, and time series forecasting. AIRS-Bench assesses agentic capabilities over the full research lifecycle (including idea generation, experiment analysis, and iterative refinement) without providing baseline code. Each task is rigorously specified by a problem, a dataset, a target metric, and a published state-of-the-art value. Here the agents are placed in an environment with a training dataset, a set of test inputs, and 24 hours of access to an H200 GPU. The AIRA’s goal is to write code that trains a model and produces a submission.csv 
+
+with predictions on the test inputs. The agent may choose to run code that reports a validation score (e.g., from using cross-validation) that it can use for guiding search. The true test score (produced by comparing the submission.csv to the ground truth labels) is hidden from the agent. To aggregate performance across heterogeneous task metrics, AIRS-Bench defines a Normalized Score for agent a on task t:NS at = ϕt(sat ) − ϕt(smin  
+
+> t
+
+)
+
+ϕt(ssota  
+
+> t
+
+) − ϕt(smin  
+
+> t
+
+) , (1) where smin  
+
+> t
+
+is the worst score observed across all agents, ssota  
+
+> t
+
+is the most recent public SOTA score as of the benchmark’s publication, and ϕt is a non-linear log transform, defined as ϕt(s) = − log 10 (|s − sopt  
+
+> t
+
+|) to properly weight exponential progress near optimal bounds ( sopt  
+
+> t
+
+). Under this metric, NS = 0 corresponds to the minimum baseline and NS = 1 to the public SOTA, while invalid or failed submissions receive a score of 0.The Average Normalized Score reported on this benchmark averages the Normalized Score uniformly across all tasks and seeds. 
+
+2.2 AI Research Agent Scaffolds 
+
+To systematically analyze and improve AI research agents, we decompose an AIRA into an LLM backbone and an algorithmic scaffold . While the backbone provides core reasoning capabilities, the scaffold defines the decision logic and search strategy (ranging from simple linear loops to complex tree search) that govern how candidate solutions are generated, evaluated, and iteratively refined. A single scaffold like AIRA-dojo (Toledo et al., 2025) or Claude Code (Anthropic, 2025) can be instantiated with different backbones, such as Claude Opus (Anthropic, 2026) or GPT-5 (Singh et al., 2025). These candidate solutions can be viewed as nodes within an evolving solution graph, where each node stores concrete artifacts like code scripts, execution logs, and metric scores. The agent explores this graph by selecting a parent node and mutating its contents to produce a child node. Inspired by this evolutionary computation framework, we characterize the core design space of search scaffolds along three primary axes: • Parent Selection: The strategy used to identify which historical solutions, trajectories, or ideas are most promising to build upon next. • Child Creation: The process of taking the selected parent solutions and prompting the LLM to generate a new candidate child solution. The localized prompts used to drive child creation are referred to as 
+
+operators .• Final Solution Selection: The criteria used to evaluate the accumulated bank of candidate solutions and determine which single solution to return as the final output. Existing AIRA architectures implement these mechanisms in fundamentally different ways. For example, 
+
+MLGym (Nathani et al., 2025) operates as a linear search scaffold that heavily simplifies parent selection by always choosing the most recent node as the parent, relying on a single mutation operator to iteratively refine it. In contrast, we build upon AIRA-dojo, an evolutionary tree-search framework that uses greedy parent selection to always mutate the node with the highest current validation score. To orchestrate child creation, AIRA-dojo employs a specialized suite of mutation operators tailored to distinct engineering phases, specifically Draft , Improve , and Debug . Finally, for final solution selection, AIRA-dojo submits the node that achieved the highest validation score across the entire search tree. 3Ultimately, this loop produces an expanding bank of candidate solutions, each paired with its evaluation score. It is over this growing set that a preference model can intervene, deciding which candidates are worth the expense of execution. It also serves as a valuable dataset to train and evaluate an RPM. 
+
+# 3 AI Research Preference Models 
+
+Frontier machine learning research lacks low-cost feedback: while proposing candidate solutions is fast, executing them to train a model can consume hours or days of GPU compute. Faced with this bottleneck, research progress heavily relies on predicting the value of pursuing candidate research directions. To address this challenge, we introduce AI Research Preference Models (RPMs) to guide experimental allocation within research agents. Through initial experimentation, we observed that language models perform unreliably when forecasting absolute metrics or execution outcomes. Consequently, an RPM reformulates experimental allocation as a relative ranking problem, ranking candidate solutions to select the most promising paths before dedicating compute to pursuing them. We explore RPMs leveraging varying ranges of test-time compute: • Inference-only RPMs (Section 3.1): Rank candidate solutions using lightweight reasoning over search history and code diffs. • Agentic RPMs (Section 3.2): Allocate additional compute to run rapid sandbox pilot experiments prior to ranking. Designed as a scaffold-agnostic component, RPMs can interface with a wide variety of AIRA architectures. In this work, we investigate integrating RPMs into the AIRA-dojo evolutionary tree-search scaffold (Section 3.3). We target the child-creation phase, where creating a single child mutation is replaced with generating N
+
+candidate modifications in parallel and using an RPM-guided tournament to select the most promising solution before committing GPU compute. 
+
+3.1 Inference-only RPMs 
+
+The “LLM-as-a-Judge” paradigm (Zheng et al., 2023) demonstrates that LLMs can rank technical solutions with reasonable fidelity using internal intuition and reasoning. Motivated by this approach, we experiment with purely querying pretrained LLMs as an inexpensive preference model to select between research ideas. To understand how visibility into the AIRA’s search space affects the RPM’s selection quality, we experiment with varying the count of previously explored solutions visible to the RPM and the count of suggestions it selects between. To develop the chosen prompt even further, we leverage MIPROv2 from the DSPy framework (Opsahl-Ong et al., 2024), a widely adopted baseline for robustly optimizing prompt instructions. The prompt optimizer generated an instruction set that directs the RPM to conduct a more structured analysis of each solution and remain tolerant of minor, fixable issues. Further details on the prompt are provided in Appendix A.1. 
+
+3.2 Agentic RPMs  
+
+> Motivation
+
+A core practice in software engineering, and machine learning research is rapid prototyping. To comprehensively understand and validate the potential or the feasibility of a novel idea, researchers tend to quickly run small-scale pilot experiments before launching a full-volume large-scale experiment. Inspired by how pilot experiments inform the possible outcome and assist decision making, we develop agentic RPMs where a pilot-experiment agent can use multiple predefined tools in a sandbox environment to conduct pilot experiments before making a decision.  
+
+> Agentic Workflow
+
+Concretely, a pilot experiment is conducted via multi-turn interaction between the language model agent and the environment, interleaving chain-of-thought reasoning, tool calling, and receiving environment feedback (Yao et al., 2023). The sandbox environment for the agentic RPM is an exact clone of the environment for AIRA, including the access to a single H200 GPU. Meanwhile, the pilot-experiment 4agent has access to the training dataset and unlabeled test dataset, together with necessary pre-installed Python packages in this environment, similar to the AI research agent. To interact with this environment, we provide the pilot-experiment agent with a set of tools: python, bash , and submit_solution . The python 
+
+tool and bash tool allow executing any Python code or Bash code, respectively, and then return execution results. With the outcome of the pilot experiment, the pilot-experiment agent can summarize and submit the experimental findings with the tool submit_solution . Notably, the pilot-experiment agent is only required to submit the summary and analysis of the pilot experiment, but not to make a final prediction among candidates. The submit_solution tool will return the remaining time budget. If the remaining time budget surpasses a specific threshold, the pilot-experiment agent would be prompted to run further experiments to make the best use of the time budget and computation resources. Finally, the candidate solution, the task description, and all submitted pilot experiment findings are input to a language model to make a final prediction.  
+
+> More Informative Experiments
+
+During our study, we find that the pilot-experiment agent can be too conservative in scheduling the time budget, leaving a large portion of the time budget unused at the first call of submit_solution . Even though we could prompt the pilot-experiment agent to run more pilot experiments after the initial submission, the follow-up experiments are often limited to hyperparameter tuning of previous ones. Over conservative time budget scheduling and repetitive follow-up experiments jointly lead to less informative pilot experiments. To deal with this problem, we use two mechanisms to elicit more informative follow-up experiments. First, we overstate the remaining time budget in the prompt (reporting it as several times larger than it truly is), discouraging the agent from stopping prematurely. Second, after each submit_-solution call, a separate feedback model reviews the findings so far and either proposes the single most informative next experiment or signals that the evidence is already sufficient, in which case we end the loop; its proposal and the remaining budget are then returned to the agent to guide the follow-up experiment. Full details on the agentic RPM’s prompts are provided in Appendix B. 
+
+3.3 AIRA Integration 
+
+While an RPM can intercept multiple stages of an agent’s search scaffold, we focus our implementation on augmenting the child creation phase, as illustrated in Figure 1. In an evolutionary AIRA scaffold, child creation fundamentally encompasses two sub-steps: child candidate creation and child candidate selection. By default, AIRA-dojo generates a single candidate solution during candidate creation, which is automatically selected to be executed, evaluated, and added to the search tree. We modify this pipeline by first expanding child candidate creation: a chosen parent node is mutated by applying operators N times independently in parallel to yield N unexecuted candidate child solutions. During child candidate selection, we then introduce the RPM which evaluates these N candidates alongside historical trajectory context, conducting pairwise comparisons in a tournament knockout structure to select the single candidate for full execution. To ground each comparison in the search so far, we also provide the RPM selected context from the tree. Context nodes are pulled via a BFS traversal of the already-explored tree starting from the parent, collecting up to K non-buggy nodes from earlier in the search; each of these previously-evaluated solutions is presented alongside the validation score it obtained. 
+
+# 4 Experimental Setup 
+
+4.1 End-to-End Evaluation 
+
+We integrate RPMs into the child-creation phase of AIRA-dojo, and evaluate this augmented scaffold against the 20 publicly released AIRS-Bench tasks that fall under the text and tabular modalities. Following the original AIRS-Bench evaluation protocol, the AIRA-dojo evaluations are provided 24 hours of access to a single H200 per task and are repeated for 10 seeds. To avoid the generalization gap which undermined long-horizon search in AIRA-dojo, we integrate the Hidden Consistent Evaluation protocol from AIRA 2. Both the AIRA-dojo operator used to generate the child candidates and the RPMs share a Qwen3.6-27B (Qwen Team, 2026) backbone, standardizing our setup on a high-performing open-weights model for code reasoning. 5Maintaining an identical model across child creation and selection ensures that all observed improvements are driven by the framework rather than a stronger selection backbone. To contextualize these results, we first compare against the default No-RPM baseline. In this setup, child selection defaults to uniform random selection among generated candidates, which corresponds to vanilla AIRA-dojo in expectation. We also compare against a Test Oracle and a Validation Oracle, that are constructed by executing all candidates at each step and choosing the highest scorer. Only the compute time of the selected candidate counts towards the 24-hour limit. While neither is viable online (the Test Oracle utilizes privileged test-set information, and the Validation Oracle requires a prohibitive compute overhead to execute every candidate), they serve as ceilings for greedy child selection. 
+
+4.2 Offline Evaluation 
+
+The full end-to-end evaluations detailed in Section 4.1 are computationally expensive, requiring 200 H200 GPUs for 24 hours. To enable quick iterations and guide development of our RPMs before running full end-to-end evaluations, we produce an offline evaluation dataset compiled from previous AIRA-dojo runs on a separate set of 40 unreleased AIRS-Bench tasks from the image, video and audio modalities. The development and evaluation sets are split by modality to avoid task contamination. The previous AIRA-dojo runs followed the standard AIRS-Bench evaluation protocol of dedicating 24 compute hours with a single H200 and evaluating 10 different seeds. The previous runs were conducted with gpt-oss-120b (OpenAI, 2025), GPT-4o (OpenAI, 2024) and CWM (Copet et al., 2025) as the LLM backbone. From these runs, we extract 1,000 sibling node pairs, including their plans, code, and search tree history. In selecting these pairs, we discard near-ties with a normalized test-metric gap below 0.01, to prevent negligible, run-to-run metric noise from confounding the evaluation signal. The RPM is evaluated on its accuracy in selecting the node with the highest test score in its subtree. We choose this ground-truth label to ensure the RPMs look past immediate performance, explicitly rewarding candidates with strong long-term fixability and extensibility. We acknowledge that this label inherits a bias from the original greedy search policy, where nodes with stronger early scores are favored during search, expanding their subtrees and giving them greater opportunity to reach high scores. Random selection establishes a 50% baseline accuracy floor. 
+
+# 5 Results 
+
+5.1 End-to-End Evaluations 0 5 10 15 20 25   
+
+> Compute Time (hours)
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8
+> Average Normalized Score
+> Child Selection Method Agentic RPM Inference-only RPM No RPM Oracle (Test) Oracle (Validation) No RPM Inference-only RPM Agentic RPM
+> Child Selection Method
+> 0.60 0.65 0.70 0.75 0.80
+> Average Normalized Score
+> 0.684 0.711 0.729
+> Oracle (Validation) Oracle (Test)
+
+Figure 2 : Evaluation of RPM-augmented AIRA-dojo. Average normalized scores over time (left) and final performance (right) for AIRA-dojo with RPM-augmented child selection on AIRS-Bench . Dashed lines indicate the No-RPM baseline and immediate validation or test oracles. The Inference-only RPM (blue) yields steady gains over the baseline (orange). While per-step proxy experiments slow its early trajectory, the Agentic RPM (purple) leverages this compute overhead to surpass other methods. 
+
+6We present the end-to-end performance of integrating our RPMs within AIRA-dojo, in Figure 2. In these evaluations, AIRA-dojo is configured to generate 15 child candidate suggestions at each operator step, leveraging our offline finding that expanding the candidate pool size systematically improves selection performance (Section 5.2.1). The Inference-only RPM evaluates these pairs using the “LLM-as-a-judge” reasoning prompt presented in Section 3.1, including the scores of historical nodes from the search tree. For the Agentic RPM detailed in Section 3.2, to balance overall compute budgets, we only deploy this selection mechanism for the 
+
+Draft and Improve operators, reverting to random selection during Debug steps. As shown in Figure 2, our methods navigate the trade-off between decision quality and compute time in fundamentally different ways. Incurring no candidate-execution cost, the Inference-only RPM (blue) provides immediate and steady gains over the baseline with no RPM (orange). Conversely, the Agentic RPM (purple) exhibits a slow rise early in the run. Considering it runs small-scale proxy experiments in a sandbox at every step, its heavy per-step compute consumption slows early progress along the time axis. However, this rigorous per-step evaluation eventually triggers a sharp performance acceleration, ultimately matching or exceeding both the Inference-only RPM and the No-RPM baseline. Ultimately, both variants beat the unguided baseline’s final score of 0.684, with Inference-only reaching 0.711 and Agentic reaching 0.729, narrowing the gap toward the validation-oracle (0.748) and test-oracle (0.759) ceilings.  
+
+> Significance Testing
+
+To evaluate statistical significance, we report the probability of improvement , defined as the likelihood that a randomly sampled run of one method outperforms another on a randomly selected task. We compute task-stratified bootstrap distributions using rliable (Agarwal et al., 2021), where a probability of 
+
+0.5 denotes no difference. The results show that the Inference-only RPM and the Agentic RPM achieve a statistically significant edge over the default AIRA-dojo baseline (No RPM), yielding average improvement probabilities of 0.5923 and 0.5913, respectively, with the 95% confidence intervals lower bounded at 0.5066 and 0.5018, strictly excluding the 0.5 mark of random chance.  
+
+> State-of-the-Art Breakthroughs
+
+These guided search capabilities translate directly to new state-of-the-art (SOTA) milestones on established benchmarks. On WinoGrande (Sakaguchi et al., 2021), AIRA-dojo with the Agentic RPM achieves an accuracy of 94.1%, comfortably surpassing the previous SOTA of 88.1% reported by Lupidi et al. (2026). During this run, the agent fine-tunes a Qwen2.5-14B-Instruct model (Qwen Team, 2024) via LoRA on data with shuffled labels, then averages prediction logits across original and shuffled label orderings at inference to eliminate position bias. Similarly, on SVAMP (Patel et al., 2021), AIRA-dojo with the Inference-only RPM reaches 95.7% accuracy, eclipsing the prior SOTA of 94.2% from Zhong et al. (2026). Here, the agent designs few-shot prompts that instruct the model to cleanly isolate relevant numerical data from distracting context, then generates ten independent reasoning paths by sampling Qwen2.5-7B-Instruct with increased temperature, and resolves the final prediction using a majority vote.  
+
+> Research Efficiency
+
+Beyond absolute performance gains, both preference models significantly accelerate search velocity. While the unaugmented No-RPM baseline requires the full 24-hour allocation to reach its final score of 0.684, our RPM-guided approaches reach this identical performance threshold significantly faster. The Inference-only RPM matches this baseline score in 14.88 hours (a 1.61 × speedup), while the Agentic RPM achieves it in 15.50 hours (a 1.55 × speedup). This allows both methods to match standard performance while using approximately 1.5× less compute budget.  
+
+> Impact of Selection Quality
+
+To confirm how decision quality drives performance, we retrospectively analyze the selection advantage of each RPM throughout the runs. Selection advantage measures the average difference between the chosen candidate’s score and the overall batch mean. As expected, random selection yields a selection advantage of roughly 0.0 in expectation, whereas the Inference-only RPM achieves significantly higher selection quality, and the Agentic RPM yields the highest advantage on average. Crucially, we find a strong positive correlation between selection advantage and final normalized score (Pearson r = 0 .55 ,Spearman ρ = 0 .56 ), confirming that more accurate candidate selection translates to better end-to-end AIRA performance. Further details are provided in Section C.1. 70 1 10 100 Context Node Count 50 55 60 65 70 Accuracy (%)        
+
+> 60.7 60.9 62.7 65.0
+> low high Reasoning Effort 50 55 60 65 70
+> 61.3 63.4
+> n=2 n=5 n=10 n=15 Suggestion Count 0.00 0.05 0.10 0.15 0.20 0.25 Advantage over Average
+> 0.017 0.030 0.038 0.045 0.073 0.141 0.188 0.212
+> RPM-selected Oracle Figure 3 :
+
+Offline evaluation of Inference-only RPM scaling properties using GPT-5. Increasing search-tree context provided gives improved predictive accuracy (left). Allocating a higher reasoning budget yields better selection (middle). Expanding the candidate suggestion pool reliably improves both the theoretical Oracle limit and the RPM’s selection performance (right), measured by the average difference between the selected solution’s score and the average score of all candidates. 
+
+5.2 Offline Evaluation and Further Analysis 
+
+To guide development of our RPMs before running full end-to-end evaluations, we leverage the offline framework from Section 4. Full 24-hour online runs are too computationally expensive for quick iteration, and thus this offline setup allows us to tune our models, analyze their core behaviors, and derive clear trends. We observe that the best configuration of Inference-only RPMs is surpassed in predictive accuracy by our Agentic RPMs, with both exceeding the random baseline, matching the trend ultimately observed in our end-to-end evaluations. 
+
+5.2.1 Inference-only RPM 
+
+Inference Scaling We structure our offline analysis around three key dimensions that dictate the RPM’s visibility and analytical capacity: context size (the number of historical code solutions and validation scores provided from the tree), suggestion count (the number of candidate child solutions), and reasoning budget 
+
+provided to the LLM. Our offline tests reveal three clear scaling behaviors. First, context scaling demonstrates that supplying the RPM with a deeper history of historical search tree nodes and their validation scores consistently improves child-selection judgment. Second, suggestion scaling demonstrates that expanding the candidate pool systematically increases the selection advantage, measured as the average difference between the selected candidate’s score and the overall batch mean. The oracle’s selection advantage rises significantly with pool size, a trend our RPM successfully captures to extract higher-quality solutions from larger candidate batches. Third, reasoning scaling reveals that increasing the reasoning budget allocated to the LLM judge steadily improves its selection accuracy. These results motivated using a large suggestion count (15 suggestions) and to maximize the context nodes provided (by providing the maximum amount that can fit within the LLM’s context window), and high reasoning budget parameters for the RPM in our end-to-end evaluation. 
+
+Ensembling We evaluate three frontier models, GPT-5, Claude Opus 4.8, and Gemini 3.1 Pro, individually and via two aggregation techniques: a mechanical majority vote and an LLM-Arbiter ensemble that ingests the reasoning traces of all three models before making a final decision. Individual models’ performances range between 64.66% to 67.44% accuracy. Aggregating their diverse reasoning traces further mitigates errors where majority vote increases accuracy to 68.04%, while the LLM-Arbiter ensemble achieves the highest overall offline accuracy of 69.35%. A full breakdown of these configurations and their corresponding results is compiled in Appendix A.2. 85-min budget 30-min budget       
+
+> 010 20 30 40 50 60 70 80
+> Percentage (%)
+> 69.1 49.0 9.7 15.9 13.8 23.3 7.1 11.0
+> Single Split 2-fold CV 3-fold CV 5-fold CV
+> 5-min budget 30-min budget
+> 020 40 60 80
+> Percentage (%)
+> 79.8 79.2 20.2 20.8
+> Subsampled Full Data Remove Ensemble/ Aux/Distill/TTA Reduce Epochs Change Batch Size Remove Reg. (VAT/SWA/EMA) Remove LR Scheduler Simplify Data Augmentation Drop Model Architecture
+> 010 20 30 40 50 60 70 80
+> Percentage of Samples (%)  73.2 75.7 50.4 12.9 20.4 19.0 13.1 74.4 76.3 55.7 10.1 14.4 23.1 10.3
+> 5-min budget 30-min budget
+
+Figure 4 : What strategy the Agentic RPM uses: The agentic RPM frequently runs simplified versions of the original candidates. The strategies used by the 5- and 30-minute agents are remarkably similar. (left) Both agents save time by running only a single cross-validation split. (middle) Both agents frequently sub-sample the training data. (right) Both agents employ similar training adaptations, such as removing ensembling, reducing epochs and lowering the batch size. 5min 30min 4hour Time-budget  
+
+> 60 65 70 75 80 85 90 95
+> Accuracy (%) 78.52 82.78 84.02
+> validation oracle: 66.73 max validation subtree oracle: 90.95
+
+Single Split 2-fold CV 3-fold CV 5-fold CV 
+
+> 65 70 75 80 85 90 95
+> Accuracy (%)
+> 79.9 74.5 81.2 75.4 85.4 82.4 80.4 83.0
+
+5-min budget 30-min budget Subsampled Full Data 
+
+> 65 70 75 80 85 90 95
+> Accuracy (%)
+> 78.2 83.1 82.8 86.0
+
+5-min budget 30-min budget   
+
+> Ensemble/Aux/ Distill/TTA Reduce Epochs Batch Size Reg. (VAT/SWA/EMA) LR Scheduler Data Augment. Model Archit.
+> 15
+> 10
+> 5
+> 0510
+> Accuracy  (pp)
+> -2.0 1.2 3.4 -0.0 -14.1 -3.9 -1.5 1.2 3.7 3.6 3.5 -4.2 -2.0 2.6
+
+5-min budget 30-min budget 
+
+Figure 5 : How the Agentic RPM’s strategy affects performance: Overall, enlarging the time budget leads to better performance, but marginal returns may be diminishing (leftmost) . Despite both 5- and 30-minute agents employing similar strategies, the effect of these strategies on the performance of the agentic RPM differs substantially. (middle left) More splits do not bring better performance for either agent. (middle right) Using full data brings an advantage over using subsampled data. (rightmost) Most training adaptations are helpful for at least one agent, except the removal of the learning rate scheduler and simplification of data augmentation. 
+
+Reasoning Analysis To get a better understanding of the RPM’s decision-making, we analyze its generated reasoning traces. We find that referencing prior evidence, correctness of implementation or the pretrained backbone in the justification yields higher selection accuracy compared to when these are omitted. We also find, that citing more unique values from historical context also yields improved selection accuracy. Further details on the reasoning analysis are provided in Section A.3. 
+
+5.2.2 Agentic RPM 
+
+Compute Scaling We analyze how the agentic RPM scales with execution time limits on our offline benchmark, using GPT-5 as our language model backbone. Increasing the available compute budget consistently improves selection accuracy, scaling from 78.52% under a 5-minute constraint, to 82.78% at 30 minutes, and peaking at 84.02% with a 4-hour allocation. This scaling behavior demonstrates that allowing the agent more time to run, observe, and debug directly translates to higher-fidelity RPM estimations. Notably, the marginal returns obtained from increasing the time budget are relatively minimal considering the pilot-experiment agent shares the same time budget with the AI research agent and a 4-hour run of agentic RPM is prohibitively expensive. Therefore, we keep the time budget for end-to-end evaluation at 5 minutes. 
+
+Proxy Strategy Analysis To understand how agents identify promising candidates under strict time constraints, we use regular expression keyword matching to analyze the agent-generated Python code. Because full execution is impossible within 5- or 30-minute limits, agents actively simplify candidate code across validation, data sampling, and training. As shown in Figure 4, both budgets favor single-split validation, data subsampling, 9and training adaptations (e.g., removing ensembles, reducing epochs, and lowering batch sizes), though the 30-minute agent utilizes multi-fold cross-validation more frequently. Notably, we provide some hints on possible proxy strategies in the prompt to the pilot experiment, as shown in Appendix Fig. 8 so the strategies are not entirely proposed by the pilot-experiment itself. Our behavioral analysis in Figure 5 reveals three key insights: (1) multi-fold cross-validation does not consistently improve accuracy due to frequent execution timeouts; (2) evaluating on full datasets provides significantly more reliable quality estimations than using subsampled data; and (3) removing learning rate schedulers or data augmentations triggers severe performance drops, as the underlying AIRA-dojo tasks often rely on these exact training-level optimizations to succeed. 
+
+# 6 Related Work  
+
+> AI research agents and automated ML research.
+
+Our work sits within the literature that formalizes machine learning research as an agentic search problem. Early literature for automated scientific discovery and research assistance uses foundation models to generate ideas, write code, run experiments, analyze results, and draft papers (Lu et al., 2024; Yamada et al., 2025; Schmidgall et al., 2025; Baek et al., 2025; Ren et al., 2025; Zheng et al., 2025). Current work introduces AI research agents as search policies over a tree of candidate ML solutions, where each node corresponds to an executed or proposed solution and edges correspond to mutations, refinements, or other improvement operators (Toledo et al., 2025; Hambardzumyan et al., 2026). This formulation directly motivates our work: RPMs target the core decision problem induced by such search trees, namely predicting which candidate solution should be executed before committing expensive compute. Other recent works improve the agent scaffold by adding modular search, targeted refinement, ideation agents, multi-agent specialization, or improved code interfaces (Nam et al., 2025; Chen et al., 2026; Zhang et al., 2026; Li et al., 2024; Yang et al., 2024). While these works improve agents, scaffolds, or benchmarks, none of them address the dominant cost in this setting, namely executing the candidate solutions that the search proposes.  
+
+> Model-based methods for expensive search.
+
+In reinforcement learning, world models learn environment dynamics and can be used for planning (Schrittwieser et al., 2020) or training policies from synthetic rollouts (Sutton, 1991; Ha and Schmidhuber, 2018; Hafner et al., 2023). Surrogate models and learned policies are also used on the meta -level, as a means to allocate experimental compute efficiently. Such approaches have been applied in Bayesian optimization (e.g., (Snoek et al., 2012)), hyperparameter optimization (e.g., (Li et al., 2018; Falkner et al., 2018; Jaderberg et al., 2017; Chen et al., 2022)) and learned optimization (e.g., (Andrychowicz et al., 2016)). Metz et al. (2022) select datasets which are predicted to be quick-to-run to efficiently meta-learn an optimization algorithm, (Goldie et al., 2025) use a distillation objective as opposed to online evaluation due to the time-cost of training models with every proposed algorithm, and Wolf et al. (2026) meta-learns online reinforcement learning algorithms within a world model to accelerate experimentation beyond using slower hand-coded simulation. While all of these works share our concern of avoiding wasteful evaluation, none take the approach of predicting the value of a candidate solution, its code, reasoning, and partial results, to decide which proposed algorithm to evaluate next.  
+
+> Preference, judge, and reward models.
+
+The RPM is at its core a preference model over candidate solutions, connecting it to a broad literature on comparative evaluation. Reward models trained from pairwise human comparisons are central to reinforcement learning from human feedback (Christiano et al., 2017; Stiennon et al., 2020; Ouyang et al., 2022) and are often formulated as paired-comparison or ranking problems (Bradley and Terry, 1952; Liu, 2009); comparable preference supervision can also be distilled from offline trajectories without reward models or environment rollouts (Chen and Yuille, 2026). In parallel, the LLM-as-a-judge paradigm shows that pretrained models can compare candidate responses with reasonable fidelity (Zheng et al., 2023), and recent work turns such judgments into scalable selection: Kwok et al. (2026) derive continuous scores from scoring-token logits to reduce ties and rank candidates without additional training, while Wang et al. (2026) argue that verification can increasingly constrain stronger generators. Most of these methods evaluate generated responses or recorded trajectories, whereas the RPM ranks candidate solutions before their full training-and-evaluation runs. Closest to our setting, Zheng et al. (2026) also predict a pairwise preference between unexecuted ML solutions, but condition on a separately prepared, static data report rather than on nodes from the search tree itself; 10 the RPM instead grounds each comparison in the live search tree and the validation scores of solutions already executed. Goldie et al. (2026) propose training a judge or reward model to select promising leaves in tree-search research agents, but leave it unimplemented. The RPM realizes that proposal without model training, and extends it: where agentic verifiers probe code or user interfaces (Wang et al., 2026), our agentic variant runs small-scale pilot ML experiments , partial training and evaluation runs, and chooses based on their measured results. 
+
+# 7 Limitations 
+
+• While our evaluations operate under the assumption that LLM inference calls will incur negligible cost in the future, in practice, current LLM inference incurs real-time latency. For the Inference-only RPM, which uses a self-hosted Qwen3.6-27B, inference latency totals 0.660 hours per 24-hour end-to-end run. Adjusting for this time budget yields a normalized score of 0.708 at 23.34 hours, a negligible drop from 0.711. Nevertheless, exact latency and monetary overhead vary by hosting infrastructure and LLM size. • As the offline data come from prior greedy AIRA-dojo runs (with different LLM backbones and, by design, different task modalities than the online setting), they are off-policy and biased relative to the online target, including the subtree-max label bias noted in Section 4, and thus our main claims rest on the end-to-end results. • We scope RPM integration into child creation only. We report initial results integrating RPMs within 
+
+final-node selection in Section D. We do not observe significant improvement over validation-based selection, given the Hidden Consistent Evaluation protocol’s strong test-validation generalization (Ham-bardzumyan et al., 2026). We leave RPM integration within parent-selection to future work. • We describe the RPM as scaffold-agnostic because it inspects no scaffold-internal state, but we demon-strate it only in AIRA-dojo’s child-selection step, with a single backbone (Qwen3.6-27B) on a single benchmark. The agentic variant additionally needs a sandboxed clone of the execution environment in which to run pilot experiments. We see no reason the approach would not transfer, but portability to other scaffolds and backbones is part of our future work. 
+
+# 8 Conclusion 
+
+An AI research agent can propose a candidate solution far faster than it can determine whether that solution works. We introduced the AI Research Preference Model (RPM) , which ranks unexecuted candidates so that the agent can direct its execution budget toward promising candidates. This formulation avoids requiring the model to forecast absolute outcomes: it identifies the most promising candidate without taking on the challenging task of predicting what any candidate would score. We built RPMs from frozen pretrained models in two variants: an inference-only RPM and an agentic RPM that runs its own pilot experiments. Both are designed to be portable across search scaffolds, the inference-only variant requiring only candidate solutions and a record of prior evaluations, and the agentic variant additionally requiring a sandbox. By replacing random selection among generated candidates with RPM-guided selection, the two variants raise AIRA-dojo’s average normalized score on AIRS-Bench from 0.684 to 0.711 and 0.729 ,respectively, using the same backbone and mutation operators as the random-selection baseline. Both also reach the baseline’s 24-hour score in roughly 15 hours, with less than two-thirds of its execution budget, and yield new state-of-the-art results on two individual AIRS-Bench tasks. More broadly, our work supports treating candidate selection as an explicit use of test-time compute. Agents can invest computation not only in generating candidates, but also in deciding which candidates are worth executing. This is especially useful when evaluation is much more expensive than generation. We hope this work encourages research agents that choose which solutions to run as carefully as they design them. 11 References 
+
+Rishabh Agarwal, Max Schwarzer, Pablo Samuel Castro, Aaron Courville, and Marc G Bellemare. Deep reinforcement learning at the edge of the statistical precipice. Advances in Neural Information Processing Systems , 2021. Marcin Andrychowicz, Misha Denil, Sergio Gomez, Matthew W. Hoffman, David Pfau, Tom Schaul, Brendan Shillingford, and Nando de Freitas. Learning to learn by gradient descent by gradient descent. In Advances in Neural Information Processing Systems , volume 29, 2016. Anthropic. Claude code overview. https://code.claude.com/docs/en/overview , 2025. Anthropic. Introducing claude opus 4.8, 2026. https://www.anthropic.com/news/claude-opus-4-8 .Jinheon Baek, Sujay Kumar Jauhar, Silviu Cucerzan, and Sung Ju Hwang. ResearchAgent: Iterative research idea generation over scientific literature with large language models. In Luis Chiruzzo, Alan Ritter, and Lu Wang, editors, 
+
+Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 6709–6738, Albuquerque, New Mexico, apr 2025. Association for Computational Linguistics. doi: 10.18653/v1/2025.naacl-long.342. https://aclanthology. org/2025.naacl-long.342/ .Ralph Allan Bradley and Milton E Terry. Rank analysis of incomplete block designs: I. the method of paired comparisons. Biometrika , 39(3/4):324–345, 1952. Jun Shern Chan, Neil Chowdhury, Oliver Jaffe, James Aung, Dane Sherburn, Evan Mays, Giulio Starace, Kevin Liu, Leon Maksin, Tejal Patwardhan, Aleksander Madry, and Lilian Weng. MLE-bench: Evaluating machine learning agents on machine learning engineering. In The Thirteenth International Conference on Learning Representations ,2025. https://openreview.net/forum?id=6s5uXNWGIh .Jiefeng Chen, Bhavana Dalvi Mishra, Jaehyun Nam, Rui Meng, Tomas Pfister, and Jinsung Yoon. Mars: Modular agent with reflective search for automated ai research. arXiv preprint arXiv:2602.02660 , 2026. Yixiong Chen and Alan Yuille. Agentic-DPO: From imitation to agentic policy optimization on expert trajectories, 2026. https://arxiv.org/abs/2607.10601 .Yutian Chen, Xingyou Song, Chansoo Lee, Zi Wang, Qiuyi Zhang, David Dohan, Kazuya Kawakami, Greg Kochanski, Arnaud Doucet, Marc’Aurelio Ranzato, Sagi Perel, and Nando de Freitas. Towards learning universal hyperparameter optimizers with transformers. In Advances in Neural Information Processing Systems , volume 35, 2022. Paul F Christiano, Jan Leike, Tom Brown, Miljan Martic, Shane Legg, and Dario Amodei. Deep reinforcement learning from human preferences. In Advances in Neural Information Processing Systems , 2017. Jade Copet, Quentin Carbonneaux, Gal Cohen, Jonas Gehring, Jacob Kahn, Jannik Kossen, Felix Kreuk, Emily McMilin, Michel Meyer, Yuxiang Wei, David Zhang, et al. CWM: An open-weights LLM for research on code generation with world models. arXiv preprint arXiv:2510.02387 , 2025. Stefan Falkner, Aaron Klein, and Frank Hutter. BOHB: Robust and efficient hyperparameter optimization at scale. In 
+
+Proceedings of the 35th International Conference on Machine Learning , pages 1437–1446. PMLR, 2018. Alexander D. Goldie, Zilin Wang, Adrian Hayler, Deepak Nathani, Edan Toledo, Ken Thampiratwong, Aleksandra Kalisz, Michael Beukman, Hannah Erlebach, Alistair Letcher, Shashank Reddy, Clarisse Wibault, Theo Wolf, Charles O’Neill, Uljad Berdica, Nicholas Roberts, Saeed Rahmani, Roberta Raileanu, Shimon Whiteson, and Jakob N. Foerster. Discogen: Procedural generation of algorithm discovery tasks in machine learning, 2026. 
+
+https://arxiv.org/abs/2603.17863 .Alexander David Goldie, Zilin Wang Jaron Cohen, Jakob Nicolaus Foerster, and Shimon Whiteson. How should we meta-learn reinforcement learning algorithms? In Reinforcement Learning Conference , 2025. Google DeepMind. Gemini 3.1 pro: A smarter model for your most complex tasks. https://blog.google/ innovation-and-ai/models-and-research/gemini-models/gemini-3-1-pro/ , February 2026. Accessed: 2026-07-19. David Ha and Jürgen Schmidhuber. Recurrent world models facilitate policy evolution. In Advances in Neural Information Processing Systems , volume 31, 2018. Danijar Hafner, Jurgis Pasukonis, Jimmy Ba, and Timothy Lillicrap. Mastering diverse domains through world models. 
+
+arXiv preprint arXiv:2301.04104 , 2023. 
+
+12 Karen Hambardzumyan, Nicolas Baldwin, Edan Toledo, Rishi Hazra, Michael Kuchnik, Bassel Al Omari, Thomas Simon Foster, Anton Protopopov, Jean-Christophe Gagnon-Audet, Ishita Mediratta, Kelvin Niu, Michael Shvartsman, Alisia Lupidi, Alexis Audran-Reiss, Parth Pathak, Tatiana Shavrina, Despoina Magka, Hela Momand, Derek Dunfield, Nicola Cancedda, Pontus Stenetorp, Carole-Jean Wu, Jakob Nicolaus Foerster, Yoram Bachrach, and Martin Josifoski. Aira_2: Overcoming bottlenecks in ai research agents, 2026. https://arxiv.org/abs/2603.26499 .Max Jaderberg, Valentin Dalibard, Simon Osindero, Wojciech M. Czarnecki, Jeff Donahue, Ali Razavi, Oriol Vinyals, Tim Green, Iain Dunning, Karen Simonyan, Chrisantha Fernando, and Koray Kavukcuoglu. Population based training of neural networks. arXiv preprint arXiv:1711.09846 , 2017. Carlos E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik R Narasimhan. SWE-bench: Can language models resolve real-world github issues? In The Twelfth International Conference on Learning Representations , 2024. https://openreview.net/forum?id=VTF8yNQM66 .Jacky Kwok, Shulu Li, Pranav Atreya, Yuejiang Liu, Yixing Jiang, Chelsea Finn, Marco Pavone, Ion Stoica, and Azalia Mirhoseini. LLM-as-a-Verifier: A general-purpose verification framework, 2026. https://arxiv.org/abs/2607.05391 .Lisha Li, Kevin Jamieson, Giulia DeSalvo, Afshin Rostamizadeh, and Ameet Talwalkar. Hyperband: A novel bandit-based approach to hyperparameter optimization. Journal of Machine Learning Research , 18(185):1–52, 2018. Ziming Li, Qianbo Zang, David Ma, Jiawei Guo, Tuney Zheng, Minghao Liu, Xinyao Niu, Yue Wang, Jian Yang, Jiaheng Liu, Wanjun Zhong, Wangchunshu Zhou, Wenhao Huang, and Ge Zhang. AutoKaggle: A multi-agent framework for autonomous data science competitions, 2024. https://arxiv.org/abs/2410.20424 .Tie-Yan Liu. Learning to rank for information retrieval. Foundations and Trends in Information Retrieval , 3(3): 225–331, 2009. Chris Lu, Cong Lu, Robert Tjarko Lange, Jakob Foerster, Jeff Clune, and David Ha. The ai scientist: Towards fully automated open-ended scientific discovery, 2024. https://arxiv.org/abs/2408.06292 .Alisia Lupidi, Bhavul Gauri, Thomas Simon Foster, Bassel Al Omari, Despoina Magka, Alberto Pepe, Alexis Audran-Reiss, Muna Aghamelu, Nicolas Baldwin, Lucia Cipolina-Kun, et al. Airs-bench: a suite of tasks for frontier ai research science agents. arXiv preprint arXiv:2602.06855 , 2026. Mike A. Merrill, Alexander G. Shaw, Nicholas Carlini, Boxuan Li, Harsh Raj, Ivan Bercovich, Lin Shi, Jeong Yeon Shin, Thomas Walshe, E. Kelly Buchanan, Junhong Shen, Guanghao Ye, Haowei Lin, Jason Poulos, Maoyu Wang, Marianna Nezhurina, Jenia Jitsev, Di Lu, Orfeas Menis Mastromichalakis, Zhiwei Xu, Zizhao Chen, Yue Liu, Robert Zhang, Leon Liangyu Chen, Anurag Kashyap, Jan-Lucas Uslu, Jeffrey Li, Jianbo Wu, Minghao Yan, Song Bian, Vedang Sharma, Ke Sun, Steven Dillmann, Akshay Anand, Andrew Lanpouthakoun, Bardia Koopah, Changran Hu, Etash Guha, Gabriel H. S. Dreiman, Jiacheng Zhu, Karl Krauth, Li Zhong, Niklas Muennighoff, Robert Amanfu, Shangyin Tan, Shreyas Pimpalgaonkar, Tushar Aggarwal, Xiangning Lin, Xin Lan, Xuandong Zhao, Yiqing Liang, Yuanli Wang, Zilong Wang, Changzhi Zhou, David Heineman, Hange Liu, Harsh Trivedi, John Yang, Junhong Lin, Manish Shetty, Michael Yang, Nabil Omi, Negin Raoof, Shanda Li, Terry Yue Zhuo, Wuwei Lin, Yiwei Dai, Yuxin Wang, Wenhao Chai, Shang Zhou, Dariush Wahdany, Ziyu She, Jiaming Hu, Zhikang Dong, Yuxuan Zhu, Sasha Cui, Ahson Saiyed, Arinbjörn Kolbeinsson, Jesse Hu, Christopher Michael Rytting, Ryan Marten, Yixin Wang, Alex Dimakis, Andy Konwinski, and Ludwig Schmidt. Terminal-bench: Benchmarking agents on hard, realistic tasks in command line interfaces, 2026. https://arxiv.org/abs/2601.11868 .Luke Metz, James Harrison, C. Daniel Freeman, Amil Merchant, Lucas Beyer, James Bradbury, Naman Agrawal, Ben Poole, Igor Mordatch, Adam Roberts, and Jascha Sohl-Dickstein. Velo: Training versatile learned optimizers by scaling up, 2022. https://arxiv.org/abs/2211.09760 .Jaehyun Nam, Jinsung Yoon, Jiefeng Chen, Jinwoo Shin, Sercan O Arik, and Tomas Pfister. MLE-STAR: Machine learning engineering agent via search and targeted refinement. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. https://openreview.net/forum?id=vS1M06Px6u .Deepak Nathani, Lovish Madaan, Nicholas Roberts, Nikolay Bashlykov, Ajay Menon, Vincent Moens, Amar Budhiraja, Despoina Magka, Vladislav Vorotilov, Gaurav Chaurasia, Dieuwke Hupkes, Ricardo Silveira Cabral, Tatiana Shavrina, Jakob Foerster, Yoram Bachrach, William Yang Wang, and Roberta Raileanu. MLGym: A new framework and benchmark for advancing ai research agents, 2025. https://arxiv.org/abs/2502.14499 .OpenAI. GPT-4o System Card, 2024. https://cdn.openai.com/gpt-4o-system-card.pdf . Accessed: 2024-06-07. OpenAI. Introducing gpt-oss, 2025. https://openai.com/index/introducing-gpt-oss/ . Accessed: 2026-08-12. 
+
+13 Krista Opsahl-Ong, Michael J Ryan, Josh Purtell, David Broman, Christopher Potts, Matei Zaharia, and Omar Khattab. Optimizing instructions and demonstrations for multi-stage language model programs. In Yaser Al-Onaizan, Mohit Bansal, and Yun-Nung Chen, editors, Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pages 9340–9366, Miami, Florida, USA, November 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.emnlp-main.525. https://aclanthology.org/2024.emnlp-main.525/ .Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll L Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. In 
+
+Advances in Neural Information Processing Systems , 2022. Arkil Patel, Satwik Bhattamishra, and Navin Goyal. Are nlp models really able to solve simple math word problems? In Proceedings of the 2021 conference of the North American chapter of the association for computational linguistics: human language technologies , pages 2080–2094, 2021. Qwen Team. Qwen2.5: A party of foundation models, September 2024. https://qwenlm.github.io/blog/qwen2.5/ .Qwen Team. Qwen3.6-27B: Flagship-level coding in a 27B dense model, April 2026. https://qwen.ai/blog?id=qwen3. 6-27b .Shuo Ren, Can Xie, Pu Jian, Zhenjiang Ren, Chunlin Leng, and Jiajun Zhang. Towards scientific intelligence: A survey of llm-based scientific agents, 2025. https://arxiv.org/abs/2503.24047 .Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. Winogrande: An adversarial winograd schema challenge at scale. Communications of the ACM , 64(9):99–106, 2021. Samuel Schmidgall, Yusheng Su, Ze Wang, Ximeng Sun, Jialian Wu, Xiaodong Yu, Jiang Liu, Michael Moor, Zicheng Liu, and Emad Barsoum. Agent laboratory: Using llm agents as research assistants, 2025. https: //arxiv.org/abs/2501.04227 .Julian Schrittwieser, Ioannis Antonoglou, Thomas Hubert, Karen Simonyan, Laurent Sifre, Simon Schmitt, Arthur Guez, Edward Lockhart, Demis Hassabis, Thore Graepel, Timothy Lillicrap, and David Silver. Mastering atari, go, chess and shogi by planning with a learned model. Nature , 588:604–609, 2020. Aaditya Singh, Adam Fry, Adam Perelman, Adam Tart, Adi Ganesh, Ahmed El-Kishky, Aidan McLaughlin, Aiden Low, AJ Ostrow, Akhila Ananthram, et al. Openai gpt-5 system card. arXiv preprint arXiv:2601.03267 , 2025. Jasper Snoek, Hugo Larochelle, and Ryan P. Adams. Practical bayesian optimization of machine learning algorithms. In Advances in Neural Information Processing Systems , volume 25, 2012. Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel M Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, and Paul F Christiano. Learning to summarize with human feedback. In Advances in Neural Information Processing Systems , 2020. Richard S. Sutton. Dyna, an integrated architecture for learning, planning, and reacting. In Proceedings of the Seventh International Conference on Machine Learning , pages 216–224, 1991. Edan Toledo, Karen Hambardzumyan, Martin Josifoski, Rishi Hazra, Nicolas Baldwin, Alexis Audran-Reiss, Michael Kuchnik, Despoina Magka, Minqi Jiang, Alisia Maria Lupidi, Andrei Lupu, Roberta Raileanu, Tatiana Shavrina, Kelvin Niu, Jean-Christophe Gagnon-Audet, Michael Shvartsman, Shagun Sodhani, Alexander H Miller, Abhishek Charnalia, Derek Dunfield, Carole-Jean Wu, Pontus Stenetorp, Nicola Cancedda, Jakob Nicolaus Foerster, and Yoram Bachrach. AI research agents for machine learning: Search, exploration, and generalization in MLE-bench. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. https://openreview.net/ forum?id=RwfrdKSgCE .Binghai Wang, Chenlong Zhang, Dayiheng Liu, Jiajun Zhang, Jiawei Chen, Mingze Li, Mouxiang Chen, Rongyao Fang, Siyuan Zhang, Xuwu Wang, Yuheng Jing, Zeyao Ma, and Zeyu Cui. The verification horizon: No silver bullet for coding agent rewards, 2026. https://arxiv.org/abs/2606.26300 .Theo Wolf, Alexander David Goldie, Jarek Luca Liesen, Uljad Berdica, Mattie Fellows, and Jakob Nicolaus Foerster. Model-based meta-learning for algorithm discovery. In ICLR 2026 the 2nd Workshop on World Models: Understanding, Modelling and Scaling , 2026. Michael J. Wooldridge and Nicholas R. Jennings. Intelligent Agents: Theory and Practice. The Knowledge Engineering Review , 10(2):115–152, 1995. 
+
+14 Yutaro Yamada, Robert Tjarko Lange, Cong Lu, Shengran Hu, Chris Lu, Jakob Foerster, Jeff Clune, and David Ha. The AI Scientist-v2: Workshop-Level Automated Scientific Discovery via Agentic Tree Search, 2025. https: //arxiv.org/abs/2504.08066 .John Yang, Carlos E. Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan, and Ofir Press. SWE-agent: Agent-computer interfaces enable automated software engineering, 2024. https://arxiv.org/abs/2405.15793 .Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. React: Synergizing reasoning and acting in language models. In International Conference on Learning Representations (ICLR) , 2023. Yunxiang Zhang, Kang Zhou, Zhichao Xu, Kiran Ramnath, Yun Zhou, Sangmin Woo, Haibo Ding, and Lin Lee Cheong. Learning to ideate for machine learning engineering agents. In Proceedings of the 19th Conference of the European Chapter of the Association for Computational Linguistics, Volume 2: Short Papers , pages 436–447. Association for Computational Linguistics, 2026. Jingsheng Zheng, Jintian Zhang, Yujie Luo, Yuren Mao, Yunjun Gao, Lun Du, Huajun Chen, and Ningyu Zhang. Can we predict before executing machine learning agents?, 2026. https://arxiv.org/abs/2601.05930 .Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric Xing, et al. Judging llm-as-a-judge with mt-bench and chatbot arena. Advances in neural information processing systems , 36:46595–46623, 2023. Tianshi Zheng, Zheye Deng, Hong Ting Tsang, Weiqi Wang, Jiaxin Bai, Zihao Wang, and Yangqiu Song. From automation to autonomy: A survey on large language models in scientific discovery, 2025. https://arxiv.org/abs/ 2505.13259 .Qihuang Zhong, Kang Wang, Ziyang Xu, Liang Ding, Juhua Liu, and Bo Du. Achieving> 97% on gsm8k: Deeply understanding the problems makes llms better solvers for math word problems. Frontiers of Computer Science , 20 (1):1–3, 2026. 
+
+15 Appendix 
+
+# A Inference-Only RPM 
+
+A.1 Prompt Optimization 
+
+We optimize the ranking system prompt at inference time using Automatic Prompt Optimization (APO) with no underlying weight updates. We employ GPT-5 as both the candidate ranker and the meta-proposer over a pairwise branch-ranking dataset drawn from AIRS-Bench trajectory traces. 
+
+A.1.1 Optimization Configuration 
+
+The optimization follows a MIPROv2-style pipeline. Starting from a baseline "strict judge" template, the meta-proposer generates 10 candidate prompt variations. The search space is explored via Thompson sampling over per-candidate Beta (1 , 1) accuracy posteriors across 40 Bayesian minibatch trials. Underperforming templates are progressively pruned, while top-performing survivors undergo deeper validation runs to mitigate optimization-to-holdout shrinkage. The optimization routine consistently converges on a Principal Investigator (PI) persona structured around an ordered, five-criterion evaluation rubric. This process introduces several key shifts from the initial baseline: • Structural Evaluation: Moves from a flat list of decision rules to a structured walkthrough forcing the model to sequentially score problem-model fit, extensibility, learning-curve projection, context-informed novelty, and risk-adjusted potential. • Shifting Bug Tolerance: Transitions from binary bug intolerance (“a buggy candidate has no potential”) to evaluating systemic soundness, prioritizing promising-but-rough directions over low-ceiling code. • Strategic Context Utility: Sharpens context node usage from generic historical summaries into an explicit mandate to discover open search gaps and actively penalize redundant directions. 
+
+A.1.2 Results Prompt Template Mean Single-Sample Acc. (%) 
+
+Original 52 .80 
+
+Optimized 53 .50   
+
+> Table 1 : Prompt optimization performance evaluated on a matched dataset ( n= 990 ). Accuracy denotes the fraction of correct higher-potential candidate selections.
+
+Table 1 summarizes the performance gains from the offline prompt search. The optimized PI rubric provides a consistent uplift, improving mean single-sample accuracy by +0 .7 pp and majority-vote accuracy by +1 .2 pp. This discovered prompt layout is hand-carried directly into the core ranking agent. 
+
+A.1.3 Prompt Templates 
+
+Baseline Template (Before) 
+
+> You are a strict judge selecting between TWO candidate solutions to the SAME machine learning task. Your goal is to choose the candidate whose direction of exploration is more likely to eventually lead to a better long-term best test score, even if further refinements are needed. Focus on long-term potential rather than immediate performance. Task description: ```markdown
+
+16 {task_desc} Context from various solutions to the same machine learning task. These are NOT the candidates you are judging. {context_text} Candidate A -- Plan: {plan_A} Candidate A -- Code: {code_A} Candidate B -- Plan: {plan_B} Candidate B -- Code: {code_B} Decision rules: Think about which candidate opens up a more promising search direction for future iterations. Prefer the candidate that lays better groundwork for eventually achieving the best possible long-term best test score, not just the one that looks better right now. Consider whether the approach is extensible, modular, and amenable to iterative improvement. Prefer correctness and robustness -- a buggy candidate has no long-term potential. Use context nodes as evidence of what has already been tried and what directions have shown promise. Do not assume the context nodes are optimal; the new candidates may open better paths. Output format (STRICT): Think step by step and provide your reasoning before giving a final answer. Give a final answer of A for Candidate A and B for Candidate B. Provide your answer inside a \boxed{{}}, ie \boxed{{A}} or \boxed{{B}}. 
+
+Optimized Template (After) 
+
+You are a principal investigator allocating compute budget to one of two branches. Decide which branch is more likely to yield the best eventual test score after several iterations. Emphasize extensibility, fixability, and promise relative to what has already been tried. Task description: {task_desc} Context from other solutions and their scores (not the candidates). Use this to identify promising gaps and avoid redundant directions: {context_text} Candidate A -- Plan: {plan_A} Candidate A -- Code: {code_A} 
+
+17 Candidate B -- Plan: {plan_B} Candidate B -- Code: {code_B} Step-by-step evaluation: Problem-model fit: Does each candidate's formulation and objective align with the task? Any risks of leakage or misalignment? Note which issues are trivially fixable vs. fundamental. Extensibility and upgrade path: How modular is the code? How straightforward is it to add stronger models, features, or training strategies in 1 to 3 iterations? Learning curve projection: Based on current choices, estimate how performance might improve over the next few iterations. Identify low-hanging fruit (data cleaning, features, hyperparameters, regularization, architecture changes). Context-informed novelty: Relative to {context_text}, does the candidate explore a fresh, promising region or iterate intelligently on a proven one? Avoid branches that mirror underperforming context without new leverage. Risk-adjusted potential: Balance upside (ceiling) against effort/risk to realize it. Bugs are acceptable if the approach is sound and fixes are clear; penalize only for hard-to-remedy conceptual flaws. Decision policy: Choose the candidate whose direction offers higher expected long-term best test score and a credible path to get there. Output format (STRICT): Provide reasoning following the steps above. End with a single final answer: A for Candidate A or B for Candidate B. Provide your answer inside a \boxed{A} or \boxed{B}. 
+
+A.2 Model Ensembling 
+
+We evaluate three frontier LLMs, GPT-5 (Singh et al., 2025), Claude Opus 4.8 (Anthropic, 2026) and Gemini 3.1 Pro (Google DeepMind, 2026), individually and ensembled, as baselines on the offline ranking evaluation detailed in Section 4.2. 
+
+A.2.1 Single-Model Configuration 
+
+We leverage the same ranking prompt produced by our prompt optimization method, and detailed in Appendix A.1. Following the insights from our offline evaluations, detailed in section 5.2.1, we use the maximum reasoning effort for each model and provide the maximum number of context nodes that fit within each 18 model’s context window. 
+
+A.2.2 Ensembling Configuration 
+
+For both ensembling configurations, we perform 3 independent rollouts for each baseline model prior to aggregating their predictions. 
+
+Majority Vote This strategy employs a mechanical aggregation over the baseline models. For each rollout, the final vote of each model’s response is extracted. A simple majority vote determines the final ensemble prediction, with ties broken uniformly at random. 
+
+LLM Arbiter The arbiter ensemble replaces mechanical vote counting with a high-level consensus call, using Claude Opus 4.8 as the final arbiter. The arbiter receives the original ranking payload (the task description, historical context, and the candidate pair) alongside the anonymized reasoning traces from the three base models. It is instructed to critically evaluate the logical quality of each expert’s argument rather than blindly deferring to the majority choice. The exact template formatting is structured as follows: 
+
+{individual_ranking_prompt} ========================== You are the FINAL ARBITER. Above is the exact task that was given to multiple independent expert judges: a machine-learning task description, context from prior solutions, and the candidate solutions. Each expert independently picked the candidate they believe has the higher long-term potential. Their votes and full reasoning are given below. The experts are anonymized and may disagree with one another; any individual expert may be wrong. Do NOT defer to a majority -- weigh the quality of the arguments against the task and the candidates yourself, then commit to the single best candidate. -----------------------------------------------------------### Expert 1 Vote: {vote_1} Reasoning: {reasoning_trace_1} -----------------------------------------------------------... -----------------------------------------------------------### Expert N Vote: {vote_N} Reasoning: {reasoning_trace_N} ========================== Now make the final decision among Candidate A or Candidate B. Output format (STRICT): - Briefly explain which expert arguments you found decisive and why. - Give a single final answer: one letter either A or B. - Provide your answer inside a \boxed{}, e.g. \boxed{A}. 
+
+A.2.3 Results 
+
+Table 2 summarizes the offline ranking results. Individually, Claude Opus 4.8 and Gemini 3.1 Pro perform nearly identically (around 67.4%), while GPT-5 trails slightly at 64.66%. Ensembling helps smooth out unique model errors. A standard majority vote lifts accuracy to 68.04%, but the LLM-Arbiter achieves the top 19 Model Accuracy (%) 
+
+GPT-5 64.66 Claude Opus 4.8 67.44 Gemini 3.1 Pro 67.40 Ensembling (majority vote) 68.04 Ensembling (arbiter, Claude 4.8) 69.35 
+
+Table 2 : Frontier baseline results on the ranking evaluation. Accuracy is the fraction of correct selections. Correctness Pretrained Backbone Prior-Evidence Hyper-parameters Architecture            
+
+> 010 20 30 40 50 60 70 80
+> Mention Rate %
+> 72.8 70.2 62.6 61.8 47.9 Correctness Pretrained Backbone Prior-Evidence Hyper-parameters Architecture
+> 010 20 30 40 50 60 70 80 90
+> Accuracy (%)
+> 66.9 67.0 68.3 65.5 64.7 63.9 63.9 62.4 67.0 67.3
+> Mentioned Not Mentioned
+
+Figure 6 : Reasoning Category Frequency and Selection Accuracy Impact. Mention frequency of reasoning categories across pairwise rollouts (left) and resulting selection accuracy when mentioned versus omitted (right). Citing correctness, pretrained backbones, or prior evidence improves accuracy, whereas citing architecture alone degrades performance. 
+
+score of 69.35%, showing that weighing the quality of arguments outperforms a simple vote count. Table 2 summarizes the offline ranking results. Individually, Claude Opus 4.8 and Gemini 3.1 Pro perform nearly identically (around 67.4%), while GPT-5 trails slightly at 64.66%. Ensembling helps smooth out unique model errors. A standard majority vote lifts accuracy to 68.04%, but the LLM-Arbiter achieves the top score of 69.35%, showing that weighing the quality of arguments outperforms a simple vote count. 
+
+A.3 Reasoning Analysis 
+
+To better understand the decision-making process of inference-only RPMs, we analyze the generated reasoning traces across pairwise candidate rollouts. Specifically, we categorize the justifications used in the model’s rationale and evaluate how referencing empirical context impacts selection accuracy. 
+
+Evaluation Setup We evaluate reasoning traces generated across 8,715 pairwise rollouts (3 independent rollouts per pair) across three ranker models: gpt-5 , claude-4.8-opus , and gemini-3.1-pro , generated as part of the evaluations in Section A.2.1 
+
+Justification Categorization Using automated keyword and regex matching, we categorize each reasoning trace into multi-label justification types based on five core categories: • Correctness: Identifying code bugs, syntax errors, or execution flaws. • Pretrained Backbone: Evaluating choices of pretrained model backbones. • Prior-Evidence: Citing measured validation/test metrics from previously explored context nodes. • Hyperparameters: Analyzing learning rates, epoch counts, or optimizer settings. • Architecture: Evaluating structural model modifications (e.g., fusion layers, attention blocks). As shown in Figure 6, grounding selections in Correctness (66 .9% vs. 63 .9% ), Pretrained Backbone (67 .0% vs. 63 .9% ), or Prior-Evidence (68 .3% vs. 62 .4% ) yields higher selection accuracy compared to when these justifications 20 Figure 7 : Impact of Referencing Historical Context. Pairwise selection accuracy plotted against the number of distinct context node metric values cited in the reasoning trace. We observe that selection accuracy scales monotonically with citation depth. 
+
+are omitted. Conversely, relying on abstract Architecture justifications decreases selection accuracy from 
+
+67 .3% to 64 .7% .
+
+Context Citation Analysis We measure how actively the ranker utilizes historical search trajectories by counting the number of distinct context-node metric values cited in each reasoning trace. Specifically, we parse rollouts using regular expressions to extract, deduplicate, and ground explicit node identifiers and validation metrics cited from the prompt history. As shown in Figure 7, selection accuracy scales monotonically with the volume of cited context metrics: rollouts citing zero metric values achieve 65 .4% accuracy, whereas rollouts citing six or more distinct metric values reach 80 .7% .21 B Agentic RPM 
+
+B.1 Prompt Templates 
+
+In this section, we detail the complete set of prompts guiding the agentic RPM workflow. Specifically, we present the prompt templates for initial pilot experimentation (Figure 8), iterative feedback (Figure 9), and the final prediction (Figure 10). 
+
+Prompt for Stepping Stone Generation 
+
+> INTRODUCTION
+
+:You are a Kaggle Grandmaster and Lead Data Scientist acting as a Strategic Evaluator . Your task is to analyze two candidate machine learning solutions and predict which one will achieve a superior test score without actually evaluating on the test set .You are given two candidate solutions for a machine learning competition on Kaggle. We do not have access to the test set. Instead, we estimate test performance by running 5-fold cross-validation (CV) on the public training set. However, running the full 5-fold CV on the entire training set is prohibitively time-consuming and beyond our computational budget. Therefore, you must predict which solution would achieve a better test score if it were fully executed, using fast, high-leverage experiments (Pilot Experiments) on the public training set. Remember: your goal is NOT to build the final solution, but to generate code that helps predict the relative ranking of the two solutions .
+
+> TASK DESCRIPTION
+
+``` {task_desc} ``` 
+
+You can access the data using standard Python libraries (pandas, datasets, etc.). The data is already mounted and ready to use — no need to download or prepare it.  
+
+> Important:
+
+Pay attention to whether higher or lower values indicate better performance (e.g., accuracy is higher-is-better, and RMSE is lower-is-better).  
+
+> Common Pitfalls:
+
+Do NOT use from transformers import AdamW (it has been removed). Use from torch.optim import AdamW instead.  
+
+> Your Resources (as Strategy Evaluator):
+
+{device } 
+
+> Time Limit:
+
+{time_limit }
+
+> CANDIDATE SOLUTIONS: Option A:
+
+```python {candidate_a} ``` 
+
+> Option B:
+
+```python {candidate_b} ``` 
+
+...... 
+
+> INSTRUCTIONS FOR PILOT EXPERIMENTS:
+
+You must write a fast, efficient Python script (with a target runtime under {time_limit} ). When executed, this script should produce evidence that helps determine which candidate solution would achieve a better test score. You have full freedom in choosing your analysis strategy. For example, you may: - Run a simplified or partial cross-validation (e.g., fewer folds, subsampled data). - Compare key architectural or hyperparameter differences between the two solutions and run targeted ablation experiments. - Evaluate both solutions on a single train/validation split. - Perform any other analysis you believe is informative. 
+
+> REQUIREMENT
+
+:Step 1: Use the above information and the provided tools to first understand the task and the candidate 
+
+22 solutions, and then write a Python script to generate evidence. Step 2: Use the provided tools to fix any bugs in your script and run it, adding any additional experiments needed to strengthen the evidence. Step 3: You MUST summarize your experiment design rationale, experimental results and findings in plain text and submit them with the tool submit_solution() . 
+
+> Figure 8 :
+
+Prompt used for initializing the agentic RPM. The task_desc , device , time_limit , candidate_a and 
+
+candidate_b are placeholders. 
+
+Prompt for Stepping Stone Generation 
+
+> INTRODUCTION
+
+:You are a Kaggle Grandmaster and Lead Data Scientist acting as an Experiment Planner . Your task is to decide whether more pilot experimentation is needed, and if so, propose the single most valuable next experiment for distinguishing which of the candidate machine learning solutions is most likely to achieve the best test score. You are given a set of candidate solutions for a machine learning competition on Kaggle. You only have access to the public training set but do not have access to the test set. A natural proxy for test performance would be 5-fold cross-validation (CV) score on the public training set. However, running the full 5-fold CV on the entire training set is time-consuming. Therefore, your goal is to design diverse pilot experiments that can approximate relative test performance with significantly less computation than standard 5-fold CV.  
+
+> Important:
+
+Your job is only to decide whether to stop or to design the next best experiment . A separate coding agent will execute the experiment and collect results, and a separate judging agent will make the final prediction based on the experimental evidence. You should NOT write any code yourself, and you should NOT make the final prediction yourself. 
+
+> TASK DESCRIPTION
+
+``` {task_desc} ``` 
+
+> ENVIRONMENT & CONSTRAINTS (for the coding agent to follow)
+
+: 
+
+> Data Access:
+
+You can access the data using standard Python libraries (pandas, datasets, etc.). The data is already mounted and ready to use — no need to download or prepare it.  
+
+> Metric:
+
+Pay attention to whether higher or lower values indicate better performance (e.g., accuracy is higher-is-better, RMSE is lower-is-better).  
+
+> Common Pitfalls:
+
+Do NOT use from transformers import AdamW (it has been removed). Use from torch.optim import AdamW instead.  
+
+> Computation Resources:
+
+{device}  
+
+> Time Limit:
+
+{time_limit}. If you propose a next experiment, it must fit within the remaining time budget with room left for execution reporting and a possible final decision. 
+
+> CANDIDATE SOLUTIONS
+
+:
+
+> Option A:
+
+```python {candidate_a} ``` 
+
+> Option B:
+
+```python {candidate_b} ``` 
+
+...... {prev_estimations} 
+
+> INSTRUCTIONS
+
+:You must first decide whether the existing evidence is already sufficient. If yes, recommend stopping. If not, propose exactly one next experiment that is expected to provide the highest decision value. The next experiment should be detailed and specific enough that a coding agent can implement and execute it by strictly following your instructions. 
+
+23 Prefer experiments that reduce the most important unresolved uncertainty about the relative ranking of the candidate options (Option A, Option B, Option C, ...). Do NOT propose a trivial repetition of an earlier experiment unless you clearly justify why a stability check is necessary. Do NOT propose cosmetic variations of previous experiments (for example, the same proxy, same split logic, and same reasoning with only a tiny tweak) unless that variation is specifically needed to resolve an important uncertainty. Prefer experiments whose outcome could realistically change the current provisional ranking. If the existing evidence is already strong enough and another experiment is unlikely to add meaningful value, set ‘stop: true‘. You have full freedom in designing your strategy. For example, you may: - Run a simplified or partial cross-validation (e.g., fewer folds, subsampled data). - Compare key architectural or hyperparameter differences among the candidate solutions and run targeted ablation experiments. - Evaluate the candidate solutions on a single train/validation split. - Perform any other analysis you believe is informative. If you propose a next experiment, it must include: - title (str): A short descriptive name for the experiment. - goal (str): What this experiment is trying to find out. - steps (str): A detailed, step-by-step description of what the coding agent should implement and run. - expected_runtime (float): A rough estimate of how long this experiment will take in minutes given the computation resources. 
+
+> OUTPUT REQUIREMENT
+
+: Output a JSON object with the following schema: 
+
+```json {{ "stop": <true_or_false>, "reason": "<short explanation>", "next_experiment": {{ "title": "<string>", "goal": "<string>", "steps": "<string>", "expected_runtime": <float> }} }} ``` 
+
+If "stop": true, then set: 
+
+```json "next_experiment": null ``` 
+
+Important: - Output strictly valid JSON only. - Do not wrap the JSON in Markdown fences. - All string values must be valid JSON strings with double quotes. - "steps" should be a single string. You may use ‘ n‘ inside the string for line breaks. Example Output: 
+
+{{ "stop": false, "reason": "Existing micro-split results are mixed and high-variance. A decisive equal-compute comparison is still needed.", "next_experiment": {{ "title": "Matched-step class-balanced holdout", "goal": "Run a matched-step comparison between the candidate options under the same compute budget.", 
+
+24 "steps": "1. Construct a class-balanced holdout split. 2. Match training steps and optimizer settings. 3. Run each candidate option under identical budget. 4. Compare validation accuracy.", "expected_runtime": 6.0 }} }} """  
+
+> Figure 9 :
+
+Prompt used for the feedback language model in agentic RPM workflow. The task_desc , device , time_limit ,
+
+candidate_a , candidate_b and prev_estimations are placeholders. 
+
+Prompt for Stepping Stone Generation 
+
+> INTRODUCTION
+
+:You are a Kaggle Grandmaster and Lead Data Scientist acting as a Final Prediction Analyst . Your task is to analyze multiple machine learning solutions and their pilot experiment results to predict which solution will have superior test cross-validation performance. You have already conducted fast pilot experiments to probe the potential of these multiple solutions. Now you must analyze the empirical evidence from these experiments and make a final prediction. 
+
+> TASK DESCRIPTION
+
+``` {task_desc} ``` 
+
+> CANDIDATE SOLUTIONS
+
+:
+
+> Option A:
+
+```python {candidate_a} ``` 
+
+> Option B:
+
+```python {candidate_b} ``` {execution_output} 
+
+> INSTRUCTIONS
+
+:Based on the pilot experiment results above, you must predict which candidate solution will achieve the best test cross-validation score when fully implemented. Consider the following in your analysis: - Empirical Evidence: What do the execution outputs tell you about the performance of each solution? - Reliability: Are the results consistent and reliable, or are there signs of instability? - Potential: Which solution shows more promise for achieving higher validation metrics? - Implementation Quality: Does the output suggest successful execution or potential issues? 
+
+> OUTPUT REQUIREMENT
+
+:Think step by step and provide your reasoning before giving a final answer. Each candidate solution above is labeled with a letter (Option A, Option B, Option C, ...). Your final answer must be the single letter of the best option, enclosed in \\boxed{{}} — for example \\boxed{{A}} , \\boxed{{B}} , or \\boxed{{C}} .Output exactly one letter, and only choose from the options listed above. Example response format: 
+
+> Analysis
+
+: [Your detailed reasoning here] 
+
+> Final Prediction
+
+: \\boxed{{A}}  
+
+> Figure 10 :
+
+Prompt used for the final prediction in agentic RPM workflow. The task_desc , candidate_a , candidate_b 
+
+and execution_output are placeholders. 
+
+25 0.005 0.000 0.005 0.010 0.015 0.020 0.025 0.030 0.035 Selection Advantage 0.625 0.650 0.675 0.700 0.725 0.750 0.775 0.800 0.825 Final Normalized Score  
+
+> Pearson r=0.55 (p=0.0007) Spearman =0.56 (p=0.0004)
+> Random (No RPM) Inference-only RPM Agentic RPM
+
+Figure 11 : Selection Advantage vs. Final Normalized Score. Final normalized score plotted against step-wise selection advantage across individual seed runs. Large diamonds denote mean values ( ±95% CI). Selection advantage strongly correlates with end-to-end performance (Pearson r = 0 .55 , p = 0 .0007 ; Spearman ρ = 0 .56 , p = 0 .0004 ), with Agentic RPM achieving both higher selection advantage and final score than Inference-only RPM and Random selection. 
+
+# C End-to-End Evaluations 
+
+C.1 Impact of Selection Quality 
+
+To determine whether local decision quality directly drives downstream agent performance, we retrospectively analyze the relationship between step-wise candidate selection quality and final end-to-end search scores. 
+
+Evaluation Setup Each data point in Figure 11 represents an individual seed run, where the final score is the normalized metric averaged across all AIRS-Bench tasks and timepoints. To quantify decision quality, we retrospectively evaluate all N candidate solutions generated at each step against ground-truth benchmarks. We define Selection Advantage as Schosen − 1
+
+> N
+
+PNi=1 Si, measuring the difference between the chosen candidate’s ground-truth score Schosen and the mean score of all N candidates in the candidate pool. We report the average selection advantage across all selection steps in a run. 
+
+Findings We find a statistically significant positive correlation between local selection advantage and final end-to-end performance (Pearson r = 0 .55 , p = 0 .0007 ; Spearman ρ = 0 .56 , p = 0 .0004 ). As expected, random selection yields an average selection advantage near zero. Both preference models consistently improve selection quality over random selection, with Inference-only RPM outperforming random selection and Agentic RPM achieving the highest overall selection advantage and final score. These results confirm that higher step-wise candidate selection quality translates directly to superior end-to-end search performance. 26 D Pick Your Poison: Does an RPM’s Code Judgment Add Signal Beyond the Validation Oracle? 
+
+D.1 The question, and why final-node selection is different 
+
+An RPM could in principle intervene at three points in AIRA-dojo’s search: parent selection, choosing which previously executed node to expand next; child selection, choosing which of the N freshly generated candidates to execute; and final-node selection, choosing which executed node to submit. Parent and final-node selection act on candidates that have already been run, so each carries a validation score. Child selection has no such shortcut: its N candidates are un-executed at selection time, so no validation score exists. That asymmetry is why the paper focuses on child selection. This section focuses on final-node selection only. 
+
+Pick Your Poison (PYP): a study on final-node selection. PYP is an offline stress test of RPM-augmented final-node selection that asks: given a completed search tree, can an RPM use each node’s code to select a better submission than simply choosing the node with the highest validation score? PYP motivates reserving RPM compute for child selection, where no comparable free signal exists. Concretely, the RPM receives a set of already-executed candidates, their source code, and their normalized validation scores, and must select the candidate with the best hidden test score. We construct this as a deliberately stringent comparison: the candidates are drawn by top validation score, guaranteeing that the validation oracle’s choice is present, and we report the RPM’s test score against that oracle rather than against random selection. This differs from the offline child selection datasets of Section 4, which sample candidates uniformly and evaluate raw ranking accuracy against a “max test score in subtree” label. 
+
+Main finding: results on final-node selection. On both the test and validation sets, the inference-only RPM’s mean test score closely matches the validation oracle (no significance test was run). At small pools ( N =2 ), it is at or marginally above the oracle for all four test-set variants ( +0 .0003 to +0 .0096 , with the smallest difference within noise); as N grows, the advantage shrinks and turns negative for the weaker operators (to 
+
+−0.025 ). When the RPM’s choice actually differs in test score from the oracle’s, its win rate is near chance (29 –62% ). Validation tracks test closely under Hidden Consistent Evaluation (Section 4), leaving a perfect selector only ∼ 0.02 –0.03 normalized-test headroom over the validation oracle. Thus, for final-node selection on AIRS-Bench , reading code adds little beyond a strong validation signal. This is a boundary result for this specific already-executed decision, not for RPMs in general: the paper’s headline gains come from online child selection, where candidates are un-executed and no free validation score is available. 
+
+D.2 Method 
+
+Datapoints: one per tree, all non-buggy nodes as candidates. A PYP datapoint is built from a single AIRA search tree (one operator model × one search-scaffold run on one task). We remove buggy nodes, take all 
+
+remaining nodes as the candidate set, and label the datapoint with the index of the candidate holding the best normalized test score. Each candidate carries its executed code, plan, raw and normalized validation/test metrics, and tree metadata. Following AIRS-Bench , each score is normalized per task on a log scale anchored so that 0 is a fixed worst-case reference and 1 is the task’s SOTA reference, which makes scores comparable across tasks. The value is floored at 0 (buggy or non-finite-on-test solutions map to 0 and are kept as worst candidates but never become the label) but is not capped above: a candidate that beats SOTA scores above 1
+
+(in our data up to ≈ 1.4 on test and ≈ 2.3 on validation, with roughly 15 –30% of nodes exceeding 1). PYP carries no context nodes — the candidates are the tree — which removes the leakage and ordering hazards that context nodes introduce. 
+
+Candidate presentation: top-validation subsampling. For a given pool size N we present the N candidates with the highest validation scores (mode top_validation ). This is the design choice that makes PYP a stress test: the validation oracle’s pick — the globally-best-validation node — is always inside the presented pool, so the RPM is never handed an easy win by the oracle being absent. Sweeping N ∈ { 2, 4, 6, 8, 10 } traces how the RPM copes as the pool of strong-on-validation (and therefore hard-to-separate) candidates grows. 27 Selection by tournament. The RPM does not see all N candidates at once; it plays a round-robin-style 
+
+tournament . Each of nmatches matches presents match_size candidates (sampled from the N , positions shuffled to debias order effects), and the model returns its pick as a boxed letter ( \boxed{A} . . . ). The winner of each match scores a point; the candidate with the most points across all matches is the tournament winner — the RPM’s “pick” for that tree — with ties broken at random. Two knobs matter: larger match_size lets the model compare more candidates per call, and larger nmatches averages out the stochasticity of individual LLM judgments. Our primary runs use match_size = 5 (capped at N ) and nmatches = 30 ; we probe both knobs (§D.3.3). Match responses that fail to parse are recorded and audited — all reported cells have a failed-match rate below 0.5% . This offline configuration is not identical to the online child-selection integration of Section 3.3: there the judge runs pairwise knockout matches and is given BFS-gathered context nodes with their validation scores, whereas PYP uses fixed groups of five candidates, aggregates match wins by points, and supplies no context nodes, to isolate the code-versus-validation judgment on the final-selection decision. 
+
+Metrics. For every tree we compare, on the held-out normalized test score: • RPM — test score of the tournament winner (the quantity under study); • Validation oracle — test score of the globally-best-validation node (the baseline to beat); • Actual best — best test score over all tree nodes (whole-tree upper bound, N -independent); • Best-of-N -shown — best test score within the presented pool (rises with N ); • Random — mean test score of the presented pool (what a random pick yields). From these we report the mean-score gap RPM − oracle (positive = RPM wins), the beats-rate (fraction of trees where RPM’s test score ≥ oracle’s, using ≥), and — crucially — the override-win-rate introduced after auditing (below): defined only on trees where the RPM’s pick genuinely differs in test score from the oracle’s, as wins /(wins + losses ).
+
+The prompt. The RPM is prompted as a strict best-of-N judge. It receives the full task description, each candidate’s normalized validation score and complete source code ( plans are withheld — operator plans were found to mislead the judge in earlier sweeps), and is asked to reason step by step and emit its choice in a boxed letter. The exact template is reproduced in Appendix D.5; a real match prompt at match_size = 5 
+
+runs to ∼ 15 –52 k tokens depending on candidate code length. 
+
+Data. We evaluate on two disjoint families of AIRA runs, matching the two task sets of Section 4: • Test set — end-to-end runs on the public text-and-tabular tasks. Four variants forming the cross product of operator × search-RPM : gpt5_x_gpt5 (168 trees, 10,126 candidates), gpt5_x_qwen (163 / 13,722), 
+
+qwen_x_gpt5 (162 / 4,608), qwen_x_qwen (157 / 4,140) — 650 trees, 32,596 candidates, spanning 17 of the 20 publicly released AIRS-Bench text-and-tabular tasks (the ELI5-QA RougeL task has no normalized metric and is dropped; two further tasks are absent from these runs). Each pre-built dataset was validated over its entirety against the raw run journals (choice = argmax normalized test; per-candidate metrics matched to JOURNAL.jsonl ; normalization recomputed exactly) with zero mismatches. • Validation set — greedy tree-search runs on the unreleased multimodal tasks. Runs on the unreleased 
+
+AIRS-Bench image/video/audio tasks (Section 4), for three operator models — O3-Mini (625 trees), GPT-OSS-120b (659), CWM (419) — from the two tree-search scaffolds (greedy and greedy-restricted; the single-node Oneshot scaffold is excluded). 
+
+Scorer / RPM models. The post-hoc PYP judge is GPT-5 for the headline runs. For methodological correctness we also re-score the two Qwen-search variants with their own RPM, Qwen3.6-27B (§D.3.4). The specific GPT-5 endpoint differed between the test-set and validation-set sweeps (the latter run at a medium reasoning effort); because the oracle, actual-best, and random baselines are computed from the data and are model-independent, the RPM − oracle gap is comparable within each run, and we do not compare absolute RPM means across endpoints. 28 Table 3 : Test set (public text-and-tabular tasks): mean-test gap RPM − oracle ( + = RPM beats oracle ) with per-tree beats-rate in parentheses. match_size = 5 , 30 matches, top_validation , no plans, scorer GPT-5. The rightmost column counts variants with a positive mean gap.                                                                                          
+
+> Ngpt5_x_gpt5 gpt5_x_qwen qwen_x_gpt5 qwen_x_qwen # beating 2+0 .0003 (93.5%) +0 .0056 (92.6%) +0 .0096 (89.5%) +0 .0043 (87.3%) 4/4
+> 4−0.0036 (95.8%) +0 .0038 (93.9%) +0 .0025 (90.7%) −0.0014 (86.0%) 2/4 6−0.0056 (93.5%) +0 .0002 (95.1%) −0.0067 (88.9%) −0.0088 (86.0%) 1/4 8−0.0092 (92.9%) −0.0055 (91.4%) −0.0220 (85.2%) −0.0185 (83.4%) 0/4 10 −0.0043 (91.7%) +0 .0004 (94.5%) −0.0248 (84.6%) −0.0224 (78.3%) 1/4
+> Table 4 : Override-win-rate =wins /(wins +losses )on trees where the RPM’s pick differs in test from the oracle’s (test set, GPT-5). ≈50% is chance. variant N=2 N=4 N=6 N=8 N=10
+> gpt5_x_gpt5 45% 59% 39% 48% 50%
+> gpt5_x_qwen 56% 55% 60% 46% 62%
+> qwen_x_gpt5 53% 59% 50% 47% 38%
+> qwen_x_qwen 52% 37% 41% 40% 29%
+
+D.3 Results on the test set (public text-and-tabular tasks) 
+
+At the smallest pool the RPM is at or above the validation oracle for all four variants; the edge shrinks and turns negative for most variants as the pool grows. Table 3 reports the mean-test gap RPM − oracle and per-tree beats-rate across N . At N =2 — the cleanest “which of these two best-validation candidates has the better test score?” question — GPT-5’s code judgment is at or above the oracle on mean for all four variants ( +0 .0003 to +0 .0096 , the smallest within noise). By N =4 only 2/4 still beat; by N =6 –10 the gap is negative for the Qwen-operator variants and hovers around zero for the GPT-5-operator ones (not strictly monotonically — the two GPT-5-operator variants tick back up at N =10 ). Because top_validation fixes the oracle’s node and the whole-tree best regardless of N , the oracle and actual-best means are flat across N
+
+(oracle = 0 .7582 /0.7787 /0.7674 /0.7560 ; actual-best = 0 .7824 /0.8087 /0.7980 /0.7847 ); it is the RPM mean that slides down as the tournament must aggregate over a larger, harder-to-separate pool. Figure 12 shows all six series per variant, and Figure 13 plots the gap directly: it declines with N , crossing below zero by N =4 –6
+
+for three of the four variants ( gpt5_x_qwen stays near zero throughout). 
+
+D.3.1 The “beats-rate” is tie-dominated; the override-win-rate is near chance A 78 –96% “beats the oracle” rate sounds like skill, but it is almost entirely ties — the RPM re-selecting the very node the oracle would have picked. Because the globally-best-validation node is always in the top-N
+
+pool and validation tracks test so closely, on 69 –85% of trees the RPM’s winner has the same test score as the oracle’s pick (Figure 15). Strict wins are only ∼ 8–9% and strict losses ∼ 5–22% . The right metric is therefore conditioned on the RPM actually overriding the validation signal: when the RPM’s pick differs in test from the oracle’s, how often is it better? Table 4 shows this override-win-rate hovers around 50% — 
+
+29 –62% across variants and N — i.e. near chance (Figure 14). The GPT-5-operator variants stay nearer 50%, while the Qwen-operator variants fall furthest below it at large N , mirroring the sign of the mean gap. The RPM’s apparent advantage is agreement with validation, not code judgment that improves on it. 
+
+D.3.2 Why there is little to win: validation ≈ test on AIRS-B ENCH 
+
+This gap reflects the setup, not the model. On the completed test-set data the per-tree Spearman correlation between validation and test is high (median 0.92 –0.96 , mean 0.81 –0.86 ), the best-validation node is already the best-test node on 68 –71% of trees, and the headroom of a perfect selector over the validation oracle — mean (best − oracle ) — is only ≈ 0.024 –0.031 normalized (actual-best minus oracle; Table 3). This small validation–test gap is expected rather than incidental: the framework’s Hidden Consistent Evaluation protocol (Section 4) is intended to keep validation aligned with test, which by design leaves little for a code-judgment 29 Figure 12 : Test-set scaling, all four variants. Mean normalized test score vs. pool size N . Actual best (green) and                
+
+> Val-oracle (blue) are whole-tree, N-independent quantities and are drawn as dashed horizontal references. The RPM (orange) tracks the val-oracle and stays flat-to-declining, while Best-of-N-shown by TEST (cyan) rises with N(a larger pool is more likely to contain a high-test node) and Random (grey) falls as weaker candidates enter. PYP measures the RPM’s gap to the val-oracle (blue dashed), which stays ≈0across N.
+
+selector to add on top of the validation score. 
+
+Restricted to the trees where validation is suboptimal, code-judgment signal reappears for the strongest variant. Isolating the ∼ 30% of trees where the best-validation node is not the best-test node ( N =10 ), the all-GPT-5 variant gpt5_x_gpt5 recovers +0 .0233 test ( ∼ 44% of the available headroom) — suggestive of selection skill, though from one variant on one slice we cannot rule out noise — while the three weaker variants are net-negative even where headroom exists. For gpt5_x_gpt5 , then, the aggregate null appears driven by the ∼ 70% of trees with no headroom rather than by absent capability. The practical reading is twofold: (1) for final node selection on a benchmark where validation tracks test, the validation default is hard to improve on because there is little to add; (2) code-judgment-as-selector adds signal beyond the free validation score only where that score is unreliable (large validation →test gap, overfitting, distribution shift, small or noisy validation sets) or unavailable (online child selection, where candidates are un-executed; Section 3.3) — regimes this already-executed, val ≈test data does not exercise. 
+
+D.3.3 Robustness: more matches reduce aggregation noise, they do not add skill Scaling the number of matches marginally improves the mean gap but leaves the override-win-rate untouched. 
+
+Two probes: (i) at N =4 , raising matches 30 → 50 lifts the count of variants beating the oracle from 2/4 to 3/4 ( qwen_x_qwen flips positive); (ii) at the hardest operating point N =10 (re-scored on a different GPT-5 endpoint; the oracle/best/random baselines are model-independent, so the gap is still comparable), raising matches 30 → 100 (3.3×) moves variants-beating from 1/4 to 2/4. But the override-win-rate stays at 14 –36% 
+
+30 Figure 13 : RPM − oracle vs. N (test set, GPT-5). Positive = RPM beats the oracle. All four variants are positive/near-zero at N =2 and cross below zero as N grows; the Qwen-operator variants erode fastest.                                                          
+
+> Table 5 : Qwen-judge re-score (Qwen3.6-27B via vLLM) vs. the GPT-5-judge baseline. Mean-test gap RPM −oracle; beats-rate in parentheses. match_size = 5 , 30 matches. variant NQwen judge GPT-5 judge (baseline)
+> gpt5_x_qwen 2+0 .0049 (83.4%) +0 .0056 (92.6%)
+> gpt5_x_qwen 4+0 .0006 (92.0%) +0 .0038 (93.9%)
+> gpt5_x_qwen 6−0.0116 (89.6%) +0 .0002 (95.1%)
+> gpt5_x_qwen 8−0.0306 (84.0%) −0.0055 (91.4%)
+> gpt5_x_qwen 10 −0.0263 (86.5%) +0 .0004 (94.5%)
+> qwen_x_qwen 2−0.0002 (77.1%) +0 .0043 (87.3%)
+> qwen_x_qwen 4−0.0067 (76.4%) −0.0014 (86.0%)
+> qwen_x_qwen 6−0.0256 (72.6%) −0.0088 (86.0%)
+> qwen_x_qwen 8−0.0444 (70.7%) −0.0185 (83.4%)
+> qwen_x_qwen 10 −0.0659 (64.3%) −0.0224 (78.3%)
+
+(< 50% ) on all four variants, essentially unchanged. More matches reduce tournament aggregation noise; they do not add code-judgment skill. We also found that a full-pool match ( match_size = N , identical candidates every match) is worse than a subsampled match_size = 5 : the value of the tournament comes from diverse sub-comparisons, so we keep match_size = 5 . (An early pass at match_size = 2 was superseded — the 2 → 5
+
+change alone lifted per-tree beats-rate from ∼ 60% to 78 –96% and shrank the mean gap to the oracle by 
+
+∼ 0.01 –0.015 everywhere.) 
+
+D.3.4 Using the matched judge: Qwen-scored Qwen variants The two Qwen-search variants should be judged by Qwen, not GPT-5 — and the result is consistent with the GPT-5-judge finding, with Qwen the weaker selector. The variant naming is operator × search-RPM, so for gpt5_x_qwen and qwen_x_qwen the faithful PYP judge is the model that did the selecting in that run, Qwen3.6-27B. Re-scoring both variants with Qwen (served via vLLM, same match_size = 5 /30-match sweep) gives the gaps in Table 5: the same near-zero at N =2 , but a gap that goes more negative as N grows than the GPT-5 judge produced (worst: qwen_x_qwen N =10 , −0.0659 vs. GPT-5’s −0.0224 ), with lower beats-rates throughout (Figure 16). Qwen-as-judge is a consistently weaker selector than GPT-5-as-judge, but the qualitative picture — RPM ≈ val-oracle at small N , falling behind as N grows — is identical. 31 Figure 14 : Override-win-rate vs. N . When the RPM overrides validation, it is right about half the time; all four variants hug the 50% (chance) line, with qwen_x_qwen                                                 
+
+> sinking below it at large N.
+> Figure 15 : Win/tie/loss vs. the oracle at N=10 .The high beats-rate is dominated by ties (grey, 69 –85% ); strict wins (green) are ∼9% and, for the Qwen-operator variants, are outweighed by strict losses (red).
+> Table 6 : Validation set (unreleased multimodal tasks): mean-test gap RPM −oracle. match_size = 5 , 30 matches,
+> top_validation , no plans, scorer GPT-5 (medium reasoning). Val-oracle means (flat in N): O3-Mini 0.3625 , GPT-OSS
+> 0.3821 , CWM 0.3494 ; actual-best 0.4245 /0.4639 /0.4425 .operator (trees) N=2 N=4 N=6 N=8 N=10 beats% O3-Mini (625) −0.0017 −0.0039 −0.0049 −0.0051 −0.0046 85–89 GPT-OSS-120b (659) +0 .0056 +0 .0077 +0 .0048 +0 .0103 +0 .0076 84–89 CWM (419) +0 .0039 +0 .0067 +0 .0081 +0 .0083 +0 .0080 87–89
+
+D.4 Results on the validation set (unreleased multimodal tasks) 
+
+The validation set reproduces the test-set picture: RPM ≈ val-oracle, with no measurable net advantage. 
+
+Replicating PYP on greedy tree-search runs over the unreleased multimodal AIRS-Bench tasks (Section 4) for three operator models (O3-Mini, GPT-OSS-120b, CWM) at match_size = 5 (30 matches, top_validation ,no plans; scorer GPT-5, medium reasoning) gives the gaps in Table 6: GPT-OSS-120b and CWM marginally 
+
+beat the val-oracle at every N (+0 .004 to +0 .011 ), O3-Mini sits just below ( ∼ − 0.005 ); all gaps are ≤ 0.011 
+
+with ∼ 0% failed matches, and the RPM stays close to the val-oracle at every N (Figure 17). As on the test set, the override-win-rate is near chance ( 0.41 –0.55 ) and the high beats-rate ( 84 –89% ) is tie-dominated. PYP reports the gap to the (near-optimal) validation oracle; the RPM’s advantage over random selection increases with pool size, as reported in Section 5.1. 
+
+The small-N result is robust to match sampling. A paired match_size = 2 study confirmed this independently: running exactly the distinct pairwise matches once (exhaustive C(N, 2) : 1 match at N =2 , 6 at N =4 ) versus 30 repeated matches moves the gap by only +0 .001 to +0 .005 in every one of the six operator ×N cells — same sign, same tiny magnitude. The 30 repeats provide mild averaging, not a rescue of a noisy winner; the RPM ≈ val-oracle conclusion is a property of the data, not of the match count. 
+
+Takeaway. On AIRS-Bench , augmenting final node selection with an inference-only RPM judge does not reliably improve on AIRA-dojo’s highest-validation default, because the Hidden Consistent Evaluation protocol keeps validation closely aligned with test (Section 3.3). The informative test of code-judgment-as-selector lies where validation is unreliable or unavailable — most directly, the online child -selection setting that is the focus of the paper’s main results. 32 Figure 16 : Test-set scaling with the two Qwen-RPM panels re-scored by the Qwen judge (right column); the GPT-5-RPM panels (left column) are unchanged. Under its own (weaker) judge, the RPM (orange) falls further below the val-oracle at large N .
+
+D.5 The PYP judge prompt (best-of-N , no plans, validation score shown) 
+
+Below is a real match_size = 5 prompt as sent to the judge (task: molecular-property prediction, U_0). Candidate source code is elided for space; in the live prompt each block contains the candidate’s full executed Python (hundreds of lines). Note the per-candidate normalized validation score, the absence of plans, the empty context section (PYP carries no context nodes), and the strict boxed-letter output contract. 
+
+You are a strict judge selecting the BEST among 5 candidate solutions to the SAME machine learning task. Your goal is to choose the candidate most likely to achieve a better test score. Task description: ```markdown # Overview ## Task Description This is a Machine Learning project and your goal is to complete the project's TASK ... TASK: Your task is to predict a molecular property ... internal energy at 0K (U_0) ... [full task description: data schema, submission format, evaluation script (MeanAbsoluteError)] ``` Context from various solutions to the same machine learning task. These are NOT the candidates you are judging. (No context nodes available) Candidate A - normalized_validation_metric: 0.9173957515865397 Candidate A - Code: ```python ... [full executed candidate code] ... ``` Candidate B - normalized_validation_metric: 0.9247618977347143 
+
+33 Figure 17 : Validation-set scaling (three operator panels). Same structure as Figure 12: RPM (orange) ≈ val-oracle (blue dashed) and flat in N ; Best-of-N -shown-by-test (cyan) and actual-best (green dashed) are shown for reference. PYP measures the RPM’s gap to the val-oracle. 
+
+Candidate B - Code: ```python ... [full executed candidate code] ... ``` Candidate C - normalized_validation_metric: 0.9244147171794728 Candidate C - Code: ```python ... [full executed candidate code] ... ``` Candidate D - normalized_validation_metric: 0.9372185038975493 Candidate D - Code: ```python ... [full executed candidate code] ... ``` Candidate E - normalized_validation_metric: 0.9194071708864442 Candidate E - Code: ```python ... [full executed candidate code] ... ``` Decision rules: - Prefer the candidate most likely to produce a better test score for the given task. - Prefer correctness, robustness, and task-fit over style or verbosity. - Use context nodes only as supporting evidence (e.g., what has already been tried, what validation score looked like). - Do not assume the context nodes are optimal; the new candidates may be better. Output format (STRICT): - Think step by step and provide your reasoning before giving a final answer. - Give a final answer of A, B, C, D or E. - Provide your answer inside a \boxed{}, ie \boxed{A}, \boxed{B}, \boxed{C}, \boxed{D}, \boxed{E}. 
+
+For pool sizes N where N < match_size , the match size is capped at N and the boxed-letter menu shrinks accordingly. The judge’s boxed letter is mapped back to a candidate, one point is awarded per match, and the tournament winner (most points, random tie-break) is the RPM’s pick for the tree. 34
