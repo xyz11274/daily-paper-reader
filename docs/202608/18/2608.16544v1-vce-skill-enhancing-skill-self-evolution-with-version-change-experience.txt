@@ -1,0 +1,1078 @@
+Title: VCE-Skill: Enhancing Skill Self-Evolution with Version-Change Experience
+
+URL Source: https://arxiv.org/pdf/2608.16544v1
+
+Published Time: Tue, 18 Aug 2026 02:05:58 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# VCE-Skill: Enhancing Skill Self-Evolution with Version-Change Experience 
+
+Jianming Chen 1,2,3,4 , Xuanbin Ye 5, Yawen Wang 1,2,3,4 ∗, Junjie Wang 1,2,3,4 ∗, Yuanzhe Hu 1,2,3,4 ,Qing Wang 1,2,3,4 , Fanjiang Xu 1,2,3,4 ∗ 
+
+> 1
+
+Institute of Software Chinese Academy of Sciences, Beijing, China  
+
+> 2
+
+Science & Technology on Integrated Information System Laboratory, Beijing, China  
+
+> 3
+
+State Key Laboratory of Complex System Modeling and Simulation Technology, Beijing, China  
+
+> 4
+
+University of Chinese Academy of Sciences, Beijing, China  
+
+> 5
+
+Beijing University of Post and Telecommunications, Beijing, China 
+
+Abstract 
+
+Agents increasingly rely on reusable skills to encode task knowledge, tool-use procedures, and validation rules. Exist-ing skill self-evolution methods primarily revise skills using execution trajectories collected from current tasks, leaving the evolution knowledge accumulated in public skill version his-tories largely untapped. Our pilot study reveals a clear com-plementarity between the two sources: public skill changes provide reusable evolution priors, whereas trajectories provide evidence grounded in the current task. Motivated by this, we propose VCE-Skill, which distills noisy and implementation-specific public skill changes into reusable, structured version-change experience and adaptively fuses it with trajectory-derived proposals from the base evolver, thereby exploiting external experience while retaining task-specific evidence. Extensive experiments demonstrate that VCE-Skill improves skill self-evolution, increasing mean scores by 3.20–4.98 points; transfer experiments further show that the resulting skills achieve stronger cross-model transfer performance. Our work highlights public skill version changes as a previously underexplored yet effective source of prior knowledge and advances trajectory-driven skill self-evolution. 
+
+1 Introduction 
+
+Large language model agents increasingly rely on external skills as reusable units of task knowledge (Li et al. 2026; Ling, Zhong, and Huang 2026). A skill can package in-structions, scripts, resources, and configuration files into a portable bundle that an agent can invoke when solving a class of tasks (Anthropic 2025, 2026a). However, a skill is rarely finished after its first release. As tools change, task distri-butions shift, and failures accumulate, skill authors revise instructions, patch scripts, add resources, etc. Skill evolution is part of how agent capabilities become reliable over time (Zhao et al. 2024; Wang et al. 2024). Recent work on self-evolving agents has started to auto-mate this process. A typical skill self-evolution loop executes an agent on tasks, collects trajectories, diagnoses failures, and revises the current skill accordingly (Zhao et al. 2024; Yang et al. 2026). This trajectory-driven paradigm grounds updates 
+
+> ∗
+
+Corresponding authors. Copyright © 2027, Association for the Advancement of Artificial Intelligence (www.aaai.org). All rights reserved. 
+
+in task-specific execution evidence. However, its guidance is bounded by the quality and coverage of the trajectories col-lected in the current run (Mi et al. 2026). Noisy or low-quality trajectories may make it difficult to derive reliable guidance, while incomplete coverage of failure modes may cause the resulting updates to overfit to the limited observation. Con-sequently, trajectory-driven evolution may overlook broadly useful update knowledge that is not revealed by current exe-cutions (Huang et al. 2026). A complementary source of evolution knowledge lies in public version histories. Software engineering research has mined historical patches to recover reusable edit and repair patterns (Bader et al. 2019; Koyuncu et al. 2020). Public repositories similarly preserve how developers revise instruc-tions, scripts, and other components during maintenance. These changes may encode update strategies that are not ob-served in the current task run. Nevertheless, skill version his-tories have received limited attention as a source of reusable experience for skill self-evolution, and it remains unclear whether they provide knowledge beyond that already pro-duced from trajectories (Xu and Yan 2026; Li et al. 2026). To validate this premise, we conduct a motivation study that compares matched public and trajectory-derived skill changes, under a unified comparison protocol. The com-parison reveals complementary coverage: trajectory-derived changes are highly concentrated in instructions and a nar-row set of intents and patterns, whereas public histories cover broader changes. Meanwhile, trajectory-only changes remain, showing that public histories complement rather than replace trajectory-derived evidence. This complementarity does not make historical changes directly usable. Raw diffs are fine-grained and repository-specific, and external expe-rience may not always be relevant to the current failure. Ex-ploiting version histories therefore requires addressing two challenges: distilling raw changes into transferable evolu-tion guidance and selectively fusing this guidance with the trajectory-derived proposal(Liu et al. 2024; Shi et al. 2023). To address these challenges, we propose VCE-Skill , a method using version-change experience ( VCE ) to enhance 
+
+Skill self-evolution with two stages. First, Experience Dis-tillation abstracts raw diffs into structured update events and progressively generalizes them into update patterns and in-sights, together forming an experience bank. Second, Opti-arXiv:2608.16544v1 [cs.MA] 17 Aug 2026 mization with Adaptive Experience Attention selects relevant experience from the bank while a compatible base evolver in-dependently produces a self-proposal from the trajectories. It then fuses the external experience and self-proposal with at-tention weights. After each optimization based on the fused proposal, adaptation feedback adjusts experience selection and attention allocation for the next iteration. We evaluate VCE-Skill on 5 benchmarks with 4 LLMs by enhancing 3 skill self-evolution methods and comparing against 2 non-evolutionary baselines. The experiments exam-ine effectiveness, the ablation of VCE-Skill, and the cross-model transferability of evolved skills. The results show that VCE-Skill consistently improves the base evolvers. This paper makes the following contributions: 
+
+• We conduct the pilot study comparing public changes with trajectory-derived skill changes, revealing their comple-mentary coverage and taking public VCE as an external prior for skill evolution. 
+
+• We introduce VCE-Skill, which distills raw version changes into reusable experience and adaptively selects and fuses it with trajectory-derived proposals during iter-ative skill optimization. 
+
+• We conduct extensive experiments, demonstrating the ef-fectiveness and generality of VCE-Skill. 
+
+2 Background and Related Work 
+
+2.1 Agent Skills 
+
+Following Anthropic’s definition and the Agent Skills spec-ification (Anthropic 2025, 2026a), we view an agent skill as a reusable, filesystem-based capability package that an agent can discover and load on demand for a specialized task. At minimum, a skill is a directory containing a SKILL.md file. We represent an agent skill as 
+
+s = ⟨m, Cs⟩, Cs = {ck}Ks
+
+> k=1
+
+, (1) where m denotes the metadata in the YAML frontmatter, including the required name and description, and Cs denotes the set of components contained in skill s. Each ck repre-sents a functional component, such as procedural instruc-tions, executable scripts, reference materials, configurations, templates, or other supporting artifacts. The instruction com-ponent corresponding to the body of SKILL.md is required, whereas supporting components are optional. During use, the agent first observes m for skill discovery, loads the in-struction component when the skill is activated, and accesses other task-relevant components in Cs as needed. Prior work studies skill artifacts and libraries from comple-mentary perspectives (Holzbauer et al. 2026; Ling, Zhong, and Huang 2026; Liu et al. 2026b). SkillsBench (Li et al. 2026) evaluates curated and self-generated skills. SkillRe-ducer (Gao et al. 2026) compresses skill descriptions and bodies while preserving behavior. SKILLFOUNDRY (Shen et al. 2026) constructs and iteratively validates skill libraries from heterogeneous scientific resources. Unlike work on evaluation, ecosystem analysis, compression, or resource-to-skill construction, we treat adjacent version changes them-selves as reusable evolution experience. 
+
+2.2 Skill Self-Evolution 
+
+Skill self-evolution automates the improvement of a skill from execution feedback. A typical loop executes an agent on one or more tasks with the current skill, records the re-sulting trajectories, diagnoses observed behavior, proposes a candidate update, and evaluates the candidate on held-out tasks or regression cases before accepting it (Shinn et al. 2023; Zhao et al. 2024). Let st be the current skill and Bt the task batch at evolution round t. Execution produces a trajectory set and an evolver generates a candidate skill: 
+
+Tt = Exec( st, B t), ˜st+1 = Evolve( st, Tt). (2) The candidate is evaluated using validation cases Vt, to determine the next skill: 
+
+st+1 = Select( st, ˜st+1 ; Vt). (3) The operator selects ˜st+1 only when the candidate satis-fies the acceptance criteria on Vt; otherwise, it retains st.This recurrence captures the execution–diagnosis–update– validation loop. Recent methods instantiate trajectory-driven skill self-evolution in different ways. EvoSkill (Alzubi et al. 2026) and SkillForge (Liu et al. 2026a) diagnose failed executions to revise skills, while SkillOpt (Yang et al. 2026) and Skills-Coach (Tian et al. 2026) optimize skill artifacts from scored rollouts or task-level evaluations. CoEvoSkills (Zhang et al. 2026) couples multi-file skill generation with a verifier, Skill-Claw (Ma et al. 2026) aggregates interactions across users, SkillOS (Ouyang et al. 2026) learns a repository-curation policy from task streams, and EmbodiSkill (Ju et al. 2026) distinguishes skill defects from execution lapses in embodied trajectories. MetaSkill-Evolve (Wang et al. 2026) further ex-tends this paradigm by recursively improving both task skills and the meta-skills that govern their evolution through two execution-driven timescales. However, their update signals arise mainly from current or accumulated task interactions and evaluations. In contrast, VCE-Skill mines public skill version histories as a previously untapped source of prior knowledge for skill evolution and integrates the distilled ex-perience with trajectory-derived proposals. 
+
+2.3 Evolution Knowledge from Version Histories 
+
+Version histories have long supported reusable edit mining: studies of repetitive revisions, Getafix (Bader et al. 2019), and FixMiner (Koyuncu et al. 2020) recover recurring code-change or repair patterns. However, these approaches model syntax-level code edits and repair contexts (Dilhara et al. 2022; Livshits and Zimmermann 2005), whereas agent skills are heterogeneous, multi-component artifacts whose changes encode semantic intents across instructions, scripts, refer-ences, and configurations. Their code-specific representa-tions are therefore not directly applicable to skill evolution. VCE-Skill extends history-based edit mining to agent skills by distilling guidance from cross-repository skill version changes and retrieving relevant experience to complement trajectory-derived proposals. Source Component Intent Pattern 
+
+> Public (400) Trajectory (400) Instruction (133/372) Script (103/9) Reference (123/19) Configuration (59/12) Template (8/0) I01 Ensure correct tool calls (13/131) I02 Cover all required actions (2/47) I03 Enforce call-output conformance (0/113) I04 Improve context retrieval (0/5) I05 Improve tool-call robustness (25/77) I06 Reduce tool-call overhead (1/8) I07 Extend tool capabilities (33/0) I08 Improve tool usability (140/6) I09 Improve tool discoverability (27/0) I10 Align tool interfaces (54/0) I11 Safeguard tool execution (51/2) I12 Expose execution provenance & limits (18/4) I13 Keep tool artifacts consistent (20/0) I14 Preserve artifact integrity (3/0) I15 Ensure reliable tool execution (13/7) F01 Structured context retrieval (0/4) F02 Schema-aware call routing/orchestration (8/199) F03 Schema-guided parameter mapping (4/40) F04 Pre/post-call validation (9/51) F05 Contract-constrained output serialization (0/101) F06 Declarative tool-contract updates (54/0) F07 Operational guidance/example packaging (192/0) F08 Scripted tool-lifecycle automation (68/0) F09 Structure-preserving artifact mutation (4/0) F10 Trust-boundary safeguards/execution gates (61/5)
+
+(a) BFCL v4 Full Source Component Intent Pattern     
+
+> Public (400) Trajectory (400) Instruction (179/379) Script (73/8) Reference (50/13) Configuration (89/16) Template (29/0) I01 Ensure correct answers (17/165) I02 Cover all required evidence (17/18) I03 Enforce answer conformance (15/157) I04 Improve evidence retrieval (43/58) I05 Improve retrieval robustness (12/0) I06 Reduce retrieval overhead (7/0) I07 Extend retrieval capabilities (51/0) I08 Improve retrieval usability (75/0) I09 Improve retrieval discovery/routing (26/0) I10 Align retrieval interfaces (52/0) I11 Safeguard data access (24/0) I12 Expose evidence provenance & limits (13/0) I13 Keep retrieval resources consistent (27/0) I14 Preserve artifact integrity (4/0) I15 Ensure reliable retrieval workflows (17/2) F01 Multi-strategy evidence retrieval (25/60) F02 Context-guided inference/orchestration (46/147) F03 Schema-guided evidence-field mapping (6/0) F04 Evidence/answer validation (17/28) F05 Canonical answer normalization (18/165) F06 Declarative retrieval-contract updates (47/0) F07 Retrieval guidance/resource packaging (162/0) F08 Scripted retrieval/result processing (46/0) F09 Structure-preserving artifact mutation (4/0) F10 Trust-boundary safeguards/execution gates (29/0) Public flow Trajectory flow Shared category Public-only category Trajectory-only category
+
+(b) SearchQA 
+
+Figure 1: Public and trajectory-derived skill changes. 
+
+3 Motivation Study 
+
+Trajectory-based skill evolution derives update guidance from the trajectory collected during the optimization run. However, the resulting guidance is sensitive to trajectory quality: noisy or incomplete trajectories can obscure failure causes and provide limited actionable guidance. Moreover, this evidence is bounded by the failure modes exposed by the sampled rollouts. Consequently, useful update strategies that do not arise in the current executions may remain unob-served. We provide a supplementary analysis of trajectory-quality sensitivity in the Appendix. Public skill version histories provide potential comple-mentary knowledge. They record skill changes adopted by developers during maintenance, and therefore constitute a practically grounded and rich source of evolution knowledge. However, it remains unclear whether these public changes merely repeat the update strategies that trajectory-based evo-lution can produce adequately, or contain additional update knowledge. This distinction directly determines the motiva-tion for our method: if the two sources exhibit complementary update coverage, version histories can serve as an external prior for trajectory-based evolution. We therefore ask: Do public skill version histories con-tain evolution knowledge that is not adequately captured by trajectory-based skill evolution? To answer this question, we compare the actual skill changes produced by the two evolu-tion processes under a unified analysis protocol. 
+
+3.1 Data and Comparison Protocol 
+
+Data Sources. The public source consists of changes between adjacent versions collected from GitHub and ClawHub. The trajectory source consists of changes pro-duced through the evolution of several representative meth-ods: EvoSkill (Alzubi et al. 2026), SkillClaw (Ma et al. 2026), and SkillOpt (Yang et al. 2026). For both sources, we ana-lyze paired skills between changes. We match the two sources within each task domain and construct a comparison corpus containing 400 skill-change units from each source. 
+
+Unified Comparison Protocol. We segment each skill pair into skill-change units by grouping edits that implement the same modification intent and pattern. Each unit may in-volve multiple components but is assigned one intent and one pattern. An LLM judge annotates both sources using the same domain-specific taxonomy. The taxonomy distin-guishes where an edit is made (component), why it is intro-duced (intent), and which reusable modification strategy it follows (pattern). Multiple authors manually verify a sam-ple of the annotations, with all reviewed cases passing the verification (100%). We compare the resulting distributions and identify categories observed in both sources as shared, and those observed in only one source as public-only or trajectory-only. Full details are provided in the Appendix. 
+
+3.2 Key Observations 
+
+Complementary Coverage across Evolution Sources. 
+
+Figure 1 shows that trajectory-derived changes are highly concentrated: 372 of 400 BFCL units and 379 of 400 SearchQA units affect instructions. In contrast, public changes are distributed more broadly across different com-ponents. At the semantic level, public changes also introduce intent and pattern absent from the trajectory source. BFCL contains 5 public-only intent categories and 4 public-only pattern families, while SearchQA contains 10 public-only intent categories and 6 public-only patterns. These results show that public version histories do not merely duplicate the updates produced from online trajec-tories. Though the two sources share a core set of update categories, public changes extend the scope of evolution be-yond what is exposed by current rollouts. Meanwhile, BFCL also contains trajectory-only intents and patterns, indicating that public version histories cannot replace the task-grounded evidence obtained during online evolution. 
+
+Design Implication. Overall, public version histories pro-vide evolution knowledge that is not fully covered by trajectory-derived changes, while trajectory evidence re-mains directly grounded in the target task. This complemen-tarity motivates integrating public version-change experience as an external prior through adaptive fusion. 
+
+4 VCE-Skill Method 
+
+Figure 2 presents VCE-Skill, a framework that transfers ex-perience from historical skill versions to guide the self-evolution of a target skill. The framework consists of two stages. (1) Experience Distillation distills historical version Agent 
+
+> Execution
+
+Experience Distillation  
+
+> Change
+> Abstraction
+> Skill Versions
+> Exp-Enhanced
+> Proposal
+> Base
+> Evolver
+> Trajectory Self
+> Proposal Task Skill Repository
+> …
+
+Optimization with Adaptive Experience Attention  
+
+> Attention Fusion
+> Skill Optimizer
+> New Skill
+> Skill
+> Collect
+> Raw Diff
+> Component
+> Update Events
+> Intent
+> Operation
+> Update Pattern
+> Domain Insight
+> Evolution Insight
+> Experience Bank
+> Experience
+> Generation
+> Experience Selection
+> Exp Guidance λexp
+> λself
+> Adaptation Feedback
+> feedback
+> Adjust
+
+Figure 2: Overview of VCE-Skill. The left stage distills the version-change experience from public skill versions. The right stage enhances the skill self-evolution by allocating adaptive attention between external experience and trajectory-derived proposals. changes from public skill repositories into reusable expe-rience and organizes it into a structured experience bank. (2) Optimization with Adaptive Experience Attention selects task-relevant experience from this bank and adaptively com-bines it with the current skill’s own evolution proposal to guide iterative skill improvement. The details of the LLM judge used in VCE-Skill are provided in the Appendix. 
+
+4.1 Experience Distillation 
+
+Raw version diffs encode concrete, repository-specific imple-mentations rather than directly reusable evolution guidance. We therefore abstract version changes into update events and distill them to constructive experience. Figure 3 provides a concrete example of how VCE-Skill converts a pair of skill versions into structured update events and organizes the dis-tilled knowledge. 
+
+Change Abstraction. As illustrated in Figure 3, file-level edits between two versions are converted into an update event that separates the concrete raw diff from its component, oper-ation, and intent. Specifically, for each collected skill, VCE-Skill orders its versions chronologically and compares each pair of adjacent versions to obtain a raw diff. It then de-composes each diff into individual changes, each of which is represented as an update event: 
+
+uj = ⟨dj , {cj }, o j , i j ⟩, (4) where dj is the raw diff segment corresponding to the event, containing its specific editions. The field {cj } identifies the affected components , such as instructions, scripts, etc. The field oj describes the semantic operation performed by the change, such as adding an input-existence check. The field ij
+
+records the update intent , such as preventing execution when a required input is missing. This structured representation supports the subsequent abstraction of update events into reusable version-change experience. 
+
+Experience Generation. As shown in Figure 3, VCE-Skill then transforms update events into reusable knowledge at three levels. First, within each skill’s version history, it groups related events based on their components, operations, and intents, removes repository-specific details, and summarizes each group as an update pattern . Second, it synthesizes the resulting patterns for each skill into evolution insights that characterize recurring update strategies in that skill’s history. Third, it generalizes common evolution insights across skills in the same task domain into domain insights that capture transferable principles for skill optimization. The resulting entries from all collected skills are aggre-gated into the experience bank B. It contains multiple entries at each level, spanning different skills and task domains. During skill self-optimization, the bank serves as an exter-nal knowledge corpus from which VCE-Skill selects experi-ences relevant to the current task domain and skill state. All LLM-based distillation steps use fixed prompt and structured outputs; the details are provided in supplementary materials. 
+
+4.2 Optimization with Adaptive Experience Attention 
+
+Experience Selection. At iteration t > 1, VCE-Skill con-structs a selection context from the target task, the current skill, and the unified feedback from the preceding update: 
+
+zt = Context( T , S t−1, f t−1). (5) where T denotes the target task, St−1 is the current skill, and 
+
+ft−1 is the feedback from the preceding update, which will be introduced later. The Context( ·) function organizes them into a structured textual representation zt that serves as the query for experience selection. VCE-Skill then uses an LLM-based selector to semanti-cally compare zt with the entries in B and select at most K
+
+experiences: 
+
+Xt = Select ≤K (B, z t), pexp  
+
+> t
+
+= Aggregate( Xt), (6) where K is the selection budget and pexp  
+
+> t
+
+is the compact external experience guidance aggregated from the selected entries. Selection remains conditioned primarily on compat-ibility with the current task and skill, while ft−1 adjusts the selector’s preference for external experience. Positive feed-back favors external guidance, whereas negative feedback makes external selection more conservative. This makes se-lection adaptive across iterations: after the skill is updated, the new skill state and unified feedback change zt+1 and therefore the selected experiences. Distill 
+
+> Abstract
+
+Skill Versions       
+
+> v1.1.2
+> SKILL.md
+> scripts/
+> generate_ppt.py
+> M2 modified
+> +2 added
+> v1.1.3
+> SKILL.md M
+> scripts/
+> generate_ppt.py M
+> ppt_theme_list.py +
+> random_ppt_theme.py +
+
+Update Events     
+
+> Raw Diff - def ppt_generate(api_key, query, web_content=None)
+> + def ppt_generate(..., style_id=0, tpl_id=None, ...)
+> ...
+> Component script, instruction
+> Intent Enable explicit or automatic template selection.
+> Operation Add inputs; modify API request.
+
+Experience Bank   
+
+> Generalize
+> Synthesize
+> Update Pattern
+> External interface parameter propagation across bundle components.
+> Domain Insight
+> External interface parameter propagation across bundle components….
+> Evolution Insight
+> Propagate new selection parameters across API, payload, and docs…
+
+Figure 3: Illustration of experience distillation. 
+
+Attention Fusion for Skill Optimizer. In parallel, the base evolver uses the current skill and its execution trajectory to produce a self proposal: 
+
+pself  
+
+> t
+
+= BaseEvolver( St−1, τ t−1), (7) where τt−1 is the trajectory produced by executing St−1.The base evolver identifies potential improvements from the successes, failures, and optimization needs reflected in this trajectory, and proposes edits for producing St. Thus, the self proposal is grounded in the current skill’s own execu-tion, whereas pexp  
+
+> t
+
+provides reusable guidance distilled from external skill histories. Adaptive attention assigns source-level weights to external experience guidance and the self proposal: 
+
+λ(t)exp + λ(t)self = 1 , 0 ≤ λ(t)exp , λ (t)self ≤ 1. (8) The weights serve as prompt-level reliance instructions for the LLM-based fuser, rather than as probabilities. Both weights are initialized to 0.5. The fuser combines compatible guidance and prioritizes the higher-weight source when the two sources conflict. It produces: 
+
+penh  
+
+> t
+
+= Fuse 
+
+
+
+pexp  
+
+> t
+
+, p self  
+
+> t
+
+; λ(t)exp , λ (t)self 
+
+
+
+, (9) where penh  
+
+> t
+
+is the experience-enhanced proposal, represented as a structured set of candidate edits. To preserve source evidence for subsequent feedback, each selected external experience and each self-proposal item is assigned a unique provenance identifier, such as EXP-k or 
+
+SELF-k , which will be preserved in the fusion. These edit-level provenance tags are later compared with the actual skill update to determine which proposal items were realized and whether the implemented update was primarily supported by external experience or by the self proposal. The skill optimizer applies the enhanced proposal to the current skill: 
+
+St = O(St−1, p enh  
+
+> t
+
+). (10) Depending on the proposal, the LLM-based optimizer re-vises the skill bundle to produce St.
+
+Adaptation Feedback. The agent then executes St, pro-ducing a new trajectory τt for the base evolver in the next iteration. Separately, the completed skill update and its val-idation produce two intermediate signals: source feedback 
+
+f St , which summarizes whether the implemented edits rely more on external experience or on the self proposal, and val-idation feedback f Vt , which measures whether the updated skill improves validation performance. Because the optimizer may realize only part of the en-hanced proposal, VCE-Skill compares the actual skill change with the proposal’s provenance-tagged edits: 
+
+∆St = Diff( St, S t−1), (11) Let Ct = {ct,k }nt 
+
+> k=1
+
+denote the provenance-tagged can-didate edits in penh  
+
+> t
+
+. The attribution function semantically aligns each candidate edit with the realized changes and as-signs an item-level attribution: 
+
+at,k = Attr(∆ St, c t,k ), (12) where at,k ∈ {− 1, 0, +1 } for k = 1 , . . . , n t. We set at,k =+1 when an externally supported candidate edit is realized, 
+
+at,k = −1 when a self-supported candidate edit is realized, and at,k = 0 when the candidate edit is not realized, cannot be reliably matched, or has mixed provenance. The source feedback is the mean attribution over all candidate edits: 
+
+f St = 1
+
+ntntX
+
+> k=1
+
+at,k , f St ∈ [−1, 1] . (13) Positive values indicate greater realized contribution from external experience, negative values indicate greater contri-bution from the self proposal, and values near zero indicate balanced, weak, or uncertain attribution. Second, validation feedback f Vt represents the change in skill performance on a fixed validation set V :
+
+f Vt =
+
+ +1 , ∆Vt > 0,
+
+−1, ∆Vt ≤ 0, (14) where ∆Vt denotes the performance change of validation. We combine source attribution and validation performance into a unified source-preference feedback: 
+
+ft = f Vt f St , ft ∈ [−1, 1] . (15) Positive ft shifts the next iteration toward external experi-ence, negative ft shifts it toward the self proposal, and values near zero leave the preference nearly unchanged. The same feedback is included in the next selection context and used to update the attention weights: 
+
+λ(t+1) exp = clip 
+
+
+
+λ(t)exp + ηf t, 0.3, 0.7
+
+
+
+,λ(t+1) self = 1 − λ(t+1) exp ,
+
+(16) 50    
+
+> 55
+> 60 65
+> 70
+> 75
+> 80
+> Qwen3.5-27B GPT-5.2 DeepSeek-v3.2 Claude Sonnet 5 w/o Dist
+> w/o Atte
+> SkillOpt
+> SkillOpt+VCE
+
+Figure 4: The performance of different variants of VCE-Skill. where the adjustment step size is fixed to η = 0 .1, and clipping to [0 .3, 0.7] prevents either source from being per-manently ignored. When an improving update relies more on one source, the method increases reliance on that source in proportion to |f St |. When a non-improving update relies more on one source, it shifts reliance toward the other. The loop is modular with respect to the base evolver. Different trajectory-driven self-evolution methods can sup-ply qself  
+
+> t
+
+without changing the experience bank, feedback-conditioned selector, or source-level attention update. 
+
+5 Experimental Evaluation 
+
+5.1 Experimental Setup 
+
+Benchmarks and Models. We evaluate on five bench-marks that cover complementary forms of agent skill use: SearchQA (Dunn et al. 2017) for open-domain ques-tion answering under noisy retrieval; OfficeQA (Team 2025) for document, table, and numerical reasoning; ALF-World (Shridhar et al. 2021) for long-horizon embodied task execution; Spreadsheet (Ma et al. 2024) for spreadsheet op-erations and calculation; and BFCL-v4 (Patil et al. 2025) for function calling and tool selection. We take four models as agent: Qwen3.5-27B (Qwen Team 2026), GPT-5.2 (OpenAI 2025), DeepSeek-v3.2 (DeepSeek-AI 2025), and claude-sonnet-5 (Anthropic 2026b). 
+
+Compared baselines. We compare VCE-Skill against five groups of baselines. No Skill executes the target agent with-out loading any skill. LLM Skill uses a one-shot skill gen-erated by an LLM without iterative refinement. EvoSkill (Alzubi et al. 2026) evolves skills from failure trajectories. SkillClaw (Ma et al. 2026) represents collective or multi-skill evolution. SkillOpt (Yang et al. 2026) treats the skill as an optimizable textual state and accepts bounded edits through a validation gate. VCE-Skill enhances these iterative base self-evolvers to compare. 
+
+Implementation and Evaluation Details. Each experi-mental configuration is independently run three times, and we report the mean results in the main paper. We conduct sensitivity analyses of the key hyperparameters. To assess reliability, we manually audit all LLM-based judging. The whole results and details, such as the prompts, LLMs, and environments, are provided in the Appendix. 
+
+5.2 Performance of VCE-Skill. 
+
+Table 1 presents paired comparisons between each self-evolution method and its VCE-enhanced variant. The gray rows denote variants augmented with VCE-Skill, while the parenthesized values show their improvements or declines relative to the corresponding non-VCE baseline. Introducing VCE improves every task score of each base evolver. It also increases the average score by 3.20–4.98 points. These results show that the benefit of VCE-Skill is consistent across dif-ferent skill-evolution frameworks rather than being specific to a particular method. These improvements arise because VCE-Skill leverages external evolution experience that is complementary to the agent’s own trajectory-derived knowledge. Experience distil-lation makes this knowledge reusable and actionable, while adaptive experience selection and attention allocation im-prove its alignment with the current evolution process. For each benchmark, VCE-Skill incurs approximately 0.5M tokens for the one-time experience distillation and 0.6M tokens for a complete evolution comprising approx-imately 20 iterations, resulting in a total additional cost of approximately 1.1M tokens. This corresponds to approxi-mately 10% additional token overhead relative to the best-performing baseline. 
+
+5.3 Ablation Study. 
+
+Variants. We conduct the ablation study and construct two variants of VCE-Skill, each removing one key component. 
+
+w/o Dist removes experience distillation and directly uses raw version-change records as external evolution knowledge. 
+
+w/o Atte replaces adaptive experience attention with a fixed equal-weight combination of the distilled external experience and the self proposal generated by base evolver. 
+
+Results. Figure 4 reports the average score on all bench-marks of removing different components of VCE-Skill, using the best baseline, SkillOpt, as the base evolver. Removing experience distillation causes the largest performance degra-dation, with w/o Dist even falling below SkillOpt on all four models. Raw version-change records contain implementa-tion details that may not transfer directly to the current skill. Experience distillation abstracts these records into reusable patterns and insights, thereby reducing irrelevant information and providing more actionable guidance. Replacing adaptive attention with fixed equal weights also consistently underper-forms VCE-Skill, although w/o Atte still outperforms Skil-lOpt on three of the four models. This result indicates that distilled external experience is generally useful, but its con-tribution should not remain constant throughout evolution. As the skill state changes across iterations, the relevance of external experience and the reliability of the self proposal also vary. Adaptive experience attention accounts for these and allocates the two types of knowledge accordingly, en-abling more targeted and reliable skill updates. 
+
+5.4 Transferability of Skills. 
+
+This experiment investigates whether skills produced through self-evolution remain effective when transferred across models. We evolve two skills on the same source model using SkillOpt and SkillOpt augmented with VCE-Skill, respectively, and then transfer them to other models for evaluation. Table 2 reports their transferred performance when Qwen3.5-27B is used as the source model. Model Skill SearchQA OfficeQA ALFWorld Spreadsheet BFCL-v4 Avg. No Skill 68.42 33.79 52.87 26.93 54.75 47.35 LLM Skill 67.29 33.41 54.74 29.48 55.12 48.01 EvoSkill 67.08 34.13 57.46 39.45 58.45 51.31 
+
+EvoSkill+VCE 70.46 (+3.38) 41.79 (+7.66) 59.13 (+1.67) 45.13 (+5.68) 60.71 (+2.26) 55.44 (+4.13) SkillClaw 69.41 36.12 59.01 42.46 61.23 53.65 
+
+SkillClaw+VCE 72.48 (+3.07) 41.48 (+5.36) 62.48 (+3.47) 46.73 (+4.27) 63.77 (+2.54) 57.39 (+3.74) SkillOpt 74.27 46.12 59.70 49.08 54.82 56.80 Qwen3.5-27B 
+
+SkillOpt+VCE 78.86 (+4.59) 49.42 (+3.30) 63.43 (+3.73) 52.14 (+3.06) 57.52 (+2.70) 60.27 (+3.47) No Skill 72.67 36.57 69.76 41.07 51.13 54.24 LLM Skill 73.75 43.49 71.04 41.84 53.44 56.71 EvoSkill 76.16 41.28 70.45 43.96 59.11 58.19 
+
+EvoSkill+VCE 80.71 (+4.55) 48.41 (+7.13) 74.84 (+4.39) 47.02 (+3.06) 64.85 (+5.74) 63.17 (+4.98) SkillClaw 79.40 52.09 76.94 51.06 60.42 63.98 
+
+SkillClaw+VCE 84.14 (+4.74) 55.49 (+3.40) 80.40 (+3.46) 56.41 (+5.35) 64.17 (+3.75) 68.12 (+4.14) SkillOpt 83.11 52.16 81.06 54.79 64.16 67.06 GPT-5.2 
+
+SkillOpt+VCE 85.86 (+2.75) 56.71 (+4.55) 84.58 (+3.52) 59.60 (+4.81) 67.47 (+3.31) 70.84 (+3.78) No Skill 70.46 35.54 66.24 29.46 53.41 51.02 LLM Skill 70.20 34.16 69.67 30.79 55.37 52.04 EvoSkill 72.04 38.16 68.06 32.72 56.15 53.43 
+
+EvoSkill+VCE 74.97 (+2.93) 42.53 (+4.37) 71.64 (+3.58) 35.48 (+2.76) 58.61 (+2.46) 56.65 (+3.22) SkillClaw 73.47 41.06 69.40 34.94 59.27 55.63 
+
+SkillClaw+VCE 76.98 (+3.51) 42.68 (+1.62) 72.87 (+3.47) 37.48 (+2.54) 64.16 (+4.89) 58.83 (+3.20) SkillOpt 73.82 45.55 68.08 37.78 61.36 57.32 DeepSeek-v3.2 
+
+SkillOpt+VCE 77.68 (+3.86) 49.01 (+3.46) 73.70 (+5.62) 42.02 (+4.24) 64.58 (+3.22) 61.40 (+4.08) No Skill 76.40 51.56 73.16 45.06 57.42 60.72 LLM Skill 76.46 50.77 74.14 50.05 58.76 62.04 EvoSkill 74.83 52.03 72.45 55.16 59.57 62.81 
+
+EvoSkill+VCE 78.92 (+4.09) 56.22 (+4.19) 77.94 (+5.49) 59.70 (+4.54) 63.98 (+4.41) 67.35 (+4.54) SkillClaw 81.02 53.21 78.10 50.43 65.93 65.74 
+
+SkillClaw+VCE 84.56 (+3.54) 56.88 (+3.67) 82.04 (+3.94) 55.30 (+4.87) 68.37 (+2.44) 69.43 (+3.69) SkillOpt 82.71 54.17 83.12 57.91 66.06 68.79 Claude Sonnet 5 
+
+SkillOpt+VCE 87.13 (+4.42) 58.44 (+4.27) 85.70 (+2.58) 62.04 (+4.13) 70.04 (+3.98) 72.67 (+3.88) 
+
+Table 1: Performance comparison on different models and benchmarks. For VCE-enhanced variants, red (green) parenthesized values indicate improvements (declines) over their corresponding baseline. Bold indicates the best result.                                             
+
+> Target Model Source Skill SearchQA OfficeQA ALFWorld Spreadsheet BFCL-v4 Avg. SkillOpt 78.01 47.47 79.16 52.11 64.10 64.17 GPT-5.2 SkillOpt+VCE 83.24 55.34 86.05 57.89 68.54 70.21 (+6.04) SkillOpt 71.16 44.94 69.60 38.16 62.10 57.19 DeepSeek-v3.2 SkillOpt+VCE 78.12 49.53 75.11 43.94 65.48 62.44 (+5.25) SkillOpt 81.10 53.03 83.69 56.01 66.42 68.05 Claude Sonnet 5 SkillOpt+VCE 87.37 58.14 86.80 61.73 71.97 73.20 (+5.15)
+
+Table 2: Cross-model transfer performance of skills. 
+
+Results. The skill evolved with VCE-Skill outperforms its SkillOpt counterpart. Specifically, VCE-Skill improves the average scores of the three target models by 6.04, 5.25, and 5.15 points, respectively. Notably, this transfer gain exceeds the gain over the available paired non-VCE counterparts in Table 1. It demonstrates that the skills evolved by VCE-Skill possess stronger cross-model transferability. We attribute it to the more generalizable evolution knowl-edge incorporated by VCE-Skill. Trajectory-driven evolu-tion primarily learns from source-model trajectories and may therefore retain model-specific behavior patterns. In contrast, VCE-Skill introduces reusable external experience. By sup-pressing model-specific trajectory details and incorporating generalizable task-solving principles, this external experi-ence makes the evolved skill less dependent on the source model and more reliable when applied to other models. 
+
+6 Conclusion 
+
+In this work, we propose VCE-Skill, which enhances skill self-evolution with public skill versions. Our pilot study shows that public changes and those derived from trajectory-derived self-evolution provide complementary coverage. VCE-Skill distills public skill changes into structured prior experience and adaptively fuses it with trajectory-derived proposals from the base evolver, combining reusable prior knowledge with task-specific execution evidence to guide skill evolution. Experiments across five benchmarks, four LLMs, and three base evolvers demonstrate that VCE-Skill effectively improves skill self-evolution and yields skills with stronger cross-model transferability in the evaluated setting. Overall, our work highlights public skill version histories as an underexplored yet effective source of prior knowledge and provides a practical experience-augmented extension to the trajectory-driven paradigm of skill self-evolution. References 
+
+Alzubi, S.; Provenzano, N.; Bingham, J.; Chen, W.; and Vu, T. 2026. EvoSkill: Automated Skill Discovery for Multi-Agent Systems. arXiv:2603.02766. Anthropic. 2025. Introducing Agent Skills. Anthropic. 2026a. Agent Skills. Anthropic. 2026b. Introducing Claude Sonnet 5. Bader, J.; Scott, A.; Pradel, M.; and Chandra, S. 2019. Getafix: learning to fix bugs automatically. Proc. ACM Pro-gram. Lang. 
+
+DeepSeek-AI. 2025. DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models. arXiv:2512.02556. Dilhara, M.; Ketkar, A.; Sannidhi, N.; and Dig, D. 2022. Discovering repetitive code changes in python ML systems. In Proceedings of the 44th International Conference on Soft-ware Engineering , ICSE ’22, 736–748. Dunn, M.; Sagun, L.; Higgins, M.; Guney, V. U.; Cirik, V.; and Cho, K. 2017. SearchQA: A New Q&A Dataset Augmented with Context from a Search Engine. arXiv:1704.05179. Gao, Y.; Li, Z.; Yuan, Y.; Ji, Z.; Ma, P.; and Wang, S. 2026. SkillReducer: Optimizing LLM Agent Skills for Token Effi-ciency. arXiv:2603.29919. Holzbauer, F.; Schmidt, D.; Gegenhuber, G. K.; Schrit-twieser, S.; and Ullrich, J. 2026. Context Matters: Repository-Aware Security Analysis of the Agent Skill Ecosystem. In Agent Skills ’26 Workshop: ACM Conference on AI and Agentic Systems .Huang, Z.; Xu, J.; Yang, Y.; Gong, Z.; Yang, Q.; Tian, M.; Wang, X.; Lv, C.; Gao, X.; Dai, Q.; Liu, B.; Qiu, K.; Yang, X.; Chen, D.; Zheng, X.; and Luo, C. 2026. From Raw Experience to Skill Consumption: A Systematic Study of Model-Generated Agent Skills. arXiv:2605.23899. Ju, R.; Wang, X.; Ding, X.; Yang, Y.; Wu, H.; Jiang, S.; Zhang, Q.; Wen, H.; Li, X.; Wang, W.; Li, K.; Liu, Y.; Dai, H.; Wang, W.; and Cao, T. 2026. EmbodiSkill: Skill-Aware Reflection for Self-Evolving Embodied Agents. arXiv:2605.10332. Koyuncu, A.; Liu, K.; Bissyandé, T. F.; Kim, D.; Klein, J.; Monperrus, M.; and Le Traon, Y. 2020. FixMiner: Mining relevant fix patterns for automated program repair. Empirical Softw. Engg. 
+
+Li, X.; Liu, Y.; Chen, W.; You, B.; Di, Z.; He, Y.; Zheng, S.; Choe, K. W.; Sun, J.; Wang, S.; Tao, C.; Li, B.; Zhao, X.; Geng, H.; Wu, X.; Zhou, J.; Chen, X.; Xing, H.; Li, Y.; Zeng, Q.; Wang, D.; Wang, Y.; Chaim, R. B.; Jiang, P.; Shen, H.; Kong, L.; Liu, X.; Wang, R.; Liu, X.; Li, J.; Lan, X.; Lin, Y.; Ye, W.; He, J.; Li, S.; Zhang, Y.; Gao, Y.; Li, Y.; Ma, Z.; Jing, L.; Wang, T.; Li, K.; Xue, Y.; Lyu, H.; He, Y.; Tian, Y.; Wu, S.; Wang, B.; Gao, Y.; Chen, B.; Liu, L.; Cheng, S.; Bao, J.; Tong, S.; Xu, S.; Zhuo, T. Y.; Ye, T.; Qi, Q.; Li, M.; Liao, L.; Tan, Z.; Shi, C.; Tang, X.; Tankasala, S.; Yuan, B.; Qian, Y.; Tu, J.; Wang, C.; Sun, Y.; Wang, W.; Taylor, A.; Yang, Z.; Guan, C.; Dong, Z.; Zhang, X.; Dillmann, S.; chung Lee, H.; and Song, D. 2026. SkillsBench: Benchmarking How Well Agent Skills Work Across Diverse Tasks. arXiv:2602.12670. Ling, G.; Zhong, S.; and Huang, R. 2026. Agent Skills: A Data-Driven Analysis of Claude Skills for Extending Large Language Model Functionality. arXiv:2602.08004. Liu, N. F.; Lin, K.; Hewitt, J.; Paranjape, A.; Bevilacqua, M.; Petroni, F.; and Liang, P. 2024. Lost in the Middle: How Language Models Use Long Contexts. Transactions of the Association for Computational Linguistics , 12: 157–173. Liu, X.; Luo, X.; Li, L.; Huang, G.; Liu, J.; and Qiao, H. 2026a. SkillForge: Forging Domain-Specific, Self-Evolving Agent Skills in Cloud Technical Support. In Proceedings of the 49th International ACM SIGIR Conference on Research and Development in Information Retrieval , 4763–4768. ACM. Liu, Y.; Wang, W.; Feng, R.; Zhang, Y.; Xu, G.; Deng, G.; Li, Y.; and Zhang, L. 2026b. Agent Skills in the Wild: An Empirical Study of Security Vulnerabilities at Scale. arXiv:2601.10338. Livshits, B.; and Zimmermann, T. 2005. DynaMine: finding common error patterns by mining software revision histories. In Proceedings of the 10th European Software Engineering Conference Held Jointly with 13th ACM SIGSOFT Interna-tional Symposium on Foundations of Software Engineering ,296–305. Ma, Z.; Yang, S.; Ji, Y.; Wang, X.; Wang, Y.; Hu, Y.; Huang, T.; and Chu, X. 2026. SkillClaw: Let Skills Evolve Collec-tively with Agentic Evolver. arXiv:2604.08377. Ma, Z.; Zhang, B.; Zhang, J.; Yu, J.; Zhang, X.; Zhang, X.; Luo, S.; Wang, X.; and Tang, J. 2024. SpreadsheetBench: Towards Challenging Real World Spreadsheet Manipulation. In Advances in Neural Information Processing Systems .Mi, Q.; Ma, Z.; Yang, M.; Li, H.; Wang, Y.; Zhang, H.; and Wang, J. 2026. Skill-Pro: Learning Reusable Skills from Experience via Non-Parametric PPO for LLM Agents. In 
+
+Proceedings of the 43rd International Conference on Ma-chine Learning (ICML 2026) . Spotlight. OpenAI. 2025. Introducing GPT-5.2. Ouyang, S.; Yan, J.; Chen, Y.; Han, R.; Wang, Z.; Mishra, B. D.; Meng, R.; Li, C.-L.; Jiao, Y.; Zha, K.; Shen, M.; Tirumalashetty, V.; Lee, G.; Han, J.; Pfister, T.; and Lee, C.-Y. 2026. SkillOS: Learning Skill Curation for Self-Evolving Agents. arXiv:2605.06614. Patil, S. G.; Mao, H.; Yan, F.; Ji, C. C.-J.; Suresh, V.; Stoica, I.; and Gonzalez, J. E. 2025. The Berkeley Function Calling Leaderboard (BFCL): From Tool Use to Agentic Evaluation of Large Language Models. In Proceedings of the 42nd International Conference on Machine Learning .Qwen Team. 2026. Qwen3.5: Towards Native Multimodal Agents. Shen, S.; Cheng, W.; Ma, M.; Turcan, A.; Zhang, M. J.; and Ma, J. 2026. SKILLFOUNDRY: Building Self-Evolving Agent Skill Libraries from Heterogeneous Scientific Re-sources. arXiv:2604.03964. Shi, F.; Chen, X.; Misra, K.; Scales, N.; Dohan, D.; Chi, E. H.; Schärli, N.; and Zhou, D. 2023. Large Language Models Can Be Easily Distracted by Irrelevant Context. In Proceedings of the 40th International Conference on Machine Learning ,volume 202, 31210–31227. Shinn, N.; Cassano, F.; Gopinath, A.; Narasimhan, K.; and Yao, S. 2023. Reflexion: language agents with verbal re-inforcement learning. In Advances in Neural Information Processing Systems .Shridhar, M.; Yuan, X.; Côté, M.-A.; Bisk, Y.; Trischler, A.; and Hausknecht, M. 2021. ALFWorld: Aligning Text and Embodied Environments for Interactive Learning. In 
+
+Proceedings of the International Conference on Learning Representations (ICLR) .Team, T. D. A. R. 2025. Introducing OfficeQA: A benchmark for end-to-end grounded reasoning. Tian, Y.; Chen, J.; Zheng, L.; Tao, M.; Zeng, X.; Yin, Z.; Su, H.; and Sun, X. 2026. Skills-Coach: A Self-Evolving Skill Optimizer via Training-Free GRPO. arXiv:2604.27488. Wang, G.; Xie, Y.; Jiang, Y.; Mandlekar, A.; Xiao, C.; Zhu, Y.; Fan, L.; and Anandkumar, A. 2024. Voyager: An Open-Ended Embodied Agent with Large Language Models. 
+
+Transactions on Machine Learning Research .Wang, Z.; Yan, M.; Bi, J.; Yan, S.; Tresp, V.; and Ma, Y. 2026. MetaSkill-Evolve: Recursive Self-Improvement of LLM Agents via Two-Timescale Meta-Skill Evolution. arXiv:2607.05297. Xu, R.; and Yan, Y. 2026. Agent Skills for Large Language Models: Architecture, Acquisition, Security, and the Path Forward. arXiv:2602.12430. Yang, Y.; Gong, Z.; Huang, W.; Yang, Q.; Zhou, Z.; Huang, Z.; Li, Y.; Gao, X.; Dai, Q.; Liu, B.; et al. 2026. Skillopt: Ex-ecutive strategy for self-evolving agent skills. arXiv preprint arXiv:2605.23904 .Zhang, H.; Fan, S.; Zou, H. P.; Chen, Y.; Wang, Z.; Zhou, J.; Li, C.; Huang, W.-C.; Yao, Y.; Zheng, K.; Liu, X.; Li, X.; and Yu, P. S. 2026. CoEvoSkills: Self-Evolving Agent Skills via Co-Evolutionary Verification. arXiv:2604.01687. Zhao, A.; Huang, D.; Xu, Q.; Lin, M.; Liu, Y.-J.; and Huang, G. 2024. ExpeL: LLM agents are experiential learners. In 
+
+Proceedings of the Thirty-Eighth AAAI Conference on Arti-ficial Intelligence and Thirty-Sixth Conference on Innovative Applications of Artificial Intelligence and Fourteenth Sym-posium on Educational Advances in Artificial Intelligence .Appendix for VCE-Skill 
+
+This supplementary appendix provides the motivation-study protocol, implementation details, reproducibility informa-tion, extended analyses, and structured interfaces referenced by the main paper. It is organized around three aspects: the motivation study, the mechanism of VCE-Skill, and the ex-perimental details. 
+
+A Motivation Study Protocol and Supplementary Analyses 
+
+A.1 Matched Source Comparison 
+
+The matched study examines how public version histories and trajectory-driven evolution differ in the skill-update knowledge they expose. Both sources use the same skill-change unit and the same component, intent, and pattern taxonomy. 
+
+Public source. For BFCL and SearchQA, we collect skills from GitHub and ClawHub whose descriptions are semanti-cally relevant to the benchmark and whose histories contain at least ten version updates. We remove adjacent versions with no substantive skill change. The retained public pool contains 38 skills and 1,266 updates for BFCL, and 21 skills and 1,089 updates for SearchQA. 
+
+Trajectory source. We run EvoSkill (Alzubi et al. 2026), SkillClaw (Ma et al. 2026), and SkillOpt (Yang et al. 2026) on BFCL and SearchQA. Each method contributes 400 it-erative updates across the two benchmarks, producing 1,200 trajectory-derived updates in total. These updates follow the execution evidence observed by the current agent during skill evolution. 
+
+Balanced comparison. From the two source pools, we construct a benchmark-matched corpus containing 400 skill-change units from each source. The shared protocol supports direct comparison of component, intent, and pattern distri-butions. 
+
+A.2 Skill-Change Units and Annotation Taxonomy 
+
+Let (s−, s +) denote the skill before and after one public or trajectory-derived update, and let D(s−, s +) be their file-level difference. A skill-change unit is the maximal set of ed-its that implements one semantic intent through one reusable modification pattern. Functionally coupled edits may span several files or components, while edits with distinct in-tents form separate units. Formatting-only changes, gener-ated files, and dependency-lock churn are removed before segmentation. Each unit is described by three dimensions. The compo-nent records the affected artifact types, the intent records the objective of the update, and the pattern records the reusable modification strategy. Components are multi-label, whereas intent and pattern each receive one primary label. 
+
+A.3 Representative Change Units 
+
+Figure 1 contrasts a coordinated public-history update with a trajectory-derived instruction update. The public update changes both user-facing guidance and executable code to maintain service compatibility. The trajectory-derived up-date adds extraction rules for a failure format observed during SearchQA evolution. 
+
+A.4 Broader Public-History Statistics 
+
+Separate from the BFCL/SearchQA matched comparison, we survey 1,904 GitHub skills and 242 ClawHub skills across 12 task domains. The survey contains 36,719 substantive adjacent-version updates from 2,146 public skills. For each update, we identify the affected components and assign its dominant high-level intent. Figure 2 shows that public evolution routinely changes instructions, scripts, references, and configurations. Instruc-tions are the most frequently modified component in 11 of the 12 domains, with within-domain shares ranging from 58.9% to 82.9% in those domains. Scripts, references, and configurations also occur throughout the domain set, cap-turing implementation and maintenance knowledge beyond instruction editing. 
+
+A.5 Additional Analyses of Trajectory-Driven Evolution 
+
+Trajectory utility. Each trajectory is scored on six di-mensions: execution integrity, feedback fidelity, trace ob-servability, root-cause diagnosability, optimization action-ability, and cross-task generalizability. Each dimension re-ceives an integer score rd ∈ { 0, 1, 2}, giving a total score 
+
+T (τ ) = P6 
+
+> d=1
+
+rd ∈ [0 , 12] and normalized utility U (τ ) = 
+
+T (τ )/12 . High-utility trajectories satisfy T (τ ) ≥ 10 and contain no hard flag, medium-utility trajectories satisfy 
+
+7 ≤ T (τ ) ≤ 9, and low-utility trajectories satisfy T (τ ) ≤ 6.Any non-infrastructure hard flag assigns the trajectory to the low-utility group. Timeouts, connection errors, API er-rors, exceptions, empty traces, and missing traces are labeled 
+
+infra_invalid before utility classification. For iteration 
+
+t, trajectory utility is the mean normalized utility of the newly collected trajectories used to produce the update. Update ef-fectiveness is ∆Val t = Val( St)−Val( St−1), the validation-score change produced by that iteration. Figure 3 shows a positive association between trajec-tory utility and validation improvement. Negative updates are concentrated among low-utility trajectories, while high-utility trajectories more often support positive validation changes. The quality of the current rollout therefore directly affects the update signal available to trajectory-driven evolu-tion. 
+
+Failure-mode identification. The judge records one pri-mary failure mode, an optional secondary mode, confi-dence, rationale, and hard flags for each trajectory. The ten canonical OfficeQA modes are document retrieval, table lo-calization, row–column alignment, temporal scope, unit/s-Dimension Annotation target Decision rule Component Affected skill artifacts Assign all affected artifact types, including instructions, scripts, references, configurations, and templates. Intent Objective of the update Assign the primary outcome pursued by the change. Pattern Modification strategy Abstract the operational mechanism into a repository-independent family.       
+
+> Selected intent labels and pattern families used in the representative cases.
+> Type Label Definition Intent INTENT_04 : Evidence retrieval qual-ity Improve the precision, recall, navigation, or grounding of evi-dence acquisition before reasoning or execution. Intent INTENT_10 : Compatibility and inter-operability Align the skill with supported platforms, dependencies, schemas, clients, or execution environments. Pattern FAMILY_01 : Evidence retrieval and navigation Modify how evidence is searched, located, traversed, or extracted from information sources. Pattern FAMILY_08 : Executable workflow au-tomation Modify executable helpers that automate requests, lifecycle steps, result enrichment, or artifact generation.
+
+Table 1: Annotation dimensions and selected taxonomy labels used in the representative skill-change units.                     
+
+> Failure-mode coverage ∆Train ↑∆Test ↑Gap ↓P2F ↓
+> Low (1–3 modes) 4.82 2.54 2.28 12.7 Medium (4–8 modes) 4.17 2.81 1.36 9.7 High (9–10 modes) 4.23 3.19 1.04 5.9
+
+Table 2: Training-test gaps and pass-to-fail regressions under different failure-mode coverage. cale/sign, arithmetic aggregation, answer extraction/format, unsupported or hallucinated evidence, tool execution, and other. The normalizer first retains exact canonical labels, then maps markers for answer format, unsupported or hallu-cinated evidence, missing-document retrieval, table structure or columns, temporal scope, units/scales/signs, arithmetic/-formulas/statistics, and tool execution to the corresponding modes. Unmatched outputs are assigned to the other cate-gory. 
+
+Failure-mode coverage. For a set of trajectories, 
+
+unique_modes is the number M of distinct primary failure modes and mode_coverage is M/ |M ref |, where 
+
+Mref is the reference mode set. The normalized entropy of the mode distribution is 
+
+Hnorm = −
+
+PMm=1 pm log pm
+
+log M ,
+
+with Hnorm = 0 when M ≤ 1. The hq_diverse condition covers at least four modes and selects at most two trajectories from each mode, while hq_narrow contains trajectories from only one or two modes. At the run level, we group observed coverage into low (1–3), medium (4–8), and high (9–10) bands. We report the changes in training and test performance, their difference, and pass-to-fail regressions (P2F), defined as tasks that pass before evolution and fail afterward. Table 2 shows that broader failure-mode coverage im-proves test gains and reduces regressions. From the low-to high-coverage group, the train–test gap decreases from 2.28 to 1.04 and the mean P2F count decreases from 12.7 to 5.9. These results connect narrow trajectory evidence with overfitting during iterative skill evolution. The matched study and the supplementary analyses mo-tivate the two information sources used by VCE-Skill. Pub-lic histories contribute recurring maintenance and imple-mentation strategies, and current trajectories contribute task-specific execution evidence. Adaptive selection and fusion combine these signals throughout skill evolution. (a) Public-history change BFCL · plan2meal 
+
+SKILL.md 
+
+- Default backend: https://<BACKEND>.convex.site + Default backend: https://<BACKEND>.convex.cloud ... 
+
+index.ts 
+
+- convexUrl: process.env.CONVEX_URL - || ’https://<BACKEND>.convex.site’, + convexUrl: process.env.CONVEX_URL + || ’https://<BACKEND>.convex.cloud’, ... 
+
+Component Instruction + Script 
+
+Operation Modify + Modify 
+
+Intent INTENT_10 : Compatibility and interoper-ability 
+
+Pattern Family FAMILY_08 : Executable workflow automa-tion 
+
+(b) Trajectory-derived change SearchQA · SkillOpt / GPT-5.2 
+
+SKILL.md 
+
++ **Jeopardy/quiz dump guardrails:** + In lines formatted as + `CATEGORY | clue | <answer>. right: <contestant> `,+ extract the text after the last `|`
+
++ and before `right: ` or `wrong: `.+ Do not output the contestant name. + For flashcard-style snippets, extract the short + standalone answer token at the end of the snippet. ... 
+
+Component Instruction 
+
+Operation Add 
+
+Intent INTENT_04 : Evidence retrieval quality 
+
+Pattern Family FAMILY_01 : Evidence retrieval and naviga-tion 
+
+Figure 1: Representative skill-change units from public version histories and trajectory-driven evolution. The public update coordinates instruction and executable-code changes to preserve compatibility with an external service. The trajectory-derived update adds a local extraction rule in response to an observed SearchQA failure. 0 250 500                                                                 
+
+> Number of skills
+> Coding & DevTools Search & Research Office & Document API & Tool Use Productivity Finance & Business Security Multimodal Spreadsheet & Data Memory & Knowledge Planning & Embodied Other
+> 496 298 178 242 213 160 133 113 80 101 70 62
+> 03k 6k
+> Number of changes
+> 6,948 6,016 4,681 4,313 3,444 2,458 1,886 1,823 1,081 1,727 1,431 911
+> Instruc-tion Script Refer-ence Configu-ration Template Other
+> 70.7% 19.1% 40.0% 19.3% 5.4% 1.1% 69.9% 26.7% 41.6% 15.6% 9.1% 2.7%
+> 82.9% 17.3% 26.5% 11.6% 5.1% 1.3%
+> 71.5% 28.5% 49.2% 23.1% 4.4% 1.3%
+> 75.8% 10.0% 49.3% 11.3% 2.1% 1.2%
+> 74.3% 31.3% 43.5% 26.7% 3.7% 0.5% 60.9% 30.5% 39.2% 28.6% 2.1% 1.7% 58.9% 42.8% 47.2% 13.9% 5.2% 3.3% 61.7% 34.5% 47.2% 23.6% 5.6% 6.0% 67.8% 38.5% 42.6% 20.8% 3.1% 2.1% 68.6% 32.6% 43.9% 27.3% 12.2% 2.9% 46.2% 47.9% 47.9% 34.6% 7.8% 7.6%
+> 020 40 60 80 100
+> Within-domain share (%)
+
+Figure 2: Skill counts, substantive version updates, and affected-component shares across 12 task domains in the broader public-history survey. Component shares are non-exclusive because one update may affect several artifacts. 0.0 0.2 0.4 0.6 0.8 1.0 
+
+Trajectory utility (0-1) 
+
+−0.15 −0.10 −0.05 0.00 0.05 0.10 0.15 
+
+> Validation-score change (ΔVal Score)
+
+Figure 3: Trajectory utility and validation-score change across skill-evolution iterations. B VCE-Skill Implementation Details 
+
+B.1 Offline Experience-Bank Construction 
+
+Algorithms 1 and 2 detail the offline and online stages de-scribed in the main paper. Adjacent versions are used because they preserve the local maintenance context and reduce am-biguity about which edits belong to one update step. The method first abstracts raw diffs into events, then progres-sively removes repository-specific detail at the pattern, skill, and domain levels. The source corpus contains 1,904 GitHub skills and 242 ClawHub skills across 12 task domains, as de-scribed in Section A. For each evaluation benchmark, we manually select the five skills most closely aligned with its task and tool-use requirements and distill their adjacent-version changes into a benchmark-specific experience bank. 
+
+Grouping and abstraction. Events are grouped when their components, semantic operations, and intents support the same reusable strategy. Duplicate or paraphrased events are merged when they recommend the same operation under the same applicability conditions, while events with different conditions or intended outcomes remain separate. An update pattern states transferable operational guidance and cites its supporting event identifiers. Skill-level insights synthesize compatible patterns from one skill, and domain-level insights require support across multiple skills or distinct concerns in the same domain. Conflicting observations yield conditional guidance when their applicability conditions explain the dif-ference; otherwise, they are omitted. Each abstraction pre-serves backward links to its supporting events for verification against concrete diffs.                                   
+
+> Symbol Meaning
+> ujupdate event ⟨dj,{cj}, o j, i j⟩containing a raw diff segment, affected components, semantic op-eration, and intent
+> Bversion-change experience bank containing up-date patterns, evolution insights, and domain in-sights
+> Sttarget skill retained by the base evolver after on-line iteration tτttask-execution trajectory produced with St
+> ztselection context containing target task, current skill, and available prior feedback
+> Xtat most five experience entries selected from B
+> pexp
+> taggregated external-experience guidance
+> pself
+> ttrajectory-grounded proposal from the base evolver
+> penh
+> tprovenance-preserving fusion of the two pro-posal sources
+> fSt, f Vt, f tsource, validation, and unified feedback
+> λ(t)exp prompt-level reliance weight assigned to external experience; λ(t)self = 1 −λ(t)exp
+
+Table 3: Core notation used in the implementation. 
+
+Deduplication and quality control. The distillation prompts enforce evidence-linked identifiers at every level and merge entries with equivalent guidance and applica-bility. They remove repository names, exact paths, version numbers, benchmark answers, and one-off implementation details from reusable guidance. Entries are retained only when they are evidence-grounded, actionable, transferable, and no broader than their supporting changes. 
+
+Distillation Prompt Definitions Update-event extraction. The extractor receives one diff chunk between adjacent skill versions and returns zero or more atomic semantic events. Each event separates the exact diff evidence, affected components, semantic operation, and supported update intent. 
+
+Update-pattern distillation. The input contains one skill name and its structured update events. 
+
+Skill-level insight synthesis. The input contains the update patterns distilled from one skill history. 
+
+Domain-level insight generalization. The input contains skill-level insights from multiple skills in one task domain. 
+
+B.2 Online Optimization Algorithm 
+
+Algorithm 2 gives the complete online recurrence. VCE-Skill changes how the update proposal is constructed and leaves candidate evaluation, retention, checkpointing, and stopping to the native mechanism of the base evolver. 
+
+B.3 Experience Selection and Aggregation 
+
+The selector receives the benchmark, current skill, compact entries from the corresponding benchmark-specific bank, and the preceding unified feedback when one is available. It eval-uates each entry by task relevance, correspondence to an Algorithm 1: Offline version-change experience distillation 
+
+Require: Public skills with chronologically ordered versions 
+
+Ensure: Experience bank B 
+
+> 1:
+
+B ← ∅  
+
+> 2:
+
+for each retained skill r do  
+
+> 3:
+
+order versions (v1, . . . , v mr ) chronologically  
+
+> 4:
+
+Ur ← ∅  
+
+> 5:
+
+for j = 1 to mr − 1 do  
+
+> 6:
+
+Dj ← Diff( vj , v j+1 ) 
+
+> 7:
+
+remove ineligible mechanical changes from Dj 
+
+> 8:
+
+segment Dj into semantic change units  
+
+> 9:
+
+for each change unit g do  
+
+> 10:
+
+extract u = ⟨d, {c}, o, i ⟩ 
+
+> 11:
+
+validate schema, labels, and evidence traceability  
+
+> 12:
+
+Ur ← U r ∪ { u} 
+
+> 13:
+
+end for  
+
+> 14:
+
+end for  
+
+> 15:
+
+group compatible events in Ur and distill update pat-terns  
+
+> 16:
+
+synthesize the patterns into skill-level evolution insights  
+
+> 17:
+
+add validated patterns and insights to B 
+
+> 18:
+
+end for  
+
+> 19:
+
+for each task domain represented in B do  
+
+> 20:
+
+generalize recurring evolution insights into domain in-sights  
+
+> 21:
+
+add validated domain insights to B 
+
+> 22:
+
+end for  
+
+> 23:
+
+deduplicate entries without removing distinct supporting evidence  
+
+> 24:
+
+return B
+
+Algorithm 2: Online optimization with adaptive experience attention 
+
+Require: Initial skill S0, target task T , experience bank B,and base evolver E
+
+Ensure: Skill returned by the native base-evolver loop  
+
+> 1:
+
+λ(1) exp ← 0.5, λ(1) self ← 0.5 
+
+> 2:
+
+execute S0 to obtain τ0 
+
+> 3:
+
+for t = 1 to the iteration budget do  
+
+> 4:
+
+if t = 1 then  
+
+> 5:
+
+zt ← Context( T , S t−1) 
+
+> 6:
+
+else  
+
+> 7:
+
+zt ← Context( T , S t−1, f t−1) 
+
+> 8:
+
+end if  
+
+> 9:
+
+Xt ← Select ≤5(B, z t) 
+
+> 10:
+
+pexp  
+
+> t
+
+← Aggregate( Xt) 
+
+> 11:
+
+pself  
+
+> t
+
+← E .Propose( St−1, τ t−1) 
+
+> 12:
+
+attach unique EXP-k and SELF-k identifiers  
+
+> 13:
+
+penh  
+
+> t
+
+← Fuse( pexp  
+
+> t
+
+, p self  
+
+> t
+
+; λ(t)exp , λ (t)self ) 
+
+> 14:
+
+bSt ← E .Apply( St−1, p enh  
+
+> t
+
+) 
+
+> 15:
+
+(St, o t) ← E .Retain( St−1, bSt) 
+
+> 16:
+
+align the tagged edits with Diff( St−1, bSt) 
+
+> 17:
+
+compute f St , obtain f Vt from ot, and set ft = f Vt f St 
+
+> 18:
+
+execute retained St to obtain τt 
+
+> 19:
+
+λ(t+1) exp ← clip( λ(t)exp + 0 .1ft, 0.3, 0.7)  
+
+> 20:
+
+λ(t+1) self ← 1 − λ(t+1) exp  
+
+> 21:
+
+end for  
+
+> 22:
+
+return the skill selected by E
+
+observable gap in the current skill, next-step actionability, applicability, redundancy, and consistency with the preced-ing feedback. The selection budget is K = 5 ; the output contains zero to five unique bank identifiers together with compact external guidance linked to the selected entries. The selector prefers a small complementary set over redundant restatements and returns an empty selection when no sup-plied entry is sufficiently relevant and actionable. When the selection is empty, fusion is skipped and the base evolver’s self proposal proceeds unchanged. 
+
+Role of prior feedback. Task and skill compatibility re-main the primary selection criteria. Positive ft−1 makes se-lection more receptive to external guidance, whereas negative feedback requires stronger applicability evidence. The first iteration contains no prior feedback, so selection uses only the benchmark and current skill. The source weights specify relative reliance on external and self-generated proposals. 
+
+B.4 Attention Fusion and Skill Optimization 
+
+The source weights are prompt-level reliance instructions. At initialization, λ(1) exp = λ(1) self = 0 .5. They serve as relative preferences for incompatible recommendations, rather than output quotas or sampling probabilities. Direct trajectory ev-idence remains authoritative: the fuser preserves useful self edits and uses external guidance to refine, constrain, comple-ment, or replace them when the guidance identifies a concrete conflict or stronger applicable strategy. At equal weights, the same evidence rule resolves conflicts. Duplicate, contradic-tory, unsupported, non-actionable, and out-of-scope edits are removed. Every external item receives an identifier EXP-k , and every self-proposal item receives an identifier SELF-k . A fused edit contains all source identifiers that materially sup-port it, and mixed provenance is used only when one edit gen-uinely combines both sources. The fuser emits replace ,
+
+append , prepend , or delete operations over the cur-rent skill and returns an empty edit list when neither source supports an applicable change. The shared rewriter applies the selected operations to the complete skill document, pre-serves effective existing guidance and protected blocks, and consolidates overlapping instructions. 
+
+Full-skill rewrite. After fusion, the shared skill optimizer receives the current skill and selected revision suggestions and returns the complete rewritten skill document. 
+
+B.5 Provenance Attribution and Adaptation Feedback 
+
+Let Ct = {ct,k }nt 
+
+> k=1
+
+be the provenance-tagged candidate ed-its. The attribution stage aligns each item with the optimizer-produced candidate diff ∆St = Diff( bSt, S t−1). It assigns You extract structured update events from one supplied diff chunk between adjacent versions of an agent skill. An update event is one atomic semantic change: one coherent operation on one or more closely related components for one supported intent. Split independent changes into separate events. Use only evidence present in the supplied diff. Extraction rules: - Include changes that alter skill behavior, capability, reliability, safety, tool use, validation, recovery, or task execution. - Ignore formatting-only edits, generated artifacts, dependency-lock churn, path-only renames, and wording changes that preserve behavior. - `raw_diff_segment ` must contain only exact relevant lines from the supplied diff. Do not reconstruct or paraphrase those lines. - `components ` names the affected functional artifacts, such as instructions, scripts, references, configuration, metadata, or templates. - `operation ` states what changed. `intent ` states the improvement purpose. Keep them distinct. - Do not infer an intent that is not supported by the change. Omit that event instead of inventing rationale. - Merge lines only when they implement the same atomic change. - Return an empty list when the diff contains no meaningful semantic update. Before returning, verify that every event is atomic, evidence-grounded, non-duplicative, and free of repository facts not present in the input. Return JSON only: {"events": [{"raw_diff_segment": "exact relevant diff lines", "components": ["affected component"], "operation": "what semantic change was made", "intent": "why the supported change improves the skill" }]}
+
+Figure 4: System prompt for update-event extraction. 
+
++1 to a realized edit supported by external experience, −1
+
+to a realized edit supported by the self proposal, and 0 when an edit is unrealized, cannot be aligned reliably, or has mixed provenance. We compute the source feedback as follows. 
+
+f St = 1
+
+ntntX
+
+> k=1
+
+at,k .
+
+The denominator includes all candidate edits, so a proposal that is largely ignored has a source-feedback magnitude near zero. The native base-evolver outcome supplies binary valida-tion feedback: 
+
+f Vt =
+
+ +1 , ∆Vt > 0,
+
+−1, ∆Vt ≤ 0, ft = f Vt f St .
+
+Consequently, an improving update increases reliance on the source that contributed more realized edits, while a non-improving update shifts reliance away from that source. We apply the following attention update. 
+
+λ(t+1) exp = clip 
+
+
+
+λ(t)exp + 0 .1ft, 0.3, 0.7
+
+
+
+keeps both evidence sources active. 
+
+Boundary cases. When nt = 0, source feedback is 
+
+f St = 0 and the attention weights remain unchanged. Mixed-provenance edits receive zero source attribution. Partial im-plementations, ambiguous matches, contradicted changes, no-op changes, wording-only overlap, and unapplied edits are marked unrealized. Attribution is computed on the optimizer-produced candidate diff; the base evolver’s subsequent rejec-tion is represented by negative validation feedback. 
+
+B.6 Base-Evolver Interfaces 
+
+VCE-Skill inserts a thin proposal adapter between each base evolver’s native proposal stage and its native skill-update stage. The adapter exposes the current skill and self proposal to the common selector–fuser interface, attaches SELF-k 
+
+identifiers, and converts the fused result back to the base evolver’s expected format. The rollout collection, diagno-sis, candidate evaluation, retention, stopping, and checkpoint logic of the base evolver remain unchanged. 
+
+Adapter mappings. For EvoSkill, the adapter wraps the full-skill revision derived from failure trajectories as one 
+
+replace or append self edit, fuses it with external guid-ance, materializes a complete SKILL.md , and returns it to the native frontier and retention loop. For SkillClaw, it ren-ders the current and proposed skills, wraps their change as a self edit, materializes the fused proposal, and returns it to the native validation and publication cycle. For SkillOpt, it attaches provenance to the native patch distilled from scored rollouts, fuses it with external edits in the same patch schema, and passes it to the existing ranking, patch-application, and retention stages. EvoSkill and SkillClaw therefore use com-plete skill documents at the adapter boundary, whereas Skil-lOpt operates directly on bounded patch edits. Adapting a new base evolver requires proposal serialization, provenance attachment, and result materialization. 
+
+B.7 End-to-End Evolution Case Study 
+
+Figure 12 follows one evolution trace from a public version change to feedback-driven attention adaptation. The source You distill supplied update events from one skill's version history into reusable update patterns. An update pattern is transferable guidance about how and why to evolve a skill. Group compatible events by component, operation, and intent, while preserving meaningful applicability boundaries. Distillation rules: - Every pattern must cite one or more supplied event IDs in `supporting_event_ids `.- Cite only supplied event IDs. Never invent, rewrite, or omit the grounding IDs for a non-empty pattern. - Merge duplicate or paraphrased patterns when they recommend the same operation under the same conditions. - Keep separate patterns when their applicability or intended outcome differs. - Remove repository names, exact paths, version numbers, benchmark-specific answers, and one-off implementation details. - State constructive, operational guidance that can transfer to another skill. - Reject observations that describe a change but do not provide a reusable evolution decision. - Return an empty list when no supplied event supports a transferable pattern. Before returning, verify that patterns are grounded, non-duplicate, transferable, actionable, and no broader than their supporting evidence. Return JSON only: {"patterns": [{"content": "reusable update pattern", "applicability": "conditions under which this pattern is useful", "supporting_event_ids": ["EVENT-id"] }]}
+
+Figure 5: System prompt for update-pattern distillation. 
+
+You synthesize supplied update patterns from one skill into evolution insights. An evolution insight is an actionable strategy for improving similar skills, not a summary of one repository change. Synthesis rules: - Prefer insights supported by multiple compatible patterns. - A single pattern may support an insight only when it clearly expresses a general evolution strategy rather than an incidental fix. - Every insight must cite only supplied pattern IDs in `supporting_pattern_ids `.- Preserve applicability boundaries. Do not generalize beyond the situations represented by the supporting patterns. - Merge overlapping insights when one actionable formulation covers both. - Keep insights separate when they address different failure modes or applicability conditions. - Exclude benchmark answers, repository details, unsupported causal claims, and purely descriptive observations. - Return an empty list when no reliable skill-level insight is supported. Before returning, verify grounding, applicability, actionability, non-duplication, and that incidental edits were not promoted into principles. Return JSON only: {"insights": [{"content": "skill-level evolution insight", "applicability": "when another skill should use this insight", "supporting_pattern_ids": ["PATTERN-id"] }]}
+
+Figure 6: System prompt for skill-level evolution-insight synthesis. update converts recurring incomplete-output incidents into explicit activation cues, completeness checks, and recovery rules. Its update event, pattern, and insight provide reusable guidance for skills that produce structured outputs. The target trajectory completes its analysis but stops be-fore emitting the required function call. The selector retrieves three complementary experiences, while the base evolver proposes four edits covering JSON closure, tool matching, output formatting, and pre-output validation. The fuser pre-serves both sources in four mixed-provenance edits, and all four edits appear in the accepted Skill update. Across 507 paired validation examples, the hard score increases from 0.5661 to 0.5740, with 17 wrong-to-right and 13 right-to-wrong transitions. The representative parallel-call example improves from zero matched calls out of two to two matched calls out of two. All realized edits have mixed provenance, giving f St = 0 , f Vt = +1 , and ft = 0 ; the next-round weights therefore remain λexp = λself = 0 .5.You generalize supplied evolution insights from multiple skills in the same task domain. A domain insight is an operational optimization principle that transfers across skills or across clearly different skill concerns in the domain. Generalization rules: - Every insight must cite only supplied skill-insight IDs in `supporting_skill_insight_ids `.- Require evidence across skills or clearly distinct concerns. Do not rename a single narrow skill insight as a domain principle. - Preserve applicability conditions and operational actions. - Merge duplicate principles with equivalent actions and applicability. - When supplied insights conflict, keep conditional guidance only if the differing applicability conditions explain the conflict; otherwise omit the unsupported generalization. - Exclude repository details, dataset instances, benchmark-specific answer knowledge, and unsupported claims. - Return an empty list when cross-skill evidence is insufficient. Before returning, verify cross-skill support, transferability, conflict handling, non-duplication, and valid supplied IDs. Return JSON only: {"insights": [ {"content": "domain-level evolution insight", "applicability": "when a target skill should use this insight", "supporting_skill_insight_ids": ["SKILL-id"] }]}
+
+Figure 7: System prompt for domain-level evolution-insight generalization. 
+
+You select external version-change experiences for the current skill state. Evaluate each supplied bank entry using: - relevance to the benchmark and current task type; - relevance to observable gaps or omissions in the current skill; - actionability in the next optimization step; - applicability conditions that match the current situation; - redundancy with other selected experiences; - consistency with the previous unified feedback. Selection rules: - Select no more than `selection_budget ` supplied experience IDs. - Select only supplied experience IDs. - Selection may contain zero experiences when none is sufficiently relevant or actionable. - Prefer a small, complementary set over redundant restatements. - Positive previous feedback permits stronger reliance on relevant external experience. - Negative previous feedback requires more conservative selection: demand stronger relevance and avoid repeating the previously emphasized strategy. It does not automatically ban all external experience. - External guidance must summarize only selected entries and must not propose exact patch syntax, benchmark answers, or unsupported facts. - Every guidance item must cite its selected source experience IDs. Before returning, verify budget compliance, supplied IDs, non-redundancy, current-skill relevance, and that zero selection was used when evidence was weak. Return JSON only: {"selected_experience_ids": ["experience-id"], "external_guidance": [{"guidance": "compact transferable guidance", "source_experience_ids": ["experience-id"] }], "reasoning": "brief selection rationale" }
+
+Figure 8: System prompt for feedback-conditioned experience selection and aggregation. You fuse an independently generated self proposal with selected external evolution guidance into candidate skill edits. The attention weights are relative conflict preferences, not output quotas and not probabilities. They guide which source to prefer when both sources make incompatible recommendations. Do not manufacture edits to match a numerical ratio. Fusion rules: - Direct trajectory evidence supporting the self proposal remains authoritative. External guidance may refine, constrain, complement, or replace a self edit only when semantically justified. - Preserve useful self edits even when `lambda_exp ` is larger, unless relevant external guidance identifies a concrete conflict or stronger transferable strategy. - Use external-only provenance for an edit derived only from external guidance, self-only provenance for an unchanged self edit, and mixed provenance only when an edit genuinely combines both sources. - Copy provenance IDs exactly from the supplied inputs. - Remove duplicate, contradictory, unsupported, non-actionable, and out-of-scope edits. - Every output edit must be a valid patch operation using `replace `, `append `, `prepend `, or `delete `, with the required target and content fields. - Return an empty edit list rather than inventing an unsupported change. Before returning, verify valid patch operations, exact provenance, conflict handling, non-duplication, and that the attention weights were used only as relative conflict preferences. Return JSON only: {"reasoning": "brief fusion rationale", "edits": [{"op": "replace|append|prepend|delete", "target": "exact target when required", "content": "edit content when required", "provenance_ids": ["SELF-1", "EXP-1"] }]}
+
+Figure 9: System prompt for adaptive-attention fusion. 
+
+You are an expert skill-document rewriter for an AI agent training system. You will receive: 1. The current skill document 2. A selected set of revise_suggestions distilled from trajectory analysis Your job is to rewrite the FULL target skill document so it incorporates the selected suggestions coherently. Hard requirements: 1. Produce a complete standalone skill document, not a patch. 2. Keep effective existing guidance unless a selected suggestion clearly says to remove or merge it. 3. Prefer consolidation and clarity over making the document longer. 4. Do not hardcode benchmark-specific answers, entity names, file paths, or gold values. 5. Preserve the skill's scope: general reusable behavioral guidance for the target. 6. Do not modify content inside the protected slow-update block between <!-- SLOW_UPDATE_START --> and <!--SLOW_UPDATE_END --> except to keep it intact. 7. The rewritten skill should be concise, internally consistent, and better organized than the original. Respond ONLY with a valid JSON object: {"reasoning": "<why this rewrite implements the selected suggestions well>", "change_summary": ["<short change 1>", "<short change 2>"], "new_skill": "<the full rewritten skill document>" }
+
+Figure 10: System prompt for full-skill rewriting. You semantically match provenance-tagged ranked candidate edits to the actual skill diff produced by the optimizer. Attribution rules: - Evaluate each supplied `candidate_id ` independently. - Set `realized=true ` only when the actual skill diff implements the candidate's core semantic change. - Exact wording is not required when behavior and intent are equivalent. - Partial implementations, ambiguous similarity, contradicted changes, no-op changes, wording-only overlap, and unselected or unapplied changes are `realized=false `.- Evidence must briefly identify the relevant actual skill diff content. - If the actual diff provides insufficient evidence, use `realized=false `.- Do not decide whether external or self experience was beneficial and do not assign source scores. Deterministic code calculates source feedback from provenance IDs. - Return one match record for each supplied candidate ID and do not invent IDs. Before returning, verify candidate coverage, conservative semantic matching, actual-diff evidence, valid supplied IDs, and boolean `realized ` values. Return JSON only: {"matches": [{"candidate_id": "CAND-1", "realized": true, "evidence": "brief reference to the matching actual change" }]}
+
+Figure 11: System prompt for semantic realization matching. DISTILLATION ONLINE EVOLUTION FEEDBACK LOOP 
+
+1 Public Skill Diff 
+
+> − description: Broad AI-output validation + trigger: truncate / max_tokens + validate required fields + check completion before stop
+> + fallback and abnormal-length logging
+
+2 Update Event 
+
+Turn recurring incomplete-output incidents into executable safeguards.   
+
+> Instruction Modify Completeness
+
+3 Pattern & Insight 
+
+> Pattern
+
+Promote truncation cues and closing structure to termination conditions. 
+
+> Insight
+
+Treat output validation as an activation and execution contract. 
+
+4 Target Failure 
+
+> Expected: complete JSON / function call
+> “I have all the information needed to make this function call. </think>”
+
+Expected calls: 1 Matched: 0 
+
+> Current Skill: generic completion instruction
+
+5 Experience + Self 
+
+> Selected EXP
+> EXP-1 Completion EXP-2 Routing EXP-3 Validation 3 selected entries
+> Self Proposal
+> SELF-1 Close JSON SELF-2 Match tools SELF-3 JSON only SELF-4 Checklist
+
+6 Fused Proposal 
+
+CAND-1 Mandatory JSON closure CAND-2 Strict tool matching CAND-3 Valid JSON only CAND-4 Pre-output checklist  
+
+> EXP + SELF 4 mixed edits
+
+7 Realized Skill Diff 
+
+> + close every array and object + verify exact tool purpose + emit valid JSON only + run pre-output checklist
+
+8 Validation Feedback 
+
+Hard 0.5661 → 0.5740 
+
+17 wrong→right · 13 right→wrong Representative case: 0/2 → 2/2 calls 
+
+9 Attention Update 
+
+Source feedback fₛ = 0 
+
+Validation feedback fᵥ = +1 
+
+Experience attention 0.50 → 0.50 
+
+> mixed provenance retains balanced attention
+
+Figure 12: End-to-end evolution case. A public version change addressing incomplete structured outputs is distilled into reusable experience. The selected experience and self proposal are fused into four mixed-provenance edits, all of which are realized in the accepted Skill update. The hard score increases from 0.5661 to 0.5740, while mixed provenance yields zero source feedback and retains balanced experience attention. C Additional Experimental Results and Analyses 
+
+Unless otherwise specified, all supplementary experiments follow the main-paper protocol over SearchQA, OfficeQA, ALFWorld, Spreadsheet, and BFCL-v4 with Qwen3.5-27B, GPT-5.2, DeepSeek-v3.2, and Claude Sonnet 5. Each con-figuration is independently run three times, and paired com-parisons use the same benchmark instances, initial skill, evo-lution budget, and target model. The compared methods are No Skill, LLM Skill, EvoSkill, SkillClaw, SkillOpt, and the VCE-enhanced variants of the three iterative self-evolvers. We use GPT-5.5 for the LLM-based annotation and anal-ysis in the motivation study. For experience distillation and fusion in VCE-Skill, we use the corresponding target model in each experimental configuration. All large language mod-els are accessed through their APIs. All experiments are conducted on a server equipped with an Intel Core i7-10700 CPU, an NVIDIA TITAN RTX GPU, and 32 GB of RAM. 
+
+C.1 Ablation Results Across Base Self-Evolvers 
+
+Experimental setup. We evaluate experience distillation and adaptive experience attention with EvoSkill, SkillClaw, and SkillOpt as the base self-evolvers. For each base evolver, 
+
+w/o Dist replaces distilled experience with raw version-change records, while w/o Atte replaces adaptive attention with fixed equal weights for external experience and self-generated proposals. Figure 13 reports the average perfor-mance across all five benchmarks for four agent models. 
+
+Results. The complete VCE-Skill achieves the highest av-erage score for every base evolver and agent model, cov-ering all twelve base-evolver–model combinations. Remov-ing experience distillation produces the larger degradation in most settings, indicating that distilled update patterns and evolution insights transfer more effectively than raw version-change records. Removing adaptive experience attention also consistently reduces performance relative to the complete method, although fixed equal weighting usually retains part of the improvement over the corresponding base evolver. These trends remain consistent across EvoSkill, SkillClaw, and SkillOpt and across Qwen3.5-27B, GPT-5.2, DeepSeek-v3.2, and Claude Sonnet 5. 
+
+Conclusion. Experience distillation and adaptive expe-rience attention provide complementary improvements to VCE-Skill. Distillation converts concrete version changes into reusable evolution knowledge, while adaptive atten-tion controls the contribution of external experience during self-evolution. Their consistent gains across three base self-evolvers demonstrate that both components generalize across different self-evolution frameworks. 
+
+C.2 Hyperparameter and Attention Sensitivity 
+
+Experimental setup. We evaluate the sensitivity of VCE-Skill to the experience-selection budget K, attention step size η, and attention clipping bounds. All experiments use SkillOpt as the base self-evolver and Qwen3.5-27B as the agent model. We vary one hyperparameter at a time while fixing the remaining settings to K = 5 , η = 0 .1, initial 40 50 60 70 Qwen3.5-27B GPT-5.2 DeepSeek-v3.2 Claude Sonnet 5 w/o Dist w/o Atte EvoSkill EvoSkill+VCE       
+
+> 45
+> 55
+> 65
+> 75 Qwen3.5-27B GPT-5.2 DeepSeek-v3.2 Claude Sonnet 5
+> w/o Dist w/o Atte
+> SkillClaw
+> SkillClaw+VCE
+> 50 60 70 80 Qwen3.5-27B GPT-5.2 DeepSeek-v3.2 Claude Sonnet 5
+> w/o Dist
+> w/o Atte SkillOpt SkillOpt+VCE
+
+Figure 13: Ablation results averaged over all five benchmarks. Each panel uses EvoSkill, SkillClaw, or SkillOpt as the base self-evolver. w/o Dist replaces distilled experience with raw version changes, and w/o Atte assigns equal weights to exter-nal experience and self-generated proposals. Higher is better. source weights of 0.5/0.5, and clipping bounds of [0 .3, 0.7] .Table 5 reports the mean performance on each benchmark. 
+
+Results. The default configuration achieves the highest score on every benchmark for all three hyperparameters. For the selection budget, K = 4 performs within 0.02 –0.11 
+
+points of K = 5 , whereas increasing the budget to K = 7 
+
+reduces performance by 1.11 –1.88 points. The attention step size has the strongest effect: η = 0 .1 consistently performs best, while η = 0 .2 decreases performance by 2.28 –3.88 
+
+points across the five benchmarks. The clipping bounds are comparatively stable around the default configuration. The intervals [0 .4, 0.6] and [0 .2, 0.8] remain within 0.29 points of the best result, whereas the wider interval [0 .1, 0.9] produces a consistent reduction of 0.71 –1.37 points. 
+
+Conclusion. The results support K = 5 , η = 0 .1, and 
+
+[0 .3, 0.7] as the default configuration across all five bench-marks. A moderate selection budget provides sufficient ex-perience coverage without introducing excessive weakly rel-evant candidates. The attention step size requires tighter calibration because it directly controls the rate of source-weight adaptation. Moderately constrained clipping bounds maintain stable attention updates, whereas overly permis-sive bounds reduce performance. Importantly, every evalu-ated configuration outperforms the corresponding SkillOpt baseline on all five benchmarks. The hyperparameters af-fect the magnitude of improvement, and VCE-Skill retains a consistent advantage over SkillOpt throughout the evaluated ranges. Source Model Target Model Source Skill SearchQA OfficeQA ALFWorld Spreadsheet BFCL-v4 Avg. Avg. Gain Qwen3.5-27B GPT-5.2 SkillOpt 78.01 47.47 79.16 52.11 64.10 64.17 –                                                                                                                                                                            
+
+> SkillOpt+VCE-Skill 83.24 55.34 86.05 57.89 68.54 70.21 6.04
+> DeepSeek-v3.2 SkillOpt 71.16 44.94 69.60 38.16 62.10 57.19 –
+> SkillOpt+VCE-Skill 78.12 49.53 75.11 43.94 65.48 62.44 5.25
+> Claude Sonnet 5 SkillOpt 81.10 53.03 83.69 56.01 66.42 68.05 –
+> SkillOpt+VCE-Skill 87.37 58.14 86.80 61.73 71.97 73.20 5.15
+> GPT-5.2 Qwen3.5-27B SkillOpt 75.81 47.66 61.24 50.62 56.36 58.34 –
+> SkillOpt+VCE-Skill 82.04 53.59 66.49 56.46 60.89 63.89 5.56
+> DeepSeek-v3.2 SkillOpt 72.70 46.48 71.14 39.70 63.64 58.73 –
+> SkillOpt+VCE-Skill 79.74 51.15 76.73 45.56 67.10 64.06 5.32
+> Claude Sonnet 5 SkillOpt 82.64 54.57 85.23 57.55 67.96 69.59 –
+> SkillOpt+VCE-Skill 88.99 59.76 88.42 63.35 73.59 74.82 5.23
+> DeepSeek-v3.2 Qwen3.5-27B SkillOpt 74.35 46.20 59.78 49.16 54.90 56.88 –
+> SkillOpt+VCE-Skill 80.65 52.21 65.10 55.07 59.51 62.51 5.63
+> GPT-5.2 SkillOpt 78.09 47.55 79.24 52.19 64.18 64.25 –
+> SkillOpt+VCE-Skill 83.47 55.57 86.28 58.12 68.77 70.44 6.19
+> Claude Sonnet 5 SkillOpt 81.18 53.11 83.77 56.09 66.50 68.13 –
+> SkillOpt+VCE-Skill 87.60 58.37 87.03 61.96 72.20 73.43 5.30
+> Claude Sonnet 5 Qwen3.5-27B SkillOpt 76.07 47.92 61.50 50.88 56.62 58.60 –
+> SkillOpt+VCE-Skill 82.32 53.88 66.77 56.74 61.18 64.18 5.58
+> GPT-5.2 SkillOpt 79.81 49.27 80.96 53.91 65.90 65.97 –
+> SkillOpt+VCE-Skill 85.14 57.24 87.95 59.79 70.44 72.11 6.14
+> DeepSeek-v3.2 SkillOpt 72.96 46.74 71.40 39.96 63.90 58.99 –
+> SkillOpt+VCE-Skill 80.02 51.43 77.01 45.84 67.38 64.34 5.34
+
+Table 4: Complete cross-model transfer results over all 12 directed source–target model pairs. Each source-trained skill is directly applied to the target model without further evolution. Avg. reports the mean performance across the five benchmarks, and Avg. Gain reports the mean improvement of SkillOpt+VCE-Skill over SkillOpt computed from the unrounded results. Bold indicates the higher result within each source–target pair. 
+
+C.3 Complete Cross-Model Transfer Results 
+
+Experimental setup. We evaluate cross-model transfer over all ordered pairs of Qwen3.5-27B, GPT-5.2, DeepSeek-v3.2, and Claude Sonnet 5. For each source model, Skil-lOpt and SkillOpt+VCE-Skill independently evolve a skill, which is then directly applied to each of the other three target models without further evolution. This design yields 12 directed source–target pairs evaluated on five bench-marks. The average gain is computed as the mean difference between SkillOpt+VCE-Skill and SkillOpt across the five benchmarks. 
+
+Results. SkillOpt+VCE-Skill outperforms SkillOpt on ev-ery benchmark for all 12 directed source–target pairs, yield-ing positive improvements in all 60 benchmark-level compar-isons. The average gains range from 5.15 to 6.19 points, with an overall mean improvement of 5.56 points. Using Qwen3.5-27B, GPT-5.2, DeepSeek-v3.2, and Claude Sonnet 5 as the source yields average gains of 5.48, 5.37, 5.71, and 5.69 points, respectively. The small variation across source mod-els shows that the transfer improvement is preserved across different source-model capabilities. Among the target mod-els, GPT-5.2 receives the largest mean gain of 6.12 points, and every target model improves by at least 5.23 points on average. 
+
+Conclusion. The complete transfer results demonstrate that version-change experience improves the cross-model portability of evolved skills. The improvement holds for every source model, target model, and benchmark evaluated in this study. Because the transferred skills receive no target-side evolution, the consistent gains reflect the stronger transfer-able guidance produced by VCE-Skill. Parameter Value SearchQA OfficeQA ALFWorld Spreadsheet BFCL-v4                                                                           
+
+> K
+> 376.24 47.54 61.30 51.39 55.98 478.75 49.34 63.38 52.12 57.42 578.86 49.42 63.43 52.14 57.52
+> 678.03 48.82 62.76 51.59 57.03 776.98 48.07 61.90 50.89 56.41
+> η
+> 0.01 75.16 46.96 61.42 50.67 56.34 0.05 76.91 48.02 61.85 50.84 56.37 0.10 78.86 49.42 63.43 52.14 57.52
+> 0.15 76.16 47.48 61.24 51.34 56.93 0.20 74.98 46.83 60.28 49.55 55.24 Clipping
+> [0 .4,0.6] 78.61 49.14 63.23 51.97 57.37
+> [0 .3,0.7] 78.86 49.42 63.43 52.14 57.52
+> [0 .2,0.8] 78.57 49.21 63.41 52.05 57.48
+> [0 .1,0.9] 77.49 48.54 62.62 51.43 56.71
+
+Table 5: Hyperparameter sensitivity of SkillOpt+VCE-Skill with Qwen3.5-27B. Each row reports mean performance on five benchmarks while varying one hyperparameter and fix-ing the remaining settings to their defaults. Bold indicates the best score within each hyperparameter group. 
+
+D Human Audit of LLM-based Decisions 
+
+Audit Scope and Sampling. We conduct a human audit of six types of LLM-based semantic decisions: Motivation-study Taxonomy, Skill-Change Coding, Change Abstraction, Experience Generation, Experience Selection, and Source Attribution. For Motivation-study Taxonomy, we sample 200 category–example instances from the frozen taxonomy and its calibration records. The samples are balanced across the two task domains and stratified across the component, intent, and pattern dimensions. Each instance contains one category definition and one supporting calibration example, allowing annotators to assess both the semantic validity of the category and whether the example supports it. For Skill-Change Coding, we sample 200 annotated skill-change units. The sample is balanced across the two task domains and two evolution sources, with 50 instances from each domain–source combination. Each instance contains the paired skill states, the complete proposed segmentation as context, and one highlighted skill-change unit with its as-signed component, intent, and pattern labels. The audit tar-get is the highlighted unit rather than every other unit in the complete segmentation. Whenever possible, sampled units are drawn from different public version pairs or trajectory-evolution iterations to reduce sample dependence. In addi-tion, every category reported as public-only or trajectory-only is represented by at least one audited unit. For each of the remaining four decision types, we sample 200 instances from the complete experimental records. The samples are stratified across tasks, target skills, optimization iterations, and base evolvers to avoid over-representing a par-ticular experimental setting. For Experience Generation, the 200 samples consist of 67 update patterns, 67 evolution in-sights, and 66 domain insights. Whenever possible, instances derived from different version pairs or optimization iterations are selected to reduce sample dependence. 
+
+Annotation Process. Two annotators familiar with agent skills independently inspect each instance. The generating model, optimization method, and experimental condition are anonymized, while all evidence required for judgment is re-tained. For Motivation-study Taxonomy, the explicit source identities of the supporting calibration examples are hid-den. For Skill-Change Coding, annotators are not informed whether an instance comes from the public or trajectory source. Each annotator assigns a binary label, Accept or Reject ,and provides a brief reason for rejected instances. An output is accepted only when all corresponding criteria specified below are satisfied. Disagreements are resolved by a third annotator. Before the formal audit, the annotators complete a pilot round of 20 additional instances for each decision type. These pilot instances are excluded from the final results. If the inter-annotator agreement in a pilot round is below κ = 0 .7, the corresponding annotation guidelines are clarified and the pilot round is repeated. 
+
+Annotation Criteria. For Motivation-study Taxonomy , an-notators inspect a category definition and one of its sup-porting calibration examples. The instance is accepted if the category represents a coherent evolution concept, is semanti-cally distinguishable from other categories at the same level, is applicable independently of the evolution source, and is correctly supported by the given example. For Skill-Change Coding , annotators inspect the paired skill states, the complete segmentation as context, and one highlighted skill-change unit. The instance is accepted only if the highlighted unit: (1) groups edits that implement the same primary intent through the same modification pattern; (2) includes all semantically coupled edits required to implement that change; (3) excludes unrelated edits; and (4) assigns component, intent, and pattern labels that are semantically correct and supported by the underlying skill change. Errors in non-highlighted units do not affect the judgment of the current audit instance. For Change Abstraction , annotators inspect a raw diff and its generated update event. The event is accepted if the raw diff segment corresponds to the actual change and its com-ponent, operation, and intent are all semantically correct and directly supported by the diff. For Experience Generation , annotators inspect an experience-bank entry together with its supporting lower-level items. An entry is accepted if it faithfully summarizes its supporting items, conforms to the intended abstraction level, contains no unsupported claims, and provides reusable guidance for skill optimization. For Experience Selection , annotators inspect the selection context zt and one selected experience. The selection is ac-cepted if the experience is relevant to both the current task and the current skill state and provides applicable guidance for the current optimization step. For Source Attribution , annotators inspect a provenance-tagged candidate edit, the realized skill diff, and the predicted attribution. The attribution is accepted if the candidate edit is Table 6: Human audit results for the LLM-based semantic decisions. HAR is computed from the final adjudicated la-bels, whereas κ measures agreement between the two initial annotators before adjudication.                        
+
+> Decision Type Samples HAR (%) ↑κ↑
+> Motivation study
+> Motivation-study Taxonomy 200 94.0 0.84 Skill-Change Coding 200 100.0 0.84
+> VCE-Skill method
+> Change Abstraction 200 92.5 0.82 Experience Generation 200 90.5 0.78 Experience Selection 200 86.5 0.75 Source Attribution 200 90.5 0.80
+
+correctly matched to the realized change and its label follows our definition: +1 for a realized externally supported edit, 
+
+−1 for a realized self-supported edit, and 0 for an unrealized, uncertain, or mixed-provenance edit. 
+
+Metrics. We report two common metrics for all six deci-sion types. First, the Human Acceptance Rate (HAR) is the proportion of outputs accepted after adjudication: 
+
+HAR = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+1 [eyi = Accept] , N = 200 , (17) where eyi is the final adjudicated label. Second, we report Cohen’s κ between the two initial anno-tators to quantify the consistency of the annotation criteria. HAR is computed from the final adjudicated labels, whereas Cohen’s κ is computed from the two annotators’ independent labels before adjudication. 
+
+Audit Results and Summary. As shown in Table 6, the six audited decision types achieve HAR values ranging from 86.5% to 100.0%, with Cohen’s κ values between 0.75 and 0.84. The two decisions used in the motivation study show strong agreement with human assessment. Motivation-study Taxonomy achieves an HAR of 94.0% and a κ of 0.84, while all audited Skill-Change Coding instances are accepted after adjudication, with a pre-adjudication κ of 0.84. These results support the reliability of the taxonomy construction and skill-change annotations underlying the motivation-study findings. The LLM-based decisions within VCE-Skill also remain consistently aligned with human judgments. Change Abstrac-tion, Experience Generation, and Source Attribution achieve HAR values above 90%, indicating that most generated up-date events and hierarchical experience entries are faithful to their supporting changes and that most provenance assign-ments are consistent with the realized skill updates. Experi-ence Selection obtains the lowest HAR, at 86.5%, which is consistent with the more context-dependent nature of deter-mining whether an experience is applicable to the current task and skill state. Nevertheless, its κ of 0.75 indicates that the corresponding assessment criteria remain reasonably consis-tent across annotators. Source Attribution achieves an HAR of 90.5% and a κ of 0.80, providing additional support for its use as the feedback signal in adaptive experience attention. Overall, the high acceptance rates and consistent inter-annotator agreement provide empirical evidence that the LLM-based semantic decisions used in both the motivation study and VCE-Skill are sufficiently reliable for the analyses and optimization procedure. These results do not imply that the LLM judgments are error-free; rather, they show that the outputs are generally supported by human assessment under the defined audit criteria.

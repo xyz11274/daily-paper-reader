@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-07-20 ~ 2026-08-18</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-18</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 28 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 15 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>17</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>9</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>6</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-18 08:56:31 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-18 20:28:08 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>近一月完成28篇大模型智能体自进化领域论文整理，含17篇精读、11篇速读。</p>
-<p>两篇满分研究分别聚焦大模型自进化的记忆参数协调机制、真实业务任务自进化能力评估，最具参考价值。</p>
-<p>对智能体落地感兴趣的读者，可优先精读这两篇高分成果。</p>
+<p>2026年8月18日整理完成15篇AI前沿论文，含9篇精读、6篇速读</p>
+<p>两篇满分精读均聚焦AI自主自我进化方向，是本次最值得关注的内容</p>
+<p>对大模型自我迭代感兴趣的普通读者，可优先阅读这两篇高分论文</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +73,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">17 篇</strong>
+    <strong class="dpr-home-dashboard-count">9 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Learning What to Remember and What to Internalize in LLM Self-Evolution via Adaptive Memory-Parameter Coordination">Learning What to Remember and What to Internalize in LLM Self-Evolution via Adaptive Memory-Parameter Coordination</span></li><li><span class="dpr-home-dashboard-paper-title" title="GDPevo: Evaluating Agent Self-Evolution on Real Business Tasks">GDPevo: Evaluating Agent Self-Evolution on Real Business Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="ContinualSkillBench: Can LLM Agents Truly Evolve Their Capabilities?">ContinualSkillBench: Can LLM Agents Truly Evolve Their Capabilities?</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SkillEvo: Self-Renewing Evolution Gradients from Multi-Turn Interaction Feedback">SkillEvo: Self-Renewing Evolution Gradients from Multi-Turn Interaction Feedback</span></li><li><span class="dpr-home-dashboard-paper-title" title="HELIX: Model-Harness Co-evolution for Recursive Self-Improvement">HELIX: Model-Harness Co-evolution for Recursive Self-Improvement</span></li><li><span class="dpr-home-dashboard-paper-title" title="Evo-Harness: Context-to-Harness Skill Compilation for Self-Evolving Agents">Evo-Harness: Context-to-Harness Skill Compilation for Self-Evolving Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seb <strong>14</strong></span><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>9</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Knowledge-Centric Self-Improvement">Knowledge-Centric Self-Improvement</span></li><li><span class="dpr-home-dashboard-paper-title" title="MANTA: Multi-Agent Network Topology Adaptation for Self-Evolving Multi-Agent Systems">MANTA: Multi-Agent Network Topology Adaptation for Self-Evolving Multi-Agent Systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgentStream: How Well Do Self-Evolving LLM Agents Perform Under Streaming Tasks?">AgentStream: How Well Do Self-Evolving LLM Agents Perform Under Streaming Tasks?</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SysEvolve: An AI-native, safe, autonomous adversarial attack-defense co-evolutionary system">SysEvolve: An AI-native, safe, autonomous adversarial attack-defense co-evolutionary system</span></li><li><span class="dpr-home-dashboard-paper-title" title="Competing at Every Price Point with Agentic Evolution over a Menu of LLMs">Competing at Every Price Point with Agentic Evolution over a Menu of LLMs</span></li><li><span class="dpr-home-dashboard-paper-title" title="When Deep Research Agents Stagnate: Enhancing Reasoning with Retrieval-Aware Agent Control">When Deep Research Agents Stagnate: Enhancing Reasoning with Retrieval-Aware Agent Control</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>6</strong></span><span class="dpr-home-dashboard-tag">seb <strong>5</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span><span class="dpr-home-dashboard-tag">seb <strong>1</strong></span></div>
 </section>
 </div>
 
