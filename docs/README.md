@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-19</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-20</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 11 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 12 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>5</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-19 20:27:21 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-20 20:57:00 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-08-19完成11篇AI智能体领域论文研读，含5篇精读、6篇速读。</p>
-<p>满分10分的自进化智能体基础设施、9分的可移植自进化AI智能体记忆层是本次最值得关注的前沿成果。</p>
-<p>对AI智能体方向感兴趣的普通读者，可优先阅读这两篇高分精读论文了解最新进展。</p>
+<p>2026年8月20日完成12篇AI智能体领域论文研读，含5篇精读、7篇速读。</p>
+<p>两篇9.0分高分精读均聚焦自进化AI智能体方向，创新性突出。</p>
+<p>关注AI智能体进化技术的读者，可优先精读这两篇高分成果。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -76,7 +76,7 @@
     <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MEGA: Self-Evolving Agent Optimization Infrastructure via Wisdom Graph">MEGA: Self-Evolving Agent Optimization Infrastructure via Wisdom Graph</span></li><li><span class="dpr-home-dashboard-paper-title" title="MindMemOS: A Portable and Self-Evolving Memory Operating Layer for AI Agents">MindMemOS: A Portable and Self-Evolving Memory Operating Layer for AI Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="SkillEvo: Self-Renewing Evolution Gradients from Multi-Turn Interaction Feedback">SkillEvo: Self-Renewing Evolution Gradients from Multi-Turn Interaction Feedback</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MindMemOS: A Portable and Self-Evolving Memory Operating Layer for AI Agents">MindMemOS: A Portable and Self-Evolving Memory Operating Layer for AI Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Evo-Harness: Context-to-Harness Skill Compilation for Self-Evolving Agents">Evo-Harness: Context-to-Harness Skill Compilation for Self-Evolving Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="SPADE: Self-Play in Adaptive Synthetic Executable Environments">SPADE: Self-Play in Adaptive Synthetic Executable Environments</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span></div>
 </section>
@@ -86,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Agents unlock new capabilities through Switching LoRA Adapters as a Tool (SLAaaT)">Agents unlock new capabilities through Switching LoRA Adapters as a Tool (SLAaaT)</span></li><li><span class="dpr-home-dashboard-paper-title" title="Write, Execute, Refine: From Skill Followers to Skill Optimizers via Reinforcement Learning from Execution Feedback">Write, Execute, Refine: From Skill Followers to Skill Optimizers via Reinforcement Learning from Execution Feedback</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agent Gym: A Framework for Continuous Evaluation and Evolution of LLM Agents Through Human-in-the-Loop Feedback">Agent Gym: A Framework for Continuous Evaluation and Evolution of LLM Agents Through Human-in-the-Loop Feedback</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Agent Gym: A Framework for Continuous Evaluation and Evolution of LLM Agents Through Human-in-the-Loop Feedback">Agent Gym: A Framework for Continuous Evaluation and Evolution of LLM Agents Through Human-in-the-Loop Feedback</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agentic ESOpt: Fine-Tuning Long-Horizon LLM Agents with Minimal GPU Requirements">Agentic ESOpt: Fine-Tuning Long-Horizon LLM Agents with Minimal GPU Requirements</span></li><li><span class="dpr-home-dashboard-paper-title" title="LoongReflect: Boosting Long-Horizon Reflection in Search Agents via Global Perspective Distillation">LoongReflect: Boosting Long-Horizon Reflection in Search Agents via Global Perspective Distillation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>5</strong></span><span class="dpr-home-dashboard-tag">seb <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>7</strong></span></div>
 </section>
 </div>
 
