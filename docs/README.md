@@ -44,14 +44,14 @@
       <span class="dpr-home-dashboard-kicker">2026-08-15 ~ 2026-08-24</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 0 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 22 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
-    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>0</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>2 次</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>10</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-24 04:23:51 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-24 07:56:13 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,7 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日无新推荐，系统未产出可展示论文。</p>
+<p>10天完成22篇AI前沿论文梳理，含10篇精读12篇速读</p>
+<p>打分最高的两篇精读均聚焦自进化AI智能体的技术研发方向</p>
+<p>普通AI爱好者可优先从本次速读的多模态推理、低资源语言方向入门了解</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -71,12 +73,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">0 篇</strong>
+    <strong class="dpr-home-dashboard-count">10 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="AI4AI-Bench: Benchmarking LLM Agents in Algorithmic Design for Recursive Self-Improvement">AI4AI-Bench: Benchmarking LLM Agents in Algorithmic Design for Recursive Self-Improvement</span></li><li><span class="dpr-home-dashboard-paper-title" title="Evo-Harness: Context-to-Harness Skill Compilation for Self-Evolving Agents">Evo-Harness: Context-to-Harness Skill Compilation for Self-Evolving Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="SAPE: Sandwich Adapters for Parameter Efficiency in Large Language Model Fine-Tuning">SAPE: Sandwich Adapters for Parameter Efficiency in Large Language Model Fine-Tuning</span></li></ul>
   </div>
-
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">llm-trends <strong>4</strong></span><span class="dpr-home-dashboard-tag">seb <strong>4</strong></span><span class="dpr-home-dashboard-tag">ase <strong>2</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -84,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">0 篇</strong>
+    <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="GLaQ: Grounding Latent Queries in Visual Evidence for Multimodal Reasoning">GLaQ: Grounding Latent Queries in Visual Evidence for Multimodal Reasoning</span></li><li><span class="dpr-home-dashboard-paper-title" title="BengaliMCQ: Automatic Generation and Answer Prediction of Academic Multiple-Choice Questions in a Low-Resource Language">BengaliMCQ: Automatic Generation and Answer Prediction of Academic Multiple-Choice Questions in a Low-Resource Language</span></li><li><span class="dpr-home-dashboard-paper-title" title="Polaris: Learning to Generate Table Descriptions from Retrieval Feedback">Polaris: Learning to Generate Table Descriptions from Retrieval Feedback</span></li></ul>
   </div>
-
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>6</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>5</strong></span><span class="dpr-home-dashboard-tag">seb <strong>1</strong></span></div>
 </section>
 </div>
 

@@ -1,0 +1,329 @@
+Title: GLaQ: Grounding Latent Queries in Visual Evidence for Multimodal Reasoning
+
+URL Source: https://arxiv.org/pdf/2608.15517v2
+
+Published Time: Wed, 19 Aug 2026 00:32:13 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# GLaQ: Grounding Latent Queries in Visual Evidence for Multimodal Reasoning 
+
+# Zesheng Yang 1, Lingling Zhang 1∗, Xinyu Zhang 2, Cheng Zhang 1,Pengyu Li 1, Heng Wang 1, Lin Wu 1
+
+> 1
+
+Xi’an Jiaotong University 
+
+> 2
+
+Xidian University 
+
+Abstract 
+
+Chain-of-thought reasoning has substantially improved the problem-solving capabilities of multimodal large language models. Fine-grained visual evidence, however, remains diffi-cult to preserve and reuse across text-based reasoning steps. To address this limitation, tool-augmented thinking-with-images methods maintain visual access externally by revisiting or manipulating the image, but require predefined tools and ad-ditional inference-time processing. As an internal alternative, continuous visual latent reasoning retains intermediate com-putation in hidden states. However, its prevailing autoregres-sive construction makes each latent state depend on its prede-cessors, so later states may repeat information already present in the latent sequence rather than capture complementary vi-sual details. We introduce GLaQ, a grounded latent-query framework that replaces sequential latent rollout with a fixed set of context-conditioned queries grounded in the original visual tokens. The grounded queries are reinjected for answer generation, providing direct and coordinated access to source visual evidence. We train GLaQ with localized-view super-vision followed by reinforcement learning under task-level rewards. Across five benchmarks for fine-grained visual un-derstanding and perception, GLaQ-7B gains 5.99–9.66% over its base model and leads all compared visual latent methods, suggesting that direct query-to-image grounding can recover localized evidence from the full image without external visual operations or autoregressive latent rollouts. 
+
+# 1 Introduction 
+
+Multimodal large language models (MLLMs) benefit from chain-of-thought reasoning, achieving strong performance across diverse visual reasoning tasks (Zhang et al. 2023). However, standard multimodal chain-of-thought verbalizes intermediate decisions as image-conditioned textual ratio-nales, creating an information bottleneck in which fine-grained visual details may be compressed or lost before reuse. To overcome this bottleneck, thinking-with-images methods revisit or manipulate the image by localizing relevant regions and applying operations such as cropping, zooming, or draw-ing annotations (Hu et al. 2024; Wu and Xie 2024; Shen et al. 2025a; Zheng et al. 2026), supplying subsequent reasoning steps with refreshed visual evidence. While effective, these methods require predefined tools and additional inference-time processing. Continuous visual latent reasoning instead retains intermediate computation in hidden states (Hao et al. 
+
+> ∗
+
+Corresponding author. 
+
+Figure 1: Comparison of visual reasoning paradigms. We compare (a) thinking with images, (b) autoregressive visual latent reasoning, and (c) GLaQ. The heatmaps show within-set pairwise cosine similarities for the three representations; darker indicates higher similarity. 2025; Li et al. 2025b; Wang et al. 2025b; Cheng et al. 2026), providing a compact internal alternative that carries visual semantics across reasoning steps without text conversion or external image operations. However, prevailing visual latent methods construct their latent sequences autoregressively. Each latent state depends on its predecessors, mirroring next-token decoding (Li et al. 2025b; Tong et al. 2025; Wang et al. 2025b; Cheng et al. 2026). This ordering suits language generation, whereas visual latent states collectively form an internal inference space. The similarity maps in Figure 1 expose this limita-tion: auxiliary image tokens exhibit heterogeneous pairwise relations, whereas autoregressive latent tokens become in-creasingly alike, forming a high-similarity block late in the sequence. This convergence suggests that later states may repeat shared content rather than add complementary visual evidence. The resulting challenge is to retain the compact-ness of latent reasoning while grounding each latent state directly in the source visual representation and coordinating arXiv:2608.15517v2 [cs.CV] 18 Aug 2026 the states without an autoregressive dependency chain. To address this challenge, we propose Grounded La tent 
+
+Queries ( GLaQ ), a framework that replaces autoregres-sive latent rollout with a fixed block of context-conditioned queries grounded in the original visual tokens, as illus-trated in Figure 1(c). GLaQ follows a contextualize–ground– reinject process. The current multimodal context first shapes the query block, which a lightweight Latent Query Former (LQFormer) grounds in the original visual tokens before the resulting queries are reinjected as soft visual prompts for answer generation. GLaQ’s grounded queries instead show a heterogeneous pairwise structure qualitatively closer to auxiliary image tokens than to later autoregressive states, suggesting that coordinated query slots retain differentiated visual information without external image operations or a se-quential latent chain. To train this interface, self-distillation from region-of-interest (ROI) views transfers localized evi-dence to the full-image inference path, while Decoupled Pol-icy Optimization (DePO) (Cheng et al. 2026) optimizes both textual and grounded-query actions using task-level rewards. Across five benchmarks spanning fine-grained percep-tion, high-resolution understanding, and real-world reason-ing, GLaQ-7B outperforms its Qwen2.5-VL-7B base model (Bai et al. 2025) by 5.99–9.66% and leads all compared visual latent methods on every benchmark. These results suggest that direct query-to-image grounding offers an effec-tive way to recover localized evidence from the full image without external visual operations. Our main contributions are summarized as follows: 
+
+• We introduce GLaQ, a grounded latent-query inter-face that replaces autoregressive latent rollout with a fixed context-conditioned query block. Its contextualize– ground–reinject pathway provides direct and coordinated access to source visual tokens. 
+
+• We develop a learning strategy for grounded latent queries that combines supervised and reinforcement learning. ROI-guided self-distillation transfers localized evidence to the full-image inference path, while DePO directly op-timizes the grounded queries under task-level rewards. 
+
+• Across five benchmarks, GLaQ-7B outperforms its base model and ranks first among all compared visual latent methods, demonstrating the effectiveness of grounded la-tent queries for visual reasoning. 
+
+# 2 Related Work 
+
+Explicit Multimodal Reasoning. Explicit multimodal reasoning externalizes computation as text or image-space operations. Multimodal-CoT and LLaVA-CoT produce image-conditioned textual rationales (Zhang et al. 2023; Xu et al. 2025). R1-Onevision verbalizes visual content; Vision-R1 and VL-Rethinker refine rationales through outcome-driven learning and self-reflection (Yang et al. 2025a; Huang et al. 2026; Wang et al. 2025a). Although interpretable, tex-tual traces must verbalize fine-grained attributes and spa-tial relations before reuse. Thinking-with-images methods instead revisit or manipulate images: Visual CoT, V ∗, and ZoomEye localize and revisit question-relevant regions for finer-grained evidence (Shao et al. 2024a; Wu and Xie 2024; Shen et al. 2025a). DeepEyes and ToolsRL use reinforce-ment learning to adaptively select and invoke visual tools (Zheng et al. 2026; Dong et al. 2026). Visual Sketchpad, Thyme, CodeVision, and CodeDance execute programs that compose image operations and expose intermediate results (Hu et al. 2024; Zhang et al. 2025a; Guo et al. 2026; Song et al. 2026). These methods expose hard-to-verbalize evi-dence but require external execution and additional image processing and remain limited to supported operations. 
+
+Continuous Visual Latent Reasoning. Continuous latent reasoning retains intermediate computation in hidden states rather than discrete language. Coconut, CODI, and Sem-CoT develop recurrent, self-distilled, or semantically aligned language-only latent reasoning (Hao et al. 2025; Shen et al. 2025b; He et al. 2025). The paradigm then extends to vi-sion: Mirage, LVR, and SkiLa distill or reconstruct visual states (Yang et al. 2025b; Li et al. 2025b; Tong et al. 2025); ILVR and VaLR integrate evolving or vision-aligned states (Dong et al. 2025; Jeon et al. 2026). Monet, HyLaR, LanteRn, and DeepSketcher learn interleaved text–latent trajectories (Wang et al. 2025b; Cheng et al. 2026; Viveiros et al. 2026a; Zhang et al. 2026); Latent Implicit Visual Reasoning and Mull-Tokens use task-adaptive or modality-agnostic tokens (Li et al. 2026; Ray et al. 2026). Recent work improves grounding through teacher alignment, spatial-semantic su-pervision, region-level attributes, relation modeling, and input-compatible feature alignment (Wu et al. 2026; Cui et al. 2026; Xu et al. 2026; Wang, Somayaji N. S., and Li 2026; Miao et al. 2026). Yet many visual latent methods generate states autoregressively, so later representations de-pend on earlier ones; recent analyses identify information-gain collapse, reconstruction mismatch, and latent bypass (Wang et al. 2026; Adhikari and Lapata 2026; Viveiros et al. 2026b), suggesting longer trajectories need not contribute complementary visual information. 
+
+# 3 Method 
+
+3.1 Method Overview 
+
+GLaQ introduces grounded latent queries as a soft visual prompting mechanism for multimodal reasoning. Rather than generating a latent segment autoregressively (Li et al. 2025b; Tong et al. 2025; Wang et al. 2025b; Cheng et al. 2026), GLaQ instantiates a fixed block of query slots and grounds their contextualized states directly in the original visual to-kens. This design preserves continuous intermediate compu-tation while allowing the queries to access and coordinate visual information without forming a sequential latent chain. As illustrated in Figure 2, GLaQ follows a two-pass 
+
+contextualize–ground–reinject process. When the MLLM emits a latent-start token, a fixed block of learnable query slots is inserted into the decoding stream. In the first pass, the MLLM contextualizes these slots using the current multi-modal prefix, after which a lightweight Latent Query Former (LQFormer) grounds the resulting states in the original visual tokens and coordinates information across query slots. In the second pass, the grounded queries replace the initial query slots and are reinserted as soft visual prompts, after which the model resumes standard autoregressive text generation. Figure 2: Overview of GLaQ. Left: The first pass through a multimodal large language model (MLLM) contextualizes a fixed query block under the current image–text prefix. Latent Query Former (LQFormer) grounds the resulting queries in source visual tokens, and the grounded block is reinjected into the second pass as soft prompts for answer generation. Right: During supervised fine-tuning, a full-image student and a region-of-interest (ROI) view teacher updated by an exponential moving average (EMA) ground the same contextualized queries. Slot-wise latent alignment transfers localized evidence to the student, while next-token prediction trains response generation; the teacher is removed at inference. GLaQ is trained through supervised latent-query align-ment followed by reinforcement learning. During super-vised training, a teacher grounded on a region-of-interest (ROI) view provides localized targets for a student operat-ing on the full image, transferring localized supervision to the inference-time grounding pathway. GLaQ is then refined with DePO, which optimizes categorical text tokens and con-tinuous grounded-query actions under task-level rewards. 
+
+3.2 Grounded Latent Query 
+
+Grounded Latent Query inserts a continuous visual-query segment into the decoding stream of an MLLM. Unlike au-toregressive latent-token methods that generate latent states one by one, GLaQ instantiates the entire K-slot query block jointly. The inserted slots are first contextualized by the cur-rent language-image prefix and then grounded against the original visual tokens. The grounded slots are reinserted as soft prompts, so subsequent text decoding can use retrieved visual evidence while retaining standard autoregressive de-coding. The left panel of Figure 2 illustrates this inference-time latent-query pathway. Given an input image I and a text prefix x, a frozen visual encoder maps the image into visual tokens V = fv (I) = [v1; . . . ; vN ] ∈ RN ×d, where vi ∈ Rd. The multimodal language model Mθ decodes from (x, V) until it emits 
+
+⟨latent_start ⟩. The resulting latent segment contains the full query block Q = [ q1; . . . ; qK ] ∈ RK×d followed by a closing marker ⟨latent_end ⟩:
+
+⟨latent_start ⟩, q1, . . . , qK
+
+| {z } 
+
+> Kquery slots
+
+, ⟨latent_end ⟩. (1) The query slots are learnable continuous embeddings opti-mized jointly with the model, whereas the boundary markers remain ordinary text targets. Inserting all K slots jointly contextualizes them in one forward pass, avoiding K autore-gressive latent-generation steps and preserving stable slot identities for alignment. 
+
+Two-Pass Latent Forward GLaQ resolves each latent segment in two passes. The first pass contextualizes the query slots under the current language-image prefix into 
+
+UQ = [ u1; . . . ; uK ], which LQFormer Fϕ grounds against 
+
+V to obtain ZQ = [ z1; . . . ; zK ]. The second pass replaces 
+
+Q with ZQ and resumes text decoding: 
+
+UQ = M(1)  
+
+> θ
+
+(x, V; Q),
+
+ZQ = Fϕ(UQ, V),pθ (yt | y<t , x, V, ZQ) = M(2)  
+
+> θ
+
+(yt | y<t , x, V; ZQ).
+
+(2) Thus, GLaQ implements a retrieve-and-insert process: the first pass forms visual evidence requests, LQFormer grounds them in the image, and the second pass uses the grounded queries as soft prompts for answer generation. When a se-quence contains multiple grounded-query blocks, the same two-pass operation is applied at each block using the prefix available at that position. 
+
+Latent Query Former LQFormer is the grounding mod-ule that converts context-conditioned evidence requests into image-grounded query prompts. Starting from U0 = UQ,it stacks L lightweight query-former blocks, following the Q-Former design for bridging frozen visual representations and language models (Li et al. 2023). Our main model uses 
+
+L = 2 and outputs ZQ = RMSNorm( UL). For each layer 
+
+ℓ ∈ { 0, . . . , L − 1}, cross-attention first lets the latent slots retrieve image evidence, self-attention then lets the slots ex-change complementary evidence, and a feed-forward net-work (FFN) refines the grounded states: 
+
+¯Uℓ = Uℓ + CrossAttn ℓ  RMSNorm( Uℓ), V ,
+
+˜Uℓ = ¯Uℓ + SelfAttn ℓ  RMSNorm( ¯Uℓ) ,
+
+Uℓ+1 = ˜Uℓ + FFN ℓ 
+
+RMSNorm( ˜Uℓ)
+
+
+
+.
+
+(3) In cross-attention, the contextualized query states serve as queries and V provides keys and values, while self-attention coordinates the K slots. Because only the query slots interact with the N visual tokens, LQFormer localizes the new re-trieval behavior in a lightweight adapter without modifying the visual encoder or MLLM decoder. 
+
+3.3 Supervised Fine-Tuning with Latent Query Alignment 
+
+The inference pathway in Section 3.2 gives each query di-rect access to the source visual tokens, but does not by itself specify which evidence should be retrieved. To guide query grounding, we use auxiliary visual views that make task-relevant evidence more salient during SFT. Because infer-ence receives only the original image, we transfer this local-ized supervision to full-image queries through latent-query alignment, jointly optimized with next-token prediction: 
+
+L = λlatent Llatent + Lntp , (4) where Llatent transfers localized visual supervision to full-image grounded queries, and Lntp teaches the model to use these queries for response generation. We set λlatent = 0 .3
+
+throughout SFT. 
+
+Latent Query Self-Distillation For each query block, the student LQFormer grounds the contextualized queries UQ
+
+in the original image, while an exponential moving average (EMA) teacher grounds the same queries in the paired aux-iliary view Iroi . Because both paths receive the same UQ,their evidence requests and slot ordering remain matched, allowing each auxiliary-view teacher query to supervise its full-image student counterpart: 
+
+Zstu  
+
+> Q
+
+= Fϕ(UQ, f v (I)) ,
+
+Ztea  
+
+> Q
+
+= StopGrad  F ¯ϕ(UQ, f v (Iroi ))  ,
+
+¯ϕ ← τ ¯ϕ + (1 − τ )ϕ. 
+
+(5) The teacher has the same architecture as the student LQ-Former but receives no gradients; its parameters ¯ϕ are up-dated solely by EMA from the student parameters ϕ with mo-mentum τ , following the asymmetric online–target design of BYOL (Grill et al. 2020). Only the LQFormer is maintained as an EMA teacher; the MLLM backbone is shared by the two paths. A projector gψ (·) maps the student queries into the align-ment space. For a response containing B grounded-query blocks, let ˆpb,k = norm( gψ (zstu  
+
+> b,k
+
+)) and ˆtb,k = norm( ztea  
+
+> b,k
+
+).Because both paths receive the same ordered query block, their slots correspond directly. We align all BK pairs using: 
+
+Llatent = 1
+
+BK 
+
+> B
+
+X
+
+> b=1
+> K
+
+X
+
+> k=1
+
+ˆpb,k − ˆtb,k 
+
+> 22
+
+= 1
+
+BK 
+
+> B
+
+X
+
+> b=1
+> K
+
+X
+
+> k=1
+
+2 − 2 cos(ˆ pb,k , ˆtb,k ) .
+
+(6) The projector confines alignment to a prediction space, leaving the student queries themselves available for second-pass generation. This objective transfers evidence exposed by the auxiliary view to queries grounded in the full image, without reconstructing dense visual tokens. The teacher and auxiliary views are removed at inference. 
+
+Two-Stage Joint Text–Latent Supervision Latent align-ment determines what evidence the queries should retrieve, but not how the resulting grounded states should support a reasoning trajectory. We therefore apply next-token predic-tion to the surrounding text and latent boundary markers, while excluding the internal continuous query slots from vo-cabulary supervision. Let T denote the number of textual target positions in the response, and let ZQ,<t denote the concatenation of all grounded-query blocks preceding posi-tion t. The text objective is: 
+
+Lntp = − 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+log pθ (yt | y<t , x, V, ZQ,<t ). (7) Stage 1 uses short-answer Visual-CoT examples (Shao et al. 2024a), placing one grounded-query block before the answer and aligning it with the paired localized view. Stage 2 starts from the Stage 1 student checkpoint, with the EMA LQFormer teacher initialized from the student LQ-Former and the student-side projector randomly reinitial-ized. It then trains on Zebra-CoT visual-search trajectories (Li et al. 2025a), in which interleaved reasoning views are represented by grounded-query blocks between textual rea-soning steps. Training on these trajectories teaches the model when to interleave grounded-query blocks with textual rea-soning, providing a supervised cold start for the subsequent reinforcement-learning stage. Across both stages, Llatent su-pervises what each block retrieves, while Lntp teaches the model to incorporate the retrieved evidence into intermediate reasoning and final prediction. 
+
+3.4 Reinforcement Learning with DePO 
+
+During reinforcement learning, GLaQ produces categorical text tokens and continuous grounded queries, whereas stan-dard token-level policy optimization directly handles only the former. We therefore adopt DePO from HyLaR (Cheng et al. 2026), treating post-LQFormer queries ZQ as contin-uous actions and decoded tokens as categorical actions. The fixed K-slot layout aligns corresponding latent actions across the old, current, and reference policies. Each rollout is partitioned into text positions Ptext and latent positions Platent , with P = Ptext ∪ P latent and each query block contributing K latent positions. Let Θ = (θ, ϕ, Q) denote the trainable policy parameters. DePO then optimizes the following joint text–latent objective: 
+
+JDePO (Θ) = Jtext 
+
+ Θ | P text ; ϵtext  
+
+> ℓ
+
+, ϵ text 
+
+> h
+
+
+
++ α Jlatent 
+
+ Θ | P latent ; ϵlatent  
+
+> ℓ
+
+, ϵ latent 
+
+> h
+
+
+
+− βtext Dtext KL − βlatent Dlatent KL .
+
+(8) At text positions, Jtext uses categorical likelihood ratios. At latent positions, the old policy records normalized roll-out queries, while the current and frozen reference poli-cies recompute their directions through GLaQ’s two-pass pathway. DePO applies von Mises–Fisher density ratios, a scaled-cosine KL term, and separate clipping ranges, making grounded retrieval directly optimizable under task rewards. For each prompt (I, x), the old policy samples G re-sponses and computes GRPO-style group-normalized ad-Methods V∗ HRBench-4K HRBench-8K MME-RealWorld-Lite MMVP                                                                                                                                                                                                                                   
+
+> Overall Attr. Spat. Overall Single Cross Overall Single Cross Overall Perc. Reas. Overall
+> Proprietary Model
+> GPT-4o (OpenAI 2024) 62.30 64.35 59.21 62.38 64.75 60.00 58.88 59.50 58.25 48.46 50.90 44.67 84.33 Gemini-3-Flash (2025) 86.91 83.48 92.11 90.75 91.00 90.50 88.38 87.50 89.25 62.22 64.59 58.53 85.33
+> Open-Source Model
+> Qwen2.5-VL-7B (Bai et al. 2025) 76.44 79.13 72.37 67.38 78.75 56.00 63.75 73.75 53.75 43.82 48.16 37.07 65.67 + text-only SFT 80.63 85.22 73.68 68.38 78.28 58.50 62.88 73.50 52.25 49.92 52.87 45.33 69.67 LLaVA-OneVision (Li et al. 2024) 69.63 73.91 63.16 65.12 75.75 54.50 57.50 65.75 49.25 45.49 49.44 39.33 77.00 InternVL3-8B (Zhu et al. 2025) 78.53 77.39 80.26 70.13 83.25 57.00 64.50 76.00 53.00 51.38 54.15 47.07 78.33 Vision-R1 (Huang et al. 2026) 80.10 80.87 78.95 73.38 83.75 63.00 70.12 79.25 61.00 50.81 54.32 45.33 73.00
+> Thinking-with-Images Model
+> ZoomEye (Shen et al. 2025a) 83.77 87.83 77.63 70.00 83.00 57.00 65.63 78.50 52.75 47.06 50.04 42.40 71.33 Thyme (Zhang et al. 2025a) 82.20 83.48 80.26 78.00 87.75 68.25 73.00 82.50 63.50 52.27 56.12 46.27 73.67 DeepEyes (Zheng et al. 2026) 83.25 83.48 82.89 73.00 85.75 60.25 66.63 79.50 53.75 53.93 57.23 48.80 73.67
+> Visual Latent Reasoning Model
+> LVR (Li et al. 2025b) 81.15 82.61 78.95 69.25 81.50 57.00 64.88 73.25 56.50 50.03 54.66 42.80 72.00 SkiLa (Tong et al. 2025) 80.10 80.87 78.95 71.63 85.75 57.50 67.63 80.75 54.50 51.54 55.26 45.73 73.33 Monet (Wang et al. 2025b) 81.15 80.00 82.89 71.25 87.00 55.50 67.25 79.25 55.25 50.18 53.98 44.27 68.00 HyLaR (Cheng et al. 2026) 81.15 80.87 81.58 73.13 86.50 59.75 67.25 82.50 52.00 47.33 51.07 40.67 73.67
+> GLaQ-SFT (Ours) 82.72 81.74 84.21 71.13 84.75 57.50 65.63 80.00 54.00 51.80 55.18 47.53 70.00
+> GLaQ-7B (Ours) 85.34 86.09 84.21 73.37 85.50 61.25 70.37 83.75 57.00 53.31 56.97 47.60 75.33
+> ∆(pts.) vs. Qwen2.5-VL-7B +8.90 +6.96 +11.84 +5.99 +6.75 +5.25 +6.62 +10.00 +3.25 +9.49 +8.81 +10.53 +9.66
+
+Table 1: Main results on V ∗, HRBench-4K, HRBench-8K, MME-RealWorld-Lite, and MMVP. All results are obtained from our reproductions and evaluated with VLMEvalKit. Scores follow official benchmark metrics; higher is better. ∆ reports absolute gains over Qwen2.5-VL-7B. The visual latent model with the best performance is highlighted in bold .vantages (Shao et al. 2024b). We use the weighted re-ward R(oi) = (1 − λfmt )Racc (oi) + λfmt Rfmt (oi), where 
+
+λfmt = 0 .1 and the two binary terms check answer cor-rectness and \boxed{} formatting, respectively. We add no separate latent-reasoning reward, keeping optimization focused on task success. 
+
+# 4 Experiments 
+
+4.1 Experimental Settings 
+
+Training Data. GLaQ uses two supervised datasets and one reinforcement-learning dataset. Stage 1 retains 80K Visual-CoT samples (Shao et al. 2024a) where Qwen2.5-VL-7B (Bai et al. 2025) fails on the original image but succeeds with an auxiliary reasoning view. The paired views pro-vide full-image and localized evidence for student–teacher latent-query alignment. Stage 2 uses 30K Zebra-CoT visual-search examples (Li et al. 2025a), whose interleaved trajecto-ries train grounded queries for multi-step evidence seeking. The reinforcement-learning dataset comprises 10K samples from DeepEyes and Thyme (Zheng et al. 2026; Zhang et al. 2025a) after removing duplicates, subjective or open-ended questions, and samples without unambiguous, extractable answers to support verifiable answer-level rewards. 
+
+Benchmarks. Following prior visual latent reasoning stud-ies (Tong et al. 2025; Cheng et al. 2026; Wang et al. 2025b), we evaluate on five complementary benchmarks: V ∗ for fine-grained attribute and spatial grounding (Wu and Xie 2024); HRBench-4K/8K for high-resolution perception and cross-instance reasoning (Wang et al. 2025c); MME-RealWorld-Lite for complex real-world perception and reasoning (Zhang et al. 2025b); and MMVP for subtle visual-difference recog-nition (Tong et al. 2024). 
+
+Baselines. To compare GLaQ with general-purpose MLLMs and visual reasoning methods, we consider four baseline groups: (1) Proprietary Model , including GPT-4o and Gemini-3-Flash (OpenAI 2024; Google DeepMind 2025); (2) Open-Source Model , including Qwen2.5-VL-7B, LLaVA-OneVision, InternVL3, and Vision-R1 (Bai et al. 2025; Li et al. 2024; Zhu et al. 2025; Huang et al. 2026); (3) Thinking-with-Images Model , including ZoomEye, Thyme, and DeepEyes (Shen et al. 2025a; Zhang et al. 2025a; Zheng et al. 2026); and (4) Visual Latent Reasoning Model ,including LVR, SkiLa, HyLaR, and Monet (Li et al. 2025b; Tong et al. 2025; Cheng et al. 2026; Wang et al. 2025b). 
+
+Implementation Details. All GLaQ variants use a two-layer LQFormer, K = 16 grounded query slots, and a Qwen2.5-VL-7B-Instruct backbone (Bai et al. 2025). All re-ported benchmark results are obtained from our reproduc-tions using the same VLMEvalKit evaluation settings (Duan et al. 2024). GLaQ is evaluated on the original benchmark Model V∗ HR-4K HR-8K MME-Lite MMVP                       
+
+> GLaQ-7B (full) 85.34 73.37 70.37 53.31 75.33
+> GLaQ-SFT (w/o RL) 82.72 71.13 65.63 51.80 70.00 + text-only GRPO 84.82 72.00 69.38 52.42 74.00 w/o EMA teacher 80.15 69.38 62.75 47.99 67.67 w/o LQFormer 78.54 67.13 62.38 46.87 66.67 Text-only SFT 80.63 68.38 62.88 49.92 69.67
+
+Table 2: Component ablations of GLaQ. All SFT variants use the same training data, and all RL variants start from the same GLaQ-SFT checkpoint.                            
+
+> λlatent V∗HR-4K HR-8K MME-Lite MMVP
+> 080.10 68.75 63.00 47.84 70.67
+> 0.181.15 69.75 65.88 48.98 71.33
+> 0.382.20 70.13 66.38 49.19 73.67
+> 0.580.58 70.63 65.75 48.72 72.67
+> 1.078.01 68.75 64.75 48.67 72.00
+
+Table 3: Sensitivity to the latent-alignment weight λlatent .Results are obtained under the Stage 1 SFT setting with all other settings fixed. images without auxiliary localized views and uses determin-istic decoding. 
+
+4.2 Main Results 
+
+Overall performance. Table 1 shows that GLaQ-7B im-proves its Qwen2.5-VL-7B base model by 5.99–9.66% and achieves the highest overall score among the compared visual latent methods on all five benchmarks. More importantly, the results reveal a resolution-dependent contrast on HRBench. As the image resolution increases from 4K to 8K, the im-provement on single-instance questions grows from 6.75% to 10.00%, whereas the improvement on cross-instance ques-tions decreases from 5.25% to 3.25%. This pattern is con-sistent with grounded queries being particularly effective at recovering localized evidence that becomes difficult to preserve in high-resolution visual representations, while in-tegrating evidence across multiple instances remains more challenging. The gains on MME-RealWorld-Lite and MMVP further indicate that this advantage is not confined to the visual-search trajectories used during supervised training, but extends to complex real-world scenes and subtle visual distinctions. GLaQ also remains competitive with thinking-with-images methods while using only the original images, suggesting that internal query-to-image grounding can pro-vide an effective alternative to external visual operations. 
+
+Training-stage improvements. The progression across training stages reveals complementary roles for supervised grounding and policy optimization. GLaQ-SFT consistently outperforms text-only SFT, showing that supervision routed through the grounded-query pathway contributes beyond tex-tual adaptation alone. However, the supervised model leads prior visual latent methods on only two of the five bench-marks, suggesting that latent alignment establishes a useful grounding prior but leaves room for task-level adaptation. DePO produces its largest additional gains on HRBench-8K and MMVP and extends GLaQ’s category-leading perfor-mance from two benchmarks to all five. This concentration of gains on visually demanding settings is consistent with task-level feedback helping the model not only acquire fine-grained evidence, but also use the grounded representations more effectively for final prediction. 
+
+4.3 Component Ablations 
+
+Table 2 shows that the supervised gains arise from exploiting intermediate visual supervision through explicit query-to-image grounding and teacher-guided alignment, rather than from inserting continuous query states alone. We construct the text-only SFT baseline from the same supervised exam-ples by masking the auxiliary reasoning views and applying standard next-token prediction to the remaining textual se-quences. The original problem images are retained, while the grounded-query blocks and latent-alignment objective are removed. GLaQ-SFT consistently outperforms this baseline, indicating that the auxiliary views become more useful when their localized evidence is transferred to full-image grounded queries. Removing the EMA teacher eliminates most of this advantage, suggesting that LQFormer benefits from local-ized targets that specify what evidence should be extracted from the full image. More strikingly, bypassing LQFormer causes performance to fall below text-only SFT on all five benchmarks, even though the first-pass query states are still reused as soft prompts. This controlled contrast indicates that continuous query states are insufficient by themselves; their benefit depends on renewed, context-conditioned access to the source visual tokens. Together, these ablations indicate complementary roles: LQFormer enables direct query-to-image interaction, while self-distillation guides the grounded queries toward task-relevant evidence. The policy ablation further separates the general benefit of reinforcement learning from optimizing grounded queries. Starting from the same GLaQ-SFT model with matched training data, rewards, and rollout settings, text-only GRPO already yields substantial gains, confirming the importance of text-token policy optimization. DePO further improves this matched variant by 0.52–1.37% on every benchmark, showing that grounded queries are not merely passive repre-sentations but optimizable latent actions that benefit from task-level feedback. DePO therefore complements super-vised alignment by refining how grounded visual evidence supports final prediction. 
+
+4.4 Hyperparameter Sensitivity 
+
+We examine GLaQ’s sensitivity to the latent-alignment weight λlatent and the number of grounded query slots K,which control supervision strength and query capacity, re-spectively. Both studies use the Stage 1 SFT setting and vary one hyperparameter at a time while holding the remaining settings fixed for a controlled comparison. 
+
+Latent-alignment weight. Table 3 shows that alignment strength, rather than its presence alone, determines how well K V∗ HR-4K HR-8K MME-Lite MMVP 
+
+8 78.01 68.75 65.00 47.99 73.33 
+
+16 82.20 70.13 66.38 49.19 73.67 
+
+32 78.53 68.50 63.75 49.09 70.00 Table 4: Sensitivity to the number of grounded query slots 
+
+K. Results are obtained under the Stage 1 SFT setting with 
+
+λlatent = 0 .3 and all other settings fixed. latent supervision complements answer learning. The mod-erate setting λlatent = 0 .3 is the most consistent, ranking first on four of the five benchmarks; increasing the weight to 0.5 benefits only HRBench-4K, while 1.0 is weaker than 
+
+0.3 throughout. The isolated HRBench-4K gain may reflect a favorable balance at this resolution: stronger ROI alignment helps preserve fine-grained details, while the model can still integrate sufficient global context. This non-monotonic trend indicates that latent query self-distillation functions best as an auxiliary grounding regularizer. Stronger emphasis can over-constrain the student toward ROI-conditioned teacher repre-sentations and compete with task-adaptive next-token predic-tion. Overall, the optimal balance is mildly task-dependent, but 0.3 provides the most robust operating point. 
+
+Grounded query slots. Table 4 reveals a non-monotonic relationship between query capacity and performance. Al-though K = 16 performs best on all five benchmarks, 
+
+K = 32 outperforms K = 8 on V ∗ and MME-RealWorld-Lite but falls behind it on both HRBench settings and MMVP. This reversal reflects a trade-off between evidence coverage and representation redundancy. Increasing K provides more capacity to retrieve distinct cues, but the slots attend to the same visual-token pool and are not explicitly constrained to specialize; with K = 32 , overlapping or weakly rele-vant queries may therefore dilute the grounded signal when jointly reinjected, providing a plausible explanation for its lower performance than K = 8 on some tasks. The consis-tent advantage of K = 16 suggests a more stable balance between coverage and redundancy. Since K widens a single visual lookup rather than adding new observations or reason-ing steps, this trend should not be interpreted as a test-time scaling effect. 
+
+4.5 End-to-End Generation Efficiency 
+
+We measure end-to-end generation throughput as the to-tal number of generated tokens divided by the total wall-clock time, including all visual and language model oper-ations. Figure 3 shows that GLaQ advances the accuracy– efficiency frontier across all three model families. Relative to its Qwen2.5-VL-7B backbone, DeepEyes, and HyLaR, GLaQ improves V ∗ accuracy by 8.90, 2.09, and 4.19 points, respectively, while increasing throughput by 7.62%, 20.11%, and 5.70%. The gain over the backbone suggests that context-conditioned queries improve evidence recovery through re-newed access to source visual tokens, while the fixed query block keeps this additional grounding computation bounded. Because each query block has fixed capacity, its grounding 2.5 5.0 7.5 10.0 12.5 15.0 17.5 70.0 75.0 80.0 85.0  
+
+> End-to-end generation throughput (tokens/s) V* Accuracy (%)
+> Open-Source Model Thinking-with-Images Model Visual Latent Reasoning Model
+> LLaVA-OneVision Monet LVR Thyme DeepEyes Qwen2.5-VL Vision-R1 HyLaR
+> GLaQ
+> InternVL3
+
+Figure 3: Accuracy–throughput trade-off on V ∗. All methods are evaluated on the same 191 examples under the same setup. overhead remains bounded, unlike variable-length latent roll-outs whose cost grows with additional latent states. The larger throughput advantage over DeepEyes further highlights the benefit of performing grounding internally: GLaQ preserves full-image context without external visual operations or re-peated image processing. Meanwhile, its simultaneous gains over HyLaR suggest that grounding queries directly in the source image can mitigate the evidence drift and redundancy of sequential latent construction, while avoiding variable-length autoregressive latent rollouts. Together, these results show that GLaQ improves visual evidence access through bounded internal grounding, yielding gains in both accuracy and efficiency. 
+
+# 5 Conclusion 
+
+We introduced GLaQ, a grounded latent-query framework that reformulates continuous visual reasoning as context-conditioned visual lookup. GLaQ contextualizes, grounds, and reinjects fixed query blocks, preserving direct access to source visual representations without autoregressive latent-state construction. Latent query self-distillation transfers lo-calized supervision to the full-image pathway, while DePO optimizes textual and grounded-query actions. Across five benchmarks, GLaQ consistently improves its Qwen2.5-VL-7B backbone and ranks first among the compared visual latent reasoning methods. Across the ablation and effi-ciency analyses, improvements consistently arise when latent queries regain direct access to source tokens and remain coor-dinated within a fixed-capacity block. These results support explicit source-image grounding as an effective alternative to autoregressive latent construction. Our evaluation is lim-ited to one 7B backbone, fixed query capacity, and auxiliary localized-view supervision. Future work will examine model scaling, adaptive query allocation, and grounding objectives that reduce reliance on localized views. References 
+
+Adhikari, A.; and Lapata, M. 2026. Multimodal Latent Rea-soning via Predictive Embeddings. arXiv:2604.08065. Bai, S.; Chen, K.; Liu, X.; Wang, J.; Ge, W.; Song, S.; Dang, K.; Wang, P.; Wang, S.; Tang, J.; Zhong, H.; Zhu, Y.; Yang, M.; Li, Z.; Wan, J.; Wang, P.; Ding, W.; Fu, Z.; Xu, Y.; Ye, J.; Zhang, X.; Xie, T.; Cheng, Z.; Zhang, H.; Yang, Z.; Xu, H.; and Lin, J. 2025. Qwen2.5-VL Technical Report. arXiv:2502.13923. Cheng, T.; Chen, S.-Z.; Zhang, H.; Qin, Y.; Luo, J.; and Wei, Z. 2026. HyLaR: Hybrid Latent Reasoning with Decoupled Policy Optimization. arXiv:2604.20328. Cui, J.; Long, X.; Zhang, X.; Zhang, Y.; Su, C.; Gan, J.; Zhao, B.; and Ren, P. 2026. Retrieve, Integrate, and Synthe-size: Spatial-Semantic Grounded Latent Visual Reasoning. arXiv:2605.07106. Dong, Q.; Sahin, G.; Wang, P.; Cai, Z.; Shrestha, R.; Yang, H.; and Modolo, D. 2026. Visual Reasoning Through Tool-Supervised Reinforcement Learning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Findings , 8993–9002. Dong, S.; Wang, S.; Liu, X.; Li, C.; Hou, H.; and Wei, Z. 2025. Interleaved Latent Visual Reasoning with Selective Perceptual Modeling. arXiv:2512.05665. Duan, H.; Yang, J.; Qiao, Y.; Fang, X.; Chen, L.; Liu, Y.; Dong, X.; Zang, Y.; Zhang, P.; Wang, J.; Lin, D.; and Chen, K. 2024. VLMEvalKit: An Open-Source Toolkit for Evalu-ating Large Multi-Modality Models. In Proceedings of the 32nd ACM International Conference on Multimedia , 11198– 11201. ACM. Google DeepMind. 2025. Gemini 3 Flash Model Card. https:// storage.googleapis.com/ deepmind- media/ Model-Cards/Gemini-3-Flash-Model-Card.pdf. Published Decem-ber 2025; updated December 17, 2025. Grill, J.-B.; Strub, F.; Altché, F.; Tallec, C.; Richemond, P. H.; Buchatskaya, E.; Doersch, C.; Pires, B. A.; Guo, Z. D.; Azar, M. G.; Piot, B.; Kavukcuoglu, K.; Munos, R.; and Valko, M. 2020. Bootstrap Your Own Latent: A New Approach to Self-Supervised Learning. In Advances in Neural Information Processing Systems , volume 33. Guo, Z.; Hong, M.; Zhang, F.; Jia, K.; and Jin, T. 2026. Thinking with Programming Vision: Towards a Unified View for Thinking with Images. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,33467–33476. Hao, S.; Sukhbaatar, S.; Su, D.; Li, X.; Hu, Z.; Weston, J. E.; and Tian, Y. 2025. Training Large Language Models to Reason in a Continuous Latent Space. In Proceedings of the Second Conference on Language Modeling .He, Y.; Zheng, W.; Zhu, Y.; Zheng, Z.; Su, L.; Vasudevan, S.; Guo, Q.; Hong, L.; and Li, J. 2025. SemCoT: Accelerating Chain-of-Thought Reasoning through Semantically-Aligned Implicit Tokens. In Advances in Neural Information Pro-cessing Systems , volume 38. Hu, Y.; Shi, W.; Fu, X.; Roth, D.; Ostendorf, M.; Zettlemoyer, L.; Smith, N. A.; and Krishna, R. 2024. Visual Sketchpad: Sketching as a Visual Chain of Thought for Multimodal Lan-guage Models. In Advances in Neural Information Process-ing Systems .Huang, W.; Jia, B.; Cao, S.; Ye, Z.; Zhao, F.; Xu, Z.; Hu, Y.; and Lin, S. 2026. Vision-R1: Incentivizing Reasoning Capability in Multimodal Large Language Models. In The Fourteenth International Conference on Learning Represen-tations .Jeon, B.; Jeong, Y.; Lee, H.; Cho, M.; and Shin, J. 2026. Vision-Aligned Latent Reasoning for Multi-Modal Large Language Model. arXiv:2602.04476. Li, A.; Wang, C.; Fu, D.; Yue, K.; Cai, Z.; Zhu, W. B.; Liu, O.; Guo, P.; Neiswanger, W.; Huang, F.; Goldstein, T.; and Goldblum, M. 2025a. Zebra-CoT: A Dataset for Interleaved Vision Language Reasoning. arXiv:2507.16746. Li, B.; Sun, X.; Liu, J.; Wang, Z.; Wu, J.; Yu, X.; Chen, H.; Barsoum, E.; Chen, M.; and Liu, Z. 2025b. Latent Visual Reasoning. arXiv:2509.24251. Li, B.; Zhang, Y.; Guo, D.; Zhang, R.; Li, F.; Zhang, H.; Zhang, K.; Zhang, P.; Li, Y.; Liu, Z.; and Li, C. 2024. LLaVA-OneVision: Easy Visual Task Transfer. arXiv:2408.03326. Li, J.; Li, D.; Savarese, S.; and Hoi, S. 2023. BLIP-2: Boot-strapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models. In Proceedings of the 40th International Conference on Machine Learning , volume 202 of Proceedings of Machine Learning Research , 19730– 19742. PMLR. Li, K.; Shang, C.; Karlinsky, L.; Feris, R.; Darrell, T.; and Herzig, R. 2026. Latent Implicit Visual Reasoning. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 33457–33466. Miao, Y.; Sun, Y.; Wang, D.; Zhou, M.; Poupart, P.; Lv, L.; Zhao, Q.; Wang, L.; Li, H.; Jiang, X.; and Jiang, G. 2026. Fill the GAP: A Granular Alignment Paradigm for Visual Reasoning in Multimodal Large Language Models. arXiv:2605.12374. OpenAI. 2024. GPT-4o System Card. https://openai.com/ index/gpt-4o-system-card/. Accessed 2026-07-06. Ray, A.; Abdelkader, A.; Mao, C.; Plummer, B. A.; Saenko, K.; Krishna, R.; Guibas, L.; and Chu, W.-S. 2026. Mull-Tokens: Modality-Agnostic Latent Thinking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pat-tern Recognition Findings , 9477–9488. Shao, H.; Qian, S.; Xiao, H.; Song, G.; Zong, Z.; Wang, L.; Liu, Y.; and Li, H. 2024a. Visual CoT: Advancing Multi-Modal Language Models with a Comprehensive Dataset and Benchmark for Chain-of-Thought Reasoning. In Advances in Neural Information Processing Systems , volume 37. Datasets and Benchmarks Track Spotlight. Shao, Z.; Wang, P.; Zhu, Q.; Xu, R.; Song, J.; Bi, X.; Zhang, H.; Zhang, M.; Li, Y. K.; Wu, Y.; and Guo, D. 2024b. DeepSeekMath: Pushing the Limits of Mathematical Rea-soning in Open Language Models. arXiv:2402.03300. Shen, H.; Zhao, K.; Zhao, T.; Xu, R.; Zhang, Z.; Zhu, M.; and Yin, J. 2025a. ZoomEye: Enhancing Multimodal LLMs with Human-Like Zooming Capabilities through Tree-Based Im-age Exploration. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , 6602– 6618. Association for Computational Linguistics. Shen, Z.; Yan, H.; Zhang, L.; Hu, Z.; Du, Y.; and He, Y. 2025b. CODI: Compressing Chain-of-Thought into Contin-uous Space via Self-Distillation. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Pro-cessing , 677–693. Association for Computational Linguis-tics. Song, Q.; Li, H.; Yu, Y.; Zhou, H.; Yang, L.; Bai, S.; She, Q.; Huang, Z.; and Zhao, Y. 2026. CodeDance: A Dynamic Tool-integrated MLLM for Executable Visual Reasoning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 19186–19195. Tong, J.; Gu, J.; Lou, Y.; Fan, L.; Zou, Y.; Wu, Y.; Ye, J.; and Li, R. 2025. Sketch-in-Latents: Eliciting Unified Reasoning in MLLMs. arXiv:2512.16584. Tong, S.; Liu, Z.; Zhai, Y.; Ma, Y.; LeCun, Y.; and Xie, S. 2024. Eyes Wide Shut? Exploring the Visual Shortcomings of Multimodal LLMs. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,9568–9578. Viveiros, A. G.; Gonçalves, N.; Lindemann, M.; and Martins, A. 2026a. LanteRn: Latent Visual Structured Reasoning. arXiv:2603.25629. Viveiros, A. G.; Gonçalves, N.; Martins, A. F. T.; and Lin-demann, M. 2026b. What’s Holding Back Latent Visual Reasoning? arXiv:2605.18445. Wang, C.; He, W.; Zhu, X.; Zhou, C.; Li, Q.; Yan, S.; Zheng, Y.; Yu, C.; Lu, F.; Zhai, W.; Cao, Y.; Yu, P.; and Zha, Z.-J. 2026. Self-Consistent Latent Reasoning: Long Latent Sequence Reasoning for Vision-Language Model. arXiv:2605.12163. Wang, H.; Qu, C.; Huang, Z.; Chu, W.; Lin, F.; and Chen, W. 2025a. VL-Rethinker: Incentivizing Self-Reflection of Vision-Language Models with Reinforcement Learning. In 
+
+Advances in Neural Information Processing Systems , vol-ume 38. Spotlight. Wang, Q.; Shi, Y.; Wang, Y.; Zhang, Y.; Wan, P.; Gai, K.; Ying, X.; and Wang, Y. 2025b. Monet: Reason-ing in Latent Visual Space Beyond Images and Language. arXiv:2511.21395. Wang, W.; Ding, L.; Zeng, M.; Zhou, X.; Shen, L.; Luo, Y.; Yu, W.; and Tao, D. 2025c. Divide, Conquer and Com-bine: A Training-Free Framework for High-Resolution Image Perception in Multimodal Large Language Models. In Pro-ceedings of the AAAI Conference on Artificial Intelligence ,volume 39, 7907–7915. Wang, Z.; Somayaji N. S., K.; and Li, P. 2026. ReGu-LaR: Relation-Grounded Latent Reasoning for Large Vision-Language Models. arXiv:2605.30587. Wu, L.; Jiang, T.; Dong, Y.; Yang, H.; Zhang, F.; Meng, S.; Xuan, A.; Song, L.; and Keung, J. 2026. LaViT: Align-ing Latent Visual Thoughts for Multi-modal Reasoning. arXiv:2601.10129. Wu, P.; and Xie, S. 2024. V*: Guided Visual Search as a Core Mechanism in Multimodal LLMs. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 13084–13094. Xu, G.; Jin, P.; Wu, Z.; Li, H.; Song, Y.; Sun, L.; and Yuan, L. 2025. LLaVA-CoT: Let Vision Language Models Reason Step-by-Step. In Proceedings of the IEEE/CVF International Conference on Computer Vision , 2087–2098. Xu, T.; Sun, Y.; Wang, Q.; Lu, J.; Wang, Y.; Zhang, T.; Guo, L.; Rao, F.; Lyu, J.; Chen, F.; and Liu, J. 2026. Semantic-Enriched Latent Visual Reasoning. arXiv:2605.19342. Yang, Y.; He, X.; Pan, H.; Jiang, X.; Deng, Y.; Yang, X.; Lu, H.; Yin, D.; Rao, F.; Zhu, M.; Zhang, B.; and Chen, W. 2025a. R1-Onevision: Advancing Generalized Multimodal Reasoning through Cross-Modal Formalization. In Proceed-ings of the IEEE/CVF International Conference on Computer Vision , 2376–2385. Yang, Z.; Yu, X.; Chen, D.; Shen, M.; and Gan, C. 2025b. Machine Mental Imagery: Empower Multimodal Reasoning with Latent Visual Tokens. arXiv:2506.17218. Zhang, C.; Qiu, H.; Zhang, Q.; Zeng, Z.; Ma, L.; and Zhang, J. 2026. DeepSketcher: Internalizing Visual Manipulation for Multimodal Reasoning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Findings , 9389–9400. Zhang, Y.-F.; Lu, X.; Yin, S.; Fu, C.; Chen, W.; Hu, X.; Wen, B.; Jiang, K.; Liu, C.; Zhang, T.; Fan, H.; Chen, K.; Chen, J.; Ding, H.; Tang, K.; Zhang, Z.; Wang, L.; Yang, F.; Gao, T.; and Zhou, G. 2025a. Thyme: Think Beyond Images. arXiv:2508.11630. Zhang, Y.-F.; Zhang, H.; Tian, H.; Fu, C.; Zhang, S.; Wu, J.; Li, F.; Wang, K.; Wen, Q.; Zhang, Z.; Wang, L.; and Jin, R. 2025b. MME-RealWorld: Could Your Multimodal LLM Challenge High-Resolution Real-World Scenarios that are Difficult for Humans? In The Thirteenth International Conference on Learning Representations .Zhang, Z.; Zhang, A.; Li, M.; Zhao, H.; Karypis, G.; and Smola, A. 2023. Multimodal Chain-of-Thought Reasoning in Language Models. arXiv:2302.00923. Zheng, Z.; Yang, M.; Hong, J.; Zhao, C.; Xu, G.; Yang, L.; Shen, C.; and Yu, X. 2026. DeepEyes: Incentivizing “Thinking with Images” via Reinforcement Learning. In 
+
+The Fourteenth International Conference on Learning Rep-resentations .Zhu, J.; Wang, W.; Chen, Z.; Liu, Z.; Ye, S.; Gu, L.; Tian, H.; Duan, Y.; Su, W.; Shao, J.; Gao, Z.; Cui, E.; Wang, X.; Cao, Y.; Liu, Y.; Wei, X.; Zhang, H.; Wang, H.; Xu, W.; Li, H.; Wang, J.; Deng, N.; Li, S.; He, Y.; Jiang, T.; Luo, J.; Wang, Y.; He, C.; Shi, B.; Zhang, X.; Shao, W.; He, J.; Xiong, Y.; Qu, W.; Sun, P.; Jiao, P.; Lv, H.; Wu, L.; Zhang, K.; Deng, H.; Ge, J.; Chen, K.; Wang, L.; Dou, M.; Lu, L.; Zhu, X.; Lu, T.; Lin, D.; Qiao, Y.; Dai, J.; and Wang, W. 2025. InternVL3: Exploring Advanced Training and Test-Time Recipes for Open-Source Multimodal Models. arXiv:2504.10479.

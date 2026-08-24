@@ -1,0 +1,781 @@
+Title: Memory Augmentation Unlocks Efficient Chain-of-Thought Reasoning
+
+URL Source: https://arxiv.org/pdf/2608.21265v1
+
+Published Time: Mon, 24 Aug 2026 01:03:27 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Memory Augmentation Unlocks Efficient Chain-of-Thought Reasoning 
+
+Simeng Zhang 1,2,∗, Yilong Chen 1,2,∗, Wenyuan Zhang 4
+
+Zhenyu Zhang 3, Yao Chen 1,2, Junyuan Shang 3 Tingwen Liu 1,2† 
+
+> 1
+
+Institute of Information Engineering, Chinese Academy of Sciences  
+
+> 2
+
+School of Cyber Security, University of Chinese Academy of Sciences  
+
+> 3
+
+Baidu Inc. 4 Tencent Inc. 
+
+{zhangsimeng, chenyilong, liutingwen}@iie.ac.cn 
+
+Abstract 
+
+Large language models often rely on Chain-of-Thought (CoT) reasoning to solve com-plex tasks, but verbose reasoning traces in-troduce substantial inference overhead. CoT compression shortens generation, yet aggres-sive compression may disrupt logical coher-ence and degrade performance. We formalize this trade-off as the Context-Generation Sub-stitution Law , where explicit reasoning con-text substitutes for part of decode-time gen-eration. Based on this principle, we propose 
+
+Memory-Augmented Compression , a training-free framework that constructs reusable rea-soning memories from historical traces and re-trieves them as prefill-side scaffolds. Rather than using raw demonstrations, these mem-ories summarize reusable reasoning patterns, key constraints, and critical operations to com-pensate for information lost during compres-sion. Experiments show that Memory consis-tently improves prompt-based Chain-of-Draft (CoD) compression across mathematical rea-soning, complex reasoning, and science ques-tion answering tasks, yielding accuracy gains of 21.4, 28.0, 29.5, and 6.61 points over CoD on GSM8K, MATH, BBH, and MMLU-Sci, while achieving a 1.14–1.49 × latency speedup over standard CoT. Memory is also compati-ble with token-level, reasoning-trace-level, and inference-state compression mechanisms. Fur-ther analyzes show that the gains come from relevant reasoning memories rather than simply increasing context length. 
+
+1 Introduction 
+
+Large Language Models (LLMs) exhibit strong generalization capabilities, enabling them to per-form complex reasoning tasks. Chain-of-Thought    
+
+> ∗Equal contribution. †Corresponding author. Manuscript completed in January 2026.
+
+Figure 1: Illustration of memory-augmented compres-sion. Explicit memory shifts part of the reasoning sup-port to the prefill stage, improving short-CoT accuracy while preserving generation efficiency. 
+
+(CoT) prompting (Wei et al., 2022) improves rea-soning by explicitly generating intermediate steps, while recent reasoning-oriented models such as OpenAI o-series models (Jaech et al., 2024) and DeepSeek-R1 (Guo et al., 2025) further show that scaling test-time computation and producing longer reasoning traces can substantially improve perfor-mance on difficult benchmarks. However, this long-thinking paradigm comes with a significant cost: verbose reasoning traces must be generated token by token in an autoregressive manner, leading to increased decoding latency, token cost, and serving overhead (Kwon et al., 2023; Chen et al., 2026). To mitigate the overhead of long reasoning traces, existing methods compress reasoning at dif-ferent levels, including semantic-level shortening, token-level pruning or skipping, and inference-state compression (Xu et al., 2025; Xia et al., 2025; Song et al., 2026). However, these methods mainly re-duce reasoning information produced or retained during generation. As compression becomes more aggressive, they may discard useful subgoals, con-straints, or logical dependencies, causing accu-racy degradation. This exposes a key limitation of generation-side compression: shorter reason-ing traces do not necessarily preserve the support needed for problem solving. How, then, can we arXiv:2608.21265v1 [cs.CL] 21 Aug 2026 preserve such support without returning to long autoregressive generation? 
+
+How can we leverage the parallelism of context scaling to substitute the serial overhead of lengthy generation? 
+
+Motivated by this question, we conduct a prelim-inary study on the interplay between input context and generated CoT. We observe that useful reason-ing context, such as abstract reasoning memories, can help preserve or improve accuracy while en-abling shorter reasoning traces. Since prefill com-putation is more parallelizable than autoregressive decoding, this suggests that some decode-side rea-soning support can be shifted to the prefill con-text. We formalize this observation as the Context-Generation Substitution Law in Sec. 2.3, capturing the trade-off between prefill-side reasoning context and decode-side CoT generation. Based on the above observation, we propose 
+
+Memory-Augmented Compression , a training-free memory-prefill framework for compensating infor-mation loss in compressed reasoning. The frame-work uses abstract reasoning memories constructed from historical traces, which capture reusable problem-solving patterns, key constraints, and crit-ical operations. For a new query, relevant mem-ories are retrieved and injected into the prompt as prefill-side scaffolds, allowing the model to ac-cess reusable reasoning support while generating shorter reasoning traces. The framework is not tied to a specific compression algorithm, making it com-patible with various compression mechanisms, in-cluding prompting-based compression, token-level compression, and KV-cache compression. Our contributions are: • We introduce the Context-Generation Substi-tution Law , the first formulation to character-izes the trade-off between prefill-side reason-ing context and decode-time generation. • We propose Memory-Augmented Compres-sion , a training-free framework that retrieves abstract reasoning memories and injects them into the prefill context to facilitate highly com-pressed reasoning. • Experiments demonstrate that the proposed method improves the accuracy-latency trade-off across domains, models, and compression mechanisms, with analyses confirming that relevant memories compensate for informa-tion lost under aggressive compression. 
+
+2 Preliminaries 
+
+2.1 Standard Chain-of-Thought Inference 
+
+We formalize the standard reasoning process of an LLM Mθ. Let x = ( I, q ) denote the concatenation of the system instruction I and the user query q.Instead of directly mapping x to the final answer 
+
+y, CoT inference first generates an intermediate reasoning sequence z (Wei et al., 2022). The joint probability can be decomposed as: 
+
+Pθ(y, z | x) = Pθ(z | x) · Pθ(y | x, z ). (1) Here, Pθ(z | x) corresponds to the reasoning phase, and Pθ(y | x, z ) represents the answering phase conditioned on the generated reasoning chain. While z can improve answer accuracy, producing a long reasoning sequence incurs substantial autore-gressive decoding cost. 
+
+2.2 The Inference Latency Bottleneck 
+
+The computational cost of autoregressive decoding grows with the length of the generated sequence. Let Ldec = |z| denote the decoding length of the reasoning chain. In modern reasoning mod-els, Ldec can extend to thousands of tokens (Guo et al., 2025; Chen et al., 2026), making the rea-soning trace much longer than the final answer. Because tokens in z are decoded sequentially, long reasoning traces create a latency bottleneck in LLM serving (Kwon et al., 2023). Although decoding acceleration methods such as speculative decoding improve generation throughput (Leviathan et al., 2023), they still require producing the reasoning trace. Therefore, reducing decode-time reasoning length remains critical for efficient reasoning. 
+
+2.3 Context-Generation Substitution Law 
+
+To address the decoding bottleneck, we intro-duce an external memory source C, which stores reusable reasoning information distilled from his-torical examples. Our core hypothesis is that rel-evant reasoning context can substitute for part of the reasoning trace otherwise produced through decode-time generation. Given an input x, we re-trieve a structured reasoning memory 
+
+M = ϕ(x, C), (2) and condition the model on M instead of relying solely on a fully generated reasoning chain z:
+
+Pθ(y | x, M ) ≈ Pθ(y | x, z ). (3) 1）Offline Memory construction       
+
+> Training
+> Datasets
+> Full CoT
+> Generation
+> Pattern / Summary
+> Extraction Memory bank
+> 2）Online Inference
+> Input Query Reasoning-Tag
+> Retriever
+> Retrieved Memory
+> Memory-Augmented Prefill Context
+> System
+> Prompt Retrieved
+> Memory Query
+> （Marginal Prefill Cost ）
+> Answer
+> Baseline: Standard Long CoT
+> (High Generation Cost ）
+> Ours: Compressed Short CoT
+> LLM Inference Answer
+> Insight:
+> Extra prefill context shifts cost from decoding
+
+Figure 2: Overview of Memory-Augmented Compression . Historical reasoning traces are distilled into reusable memory entries offline. At inference time, relevant memories are retrieved and injected into the prefill context to support compressed Short-CoT reasoning. 
+
+Conditioned on M , the model produces a com-pressed reasoning chain (Short-CoT) z′, where ide-ally |z′| ≪ | z| while task performance is preserved. For clarity, we focus on the LLM prefill–decode trade-off after memory retrieval and exclude re-trieval cost from our latency formulation. We char-acterize the efficiency–accuracy trade-off as: 
+
+min  
+
+> ϕ, z ′
+
+J = |z′| + γ|M | + λLperf , (4) where |z′| is the compressed decode-time reasoning length, |M | is the added memory context length, and Lperf denotes the performance penalty induced by compression. The coefficient γ = τpre /τ dec 
+
+captures the relative cost between prefill process-ing and autoregressive decoding. Since prefill pro-cessing is more parallelizable than token-by-token decoding, adding moderate reasoning memory can be beneficial when it reduces decode length or im-proves compressed reasoning accuracy. This for-mulation defines the Context-Generation Substitu-tion Law : useful reasoning context can substitute for part of the generated reasoning trace when its prefill cost is outweighed by savings or accuracy gains in compressed decoding. 
+
+3 Memory-Augmented Compression 
+
+3.1 Cognitive Memory in LLM Reasoning 
+
+We conceptualize LLM reasoning through a cog-nitive memory view, where different information sources incur different inference costs. 
+
+Implicit memory. Pre-trained weights θ store la-tent knowledge and reasoning ability, which are accessed through inference computation. 
+
+Explicit memory. The input context provides di-rectly accessible information, such as instructions, Original CoT Compressed CoT +5 Memory +10 Memory +20 Memory 
+
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90 Accuracy (%)
+> Original baseline Compression collapse Memory recovery
+
+Figure 3: Explicit memory mitigates the reasoning col-lapse caused by aggressive compression. 
+
+retrieved memories, or few-shot examples. Since context tokens are processed in parallel during pre-fill, explicit memory can support reasoning at lower marginal cost than autoregressive generation. 
+
+Working memory. The generated CoT sequence and its KV cache form dynamic working memory. Because it is constructed token by token through autoregressive decoding, verbose working memory becomes the main inference bottleneck. From this perspective, standard CoT reasoning externalizes information from implicit memory into working memory through decode-time generation. Our goal is to move part of the reusable reasoning information into explicit memory in advance, re-ducing the amount of working memory the model needs to generate from scratch. 
+
+3.2 Empirical Observations and Analysis 
+
+To validate the feasibility of substituting decode-time generation with explicit context, we conduct a preliminary study on the interaction between CoT compression and memory augmentation. 
+
+Observation 1: Compression collapse. As shown in Figure 3, aggressively reducing decode-time rea-soning length leads to severe accuracy degradation, confirming that generated reasoning provides es-sential scaffolds for complex reasoning. 
+
+Observation 2: Memory compensation. Inject-ing prior reasoning examples into the prompt sub-stantially recovers the degradation caused by com-pression, suggesting that explicit memory can com-pensate for missing reasoning information. 
+
+Computational trade-off analysis. Following the Context-Generation Substitution Law in Sec-tion 2.3, we model inference latency T under the hardware asymmetry between prefill and autore-gressive decoding: 
+
+T ≈ | x| · τpre + |z| · τdec , (5) where x denotes the prefill context and z denotes the generated reasoning trace. Since autoregres-sive decoding proceeds sequentially, we typically have τdec ≫ τpre . Injecting relevant reasoning memory into the input context introduces an ad-ditional prefill cost ∆in , but it can reduce the re-quired decode-time reasoning length by ∆out . The injected memory acts as a reasoning scaffold, al-lowing the model to bypass redundant or recover-able intermediate steps. A net latency reduction is achieved when: 
+
+∆out · τdec 
+
+| {z }
+
+> Decoding Gain
+
+> ∆in · τpre 
+
+| {z }
+
+> Prefill Cost
+
+. (6) Rearranging yields the efficiency condition: 
+
+∆out 
+
+∆in 
+
+> τpre 
+
+τdec 
+
+= γ. (7) This condition indicates that explicit memory can provide a favorable trade-off when a small amount of added prefill context sufficiently reduces decode-time reasoning or recovers accuracy under com-pression. Empirically, our results show that Mem-ory improves the accuracy–latency balance of com-pressed inference. 
+
+3.3 Framework Design 
+
+Motivated by the cognitive memory view and em-pirical observations above, we propose Memory-Augmented Compression , a plug-in framework that shifts reasoning support from decode-time genera-tion to prefill-side memory. As shown in Figure 2, it consists of four components: memory bank con-struction, memory retrieval, memory-augmented prefill, and memory-guided compressed inference. 
+
+Memory bank. We construct a memory bank B
+
+from previously solved reasoning examples. Un-like conventional few-shot prompting, MAC does not directly inject raw input–output demonstrations into the inference context. Instead, each example is transformed into a memory representation that captures reusable reasoning information, such as the problem type, key constraints, subgoals, so-lution strategy, and critical operations. Only the selected memory content is serialized and injected at inference time, serving as external reasoning guidance for compressed reasoning. Details of the memory representation and construction procedure are provided in Appendix A.2 and Appendix A.3. 
+
+Memory retrieval. Given a query x, the retriever selects a set of relevant memories from B, with the retrieval size controlled by k. In our implemen-tation, retrieval is guided by reasoning tags and semantic similarity, so that the selected memories share similar problem-solving structures with the query rather than surface wording alone: 
+
+Mx = R(x, B, k ). (8) 
+
+Memory prefill and Inference. The retrieved memories are concatenated with the system prompt and query to form a memory-augmented prefill context. Conditioned on this context, the model generates a concise reasoning trace and final an-swer. Since the memories encode abstract reason-ing structures rather than full demonstrations, they provide compact scaffolds that help preserve key subgoals, constraints, and critical operations under aggressive compression. 
+
+4 Experiments 
+
+4.1 Experimental Setup Datasets. We evaluate on diverse datasets across domains, including GSM8K (Cobbe et al., 2021), MATH (Hendrycks et al., 2021), BBH (Suzgun et al., 2023), MMLU-Sci (Hendrycks et al., 2020), and AIME 2024. 
+
+Models. Unless otherwise specified, we use LLaMA-3.1-8B and Qwen2.5-7B as open-weight backbones (Grattafiori et al., 2024; Yang et al., 2024a), and additionally evaluate API-based rea-soning models for cross-model generalization. 
+
+Baselines. We compare standard CoT (Wei et al., 2022), Chain-of-Draft (CoD) (Xu et al., 2025) as the prompt-based compression baseline, and (a) Across-domain CoD results with Qwen2.5-7B                                                                                                                                                                        
+
+> Domain Dataset Method Acc. ∆vs CoD Prefill Decode Total Latency (ms) Math GSM8K CoT 91.4 –96.3 299.2 395.5 3742.5 (1.00 ×)
+> CoD 67.9 –112.3 51.1 163.4 666.6 (5.61 ×)
+> +Memory 89.3 +21.4 1161.9 187.2 1349.1 2515.4 (1.49 ×)
+> MATH CoT 72.8 –105.9 569.3 675.2 5117.0 (1.00 ×)
+> CoD 43.0 –121.9 100.3 222.2 1119.5 (4.57 ×)
+> +Memory 71.0 +28.0 1772.6 460.2 2232.8 4489.6 (1.14 ×)
+> Complex BBH CoT 60.8 –134.0 320.9 454.9 4007.1 (1.00 ×)
+> CoD 41.0 –150.0 46.3 196.3 652.1 (6.14 ×)
+> +Memory 70.5 +29.5 983.0 143.3 1126.3 3148.5 (1.27 ×)
+> Science MMLU-Sci CoT 62.11 –119.0 452.5 571.5 4821.0 (1.00 ×)
+> CoD 60.35 –135.0 48.1 183.1 572.6 (8.42 ×)
+> +Memory 66.96 +6.61 1504.9 276.9 1781.8 3423.2 (1.41 ×)
+> (b) Memory as a plug-in for compression methods
+> Method Model Dataset Compression Memory Config Base Acc +Memory Acc Gain TokenSkip Qwen2.5-7B GSM8K γ= 0 .1k= 3 , Long-CoT 52.62 70.13 +17.51 Qwen2.5-7B GSM8K γ= 0 .4k= 3 , Long-CoT 68.08 76.88 +8.80 LLaMA-3.1-8B GSM8K γ= 0 .9k= 5 , Long-CoT 77.10 79.23 +2.13 RPC DS-R1-Qwen-7B AIME 2024 P= 4096 k= 1 , Summary 52.92 55.00 +2.08 DS-R1-Qwen-7B AIME 2024 P= 2048 k= 1 , Summary 51.25 53.33 +2.08 DS-R1-Qwen-7B AIME 2024 P= 1024 k= 1 , Summary 47.50 51.67 +4.17 Extra-CoT Qwen2.5-7B MATH γ= 0 .8k= 5 , Long-CoT 39.80 41.20 +1.40 Qwen2.5-7B MATH γ= 1 .0k= 5 , Long-CoT 35.80 40.40 +4.60
+
+Table 1: Main results of Memory-Augmented Compression . Panel (a) reports across-domain CoD results with Qwen2.5-7B. Panel (b) evaluates Memory as a plug-in for representative compression settings. 
+
+memory-augmented variants. To evaluate plug-in ability, we further combine Memory with Token-Skip (Xia et al., 2025), RPC (Song et al., 2026), and Extra-CoT (Tang et al., 2026). 
+
+Memory and metrics. For each dataset, we in-stantiate the memory bank using previously solved examples and exclude all evaluation samples to prevent data leakage. At inference time, we re-trieve the top-k relevant memories and inject them as prefill-side scaffolds without parameter updates. We report accuracy, prefill tokens, decode tokens, total tokens, and latency. For memory-augmented methods, ∆Acc denotes the accuracy gain over the corresponding compressed baseline, while “+Mem-ory” denotes applying Memory-Augmented Com-pression to that baseline. 
+
+4.2 Main Results 
+
+Table 1 evaluates Memory from two perspectives: the accuracy–latency trade-off under CoD and com-patibility with other compression mechanisms. In Panel (a), Latency measures LLM inference time (excluding retrieval), with parentheses indicating speedup over standard CoT; retrieval overhead is re-ported separately in Table 2. In Panel (b), Base and +Memory use the same setting except for memory injection; full results are provided in Appendix C.2. 
+
+General evaluation across domains. As shown in Table 1(a), CoD greatly shortens decode-time reasoning but often causes large accuracy drops, indicating that aggressive compression removes useful intermediate reasoning information. Adding Memory consistently recovers performance, im-proving over CoD by 21.4, 28.0, 29.5, and 6.61 points on GSM8K, MATH, BBH, and MMLU-Sci, respectively. CoD+Memory approaches standard CoT on GSM8K and MATH and surpasses it on BBH and MMLU-Sci, suggesting that retrieved memories provide targeted reasoning scaffolds rather than merely restoring compressed steps. 
+
+Accuracy–latency trade-off. Although Memory increases prefill tokens, it reduces decode-side rea-soning compared with standard CoT and achieves a 1.14–1.49 × latency speedup across domains. When the retrieval overhead is added back, MAC Retriever Accuracy (%) Overhead No Memory (CoD) 43.00 –Random 50.20 0.1 ms Query Emb. 53.20 100 ms BM25 54.60 1 ms   
+
+> Reasoning Tag 56.20 683 ms
+
+Table 2: Accuracy and online retrieval overhead of dif-ferent retrieval strategies on MATH-500. Overhead is the approximate per-query online cost.                         
+
+> Memory Content Acc. Prefill Decode ∆Acc CoD (None) 55.00 136.31 2105.50 0.00 Few-shot 46.67 300.79 1406.11 -8.33 Summary 61.67 606.81 2117.04 +6.67
+> Short-CoT 46.67 605.40 1454.78 -8.33 Long-CoT 43.33 961.37 1531.02 -11.67
+
+Table 3: Impact of memory representation on DeepSeek-V3.2/AIME 2024 with top-k = 1 retrieval and 2048 maximum generation tokens. 
+
+still remains faster than CoT end-to-end across datasets (full breakdown in Appendix). Thus, Mem-ory improves accuracy over the compressed CoD baseline while preserving MAC’s end-to-end speed advantage, providing empirical support for the 
+
+Context–Generation Substitution Law .
+
+Plug-in compatibility. Table 1(b) shows that memory augmentation can be combined with com-pression mechanisms beyond CoD. For each row, Base and +Memory use the same model, dataset, compression setting, and decoding setup, with memory injection as the only difference. Memory augmentation improves TokenSkip across different compression ratios and models, and also yields pos-itive gains with RPC and Extra-CoT. Notably, these methods include both training-based approaches, such as TokenSkip and Extra-CoT, and the training-free RPC method, while memory augmentation requires no additional training. These results sug-gest that the memory module serves as a plug-in compensation mechanism for recovering reasoning information lost under different efficiency methods. 
+
+4.3 Ablation Study 
+
+To dissect the contribution of each component in our Memory-Augmented paradigm, we conduct component-wise ablation studies. 
+
+Impact of retrieval strategy. We compare Query Embedding, BM25, and Reasoning Tag to exam-ine the accuracy–latency trade-off of retrieval (Ta-                       
+
+> k=1 Best k=20
+> Dataset Acc. Pre. kAcc. Pre. Acc. Pre. GSM8K 73.39 259 14 80.52 1881 79.68 2628 MATH 52.20 349 16 62.60 3330 57.40 4120
+
+Table 4: Effect of memory size k on Qwen2.5-7B. We report accuracy (Acc.) and prefill tokens (Pre.). Accu-racy improves from k=1 to the best k, whereas k=20 
+
+may reduce accuracy and increases prefill cost. 
+
+ble 2). Reasoning Tag achieves the highest accu-racy and is therefore used as the default retriever, despite the additional cost of online tag generation (≈683 ms/query). BM25 provides a faster alter-native ( ≈1 ms) while retaining most of the accu-racy. Importantly, all retrievers substantially out-perform the no-memory CoD baseline, indicating that MAC is robust to the choice of retriever and can be adapted to different deployment constraints. 
+
+Impact of memory representation. We ablate whether the injected content should be fixed few-shot demonstrations, truncated/full CoT traces, or abstract reasoning memories. Table 3 shows that fixed few-shot demonstrations and CoT-trace mem-ories degrade performance, while Summary Mem-ory yields a +6.67 point gain. This suggests that Memory benefits from compact reasoning abstrac-tions rather than simply adding demonstrations or longer reasoning traces. 
+
+Impact of memory size. Table 4 shows how memory size k affects accuracy and prefill cost on Qwen2.5-7B. Accuracy improves from k=1 to the best k, but pushing k to 20 brings no gain and even hurts accuracy while raising prefill cost, revealing a coverage–cost trade-off. The larger drop on the harder MATH benchmark suggests over-injection is more damaging for complex reasoning. 
+
+4.4 Analysis 
+
+To provide a comprehensive understanding of the properties and boundaries of our framework, we performed a series of analytical experiments. 
+
+Scalability to reasoning models. We evaluate whether Memory-Augmented Compression scales to stronger API-based reasoning models on AIME 2024. As shown in Table 5, CoD+Memory consis-tently improves over CoD across DeepSeek-V3.2, Qwen3.5-plus, and o4-mini, with gains of +6.67, +9.17, and +4.17 points. This suggests that ex-plicit memory provides model-agnostic reasoning Method Acc. (%) Prefill Decode Total ∆Acc                                              
+
+> DeepSeek-V3.2
+> CoT 55.00 124.01 2733.94 2857.95 –CoD 55.00 136.31 2105.50 2241.81 0.00 +Memory 61.67 606.81 2117.04 2723.85 +6.67
+> Qwen3.5-plus
+> CoT 75.83 142.30 8657.60 8799.90 –CoD 49.17 157.80 7533.00 7690.80 -26.66 +Memory 85.00 666.20 7364.90 8031.10 +9.17
+> o4-mini
+> CoT 74.17 133.33 4547.59 4680.93 –CoD 70.83 143.72 3900.59 4044.31 -3.34 +Memory 75.00 738.23 4031.10 4769.33 +4.17
+
+Table 5: Scalability to API-based reasoning models on AIME 2024. +Memory denotes CoD+Memory. All results are reported as pass@8, following common prac-tice on AIME. Gains are in percentage points over CoD.                       
+
+> Dataset Batch Prefill Decode Ratio (ms/tok) (ms/tok) τdec /τ pre
+> GSM8K 10.136 11.81 87.0 GSM8K 80.144 2.11 14.7 MATH-500 10.150 11.97 79.4 MATH-500 80.134 2.96 22.1
+
+Table 6: Per-token prefill and decode latency for Qwen2.5-7B on an NVIDIA H20 under batch sizes. 
+
+support beyond a specific open-weight backbone. Although Memory increases prefill tokens, decode tokens remain close to CoD, indicating that the gains mainly come from prefill-side support rather than longer generation. 
+
+Prefill–decode cost quantification. MAC re-places part of expensive autoregressive generation with comparatively inexpensive prefill context. We compute the average per-token prefill and decode latency, denoted by τpre and τdec , over the full eval-uation set. As shown in Table 6, one decode to-ken incurs the same latency as approximately 14 .7–
+
+87 .0 prefill tokens, depending on the dataset and batch size. More generally, injecting M memory tokens while eliminating D decode tokens reduces latency when 
+
+M τ pre < Dτ dec . (9) The advantage remains substantial at batch size 8:although batching amortizes autoregressive decod-ing and narrows the prefill–decode gap, it does not eliminate the computational asymmetry. 
+
+Memory compensation under different compres-sion ratios. We analyze how memory compensa-0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9  
+
+> Compression Ratio ( γ)
+> 40% 50% 60% 70% 80% 90%
+> Accuracy (%)
+> Memory ( k= 5, Long-CoT) Memory Gain No Memory
+
+Figure 4: Memory compensation across compression ratios on GSM8K with Qwen2.5-7B. Smaller γ indi-cates more aggressive compression. Green: memory-augmented ( k=5 ); gray: no-memory; shaded: gain. 
+
+tion varies with the compression ratio γ on GSM8K using Qwen2.5-7B, where a smaller γ denotes more aggressive compression. As shown in Fig-ure 4, the gain is strongly compression-dependent: it is largest under aggressive compression, where the no-memory baseline drops sharply, and dimin-ishes as the baseline recovers under milder com-pression. This is consistent with memory com-pensating for reasoning information lost by com-pression, rather than providing a constant gain. A full sweep over retrieval size k∈{ 3, 5, 10 } and both CoT formats on MATH (Appendix) shows the same trend, confirming robustness to k.
+
+Case study. Figure 5 presents a qualitative GSM8K example. The compressed baseline retains the total-card computation but drops the subsequent subtraction step, incorrectly treating the total as the final answer. In contrast, the retrieved memory provides a structural template of Total , Part , and 
+
+Left , guiding the compressed reasoning to preserve the critical “Left = Total - Part” operation. This illustrates that memory supplies missing reason-ing structure, helping prevent logic collapse under aggressive compression. 
+
+5 Related Work 
+
+5.1 Context Augmentation and Memory 
+
+Prior work improves inference by augmenting or optimizing the input context, such as retrieving in-context demonstrations (Liu et al., 2022) or con-structing examples with rationales (Zhang et al., 2022). Long-context methods (Jin et al., 2024; Zhang et al., 2025) and context compression meth-ods (Xu et al., 2023; Jiang et al., 2023, 2024) in-Compression Baseline:  short  but wrong   
+
+> Janet has 3 × 15 = 45 cards.
+> She has 45 cards left.
+
+Error:  skips the subtraction step.   
+
+> First, we need to calculate the total number of cards
+> Janet bought. She bought 3 packs, and each pack
+> has 15 cards, so
+> cards in total.
+> Next, she gives 1/3 of her cards to her brother.
+> Since 1/3 of 45 is
+> she gives away 15 cards.
+> Finally, we subtract the cards given away from the
+> total:
+> Thus, Janet has 30 cards left.
+> Original CoT: accurate but verbose
+> 3 × 15 = 45
+> 45 × 1/3 = 15
+> 45 − 15 = 30
+> Final answer:
+
+30   
+
+> Ours (Memory-Augmented): short and correct
+> Final answer:
+
+30     
+
+> [Retrieved Memory]
+> Template: Total = Unit × Num; Part = Total / Fraction;
+> Left = Total − Part.
+> Total cards: 3 × 15 = 45 .
+> Given away: 45 / 3 = 15.
+> Left: 45 − 15 = 30 .
+
+Question:  Janet buys 3 packs of baseball cards. Each pack has 15 cards. 
+
+She gives 1/3 of her cards to her brother.  How many cards does she have left? Figure 5: Case study on GSM8K where retrieved memory guides compressed reasoning to recover the missing subtraction step. 
+
+crease context capacity or reduce processing cost. More closely related, reasoning-memory methods reuse prior reasoning to reduce redundant compu-tation (Yang et al., 2024b; Didolkar et al., 2025; Ahmed et al., 2025). MAC instead uses retrieved reasoning as a pluggable compensation layer for intermediate content omitted by CoT compression, while decoupling the memory, retriever, and com-pressor. This design shifts part of the reasoning burden from decode-time generation to prefill con-text and allows each component to be replaced independently. 
+
+5.2 CoT Compression and Efficient Reasoning 
+
+Recent work shortens CoT through pruning or to-ken skipping (Hou et al., 2025; Xia et al., 2025; Fan et al., 2026; Tang et al., 2026), budget-aware or self-compressed reasoning (Lin et al., 2025; Deng et al., 2026; Cao et al., 2026), and reinforcement learn-ing for concise reasoning (Han et al., 2026; Tian and Liu, 2026; Qiao et al., 2025). These methods act on generation, but aggressive compression may remove information needed for correct reasoning. MAC instead injects retrieved reasoning scaffolds before generation, providing a pluggable memory layer compatible with different compressors. 
+
+5.3 System-Level Generation Acceleration 
+
+Another line of work reduces inference cost through speculative decoding and its vari-ants (Leviathan et al., 2023; Cai et al., 2024; Li et al., 2024; Fu et al., 2024), model sparsifica-tion (Frantar and Alistarh, 2023), and KV-cache compression (Ramachandran et al., 2025). These methods make a given output cheaper or faster to generate, whereas MAC reduces the amount of explicit decode-time reasoning required by sup-plying part of the reasoning support through the prefill context. The two directions are orthogonal in mechanism and can, in principle, be combined. 
+
+6 Conclusion 
+
+We introduced Memory-Augmented Compression , a training-free framework that improves compressed reasoning by retrieving reusable reasoning memo-ries as prefill-side scaffolds. Instead of only short-ening decode-time generation, our method shifts part of the reasoning support to the input context, compensating for information lost under compres-sion. Experiments across diverse reasoning tasks show that Memory improves accuracy over com-pressed baselines such as CoD while achieving lower latency than standard CoT. It is also compat-ible with multiple efficiency mechanisms, includ-ing prompt-based, token-level, and inference-state compression. Further analyses show that the gains come from relevant reasoning memories and are most pronounced under aggressive compression, supporting explicit memory as a promising direc-tion for efficient reasoning. Limitations 
+
+In this section, we discuss the potential limitations and risks of our work. First, API-based models do not provide a consistent interface for measuring model-internal prefill and decode latency, which limits direct runtime comparisons across models. Second, MAC introduces additional overhead from query-tag generation, embedding, retrieval, and memory prefilling, and its latency advantage may therefore be smaller for queries requiring only short reasoning traces. Finally, MAC depends on the quality of the memory bank and retrieval results. Irrelevant or poorly matched memories may intro-duce distracting information and degrade reasoning quality. Our experiments mainly use verified histor-ical examples, so robustness to noisier memories remains to be further evaluated. 
+
+References 
+
+Ammar Ahmed, Azal Ahmad Khan, Ayaan Ahmad, Sheng Di, Zirui Liu, and Ali Anwar. 2025. Retrieval-of-thought: Efficient reasoning via reusing thoughts. 
+
+arXiv preprint arXiv:2509.21743 .Tianle Cai, Yuhong Li, Zhengyang Geng, Hongwu Peng, Jason D Lee, Deming Chen, and Tri Dao. 2024. Medusa: Simple llm inference acceleration frame-work with multiple decoding heads. arXiv preprint arXiv:2401.10774 .Jie Cao, Tianwei Lin, Zhenxuan Fan, Bo Yuan, Ziyuan Zhao, Rolan Yan, Wenqiao Zhang, and Siliang Tang. 2026. Draft-thinking: Learning efficient reason-ing in long chain-of-thought llms. arXiv preprint arXiv:2603.00578 .Qiguang Chen, Libo Qin, Jinhao Liu, Dengyun Peng, Jiannan Guan, Peng Wang, Mengkang Hu, Yuhang Zhou, Te Gao, and Wanxiang Che. 2026. Towards reasoning era: A survey of long chain-of-thought for reasoning large language models. Science China Information Sciences , 69(6):161101. Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, et al. 2021. Training verifiers to solve math word problems. arXiv preprint arXiv:2110.14168 .Jie Deng, Shining Liang, Jun Li, Hongzhi Li, and Yu-tao Xie. 2026. Conpress: Learning efficient reason-ing from multi-question contextual pressure. arXiv preprint arXiv:2602.01472 .Aniket Didolkar, Nicolas Ballas, Sanjeev Arora, and Anirudh Goyal. 2025. Metacognitive reuse: Turning recurring llm reasoning into concise behaviors. arXiv preprint arXiv:2509.13237 .Zhenxuan Fan, Jie Cao, Yang Dai, Zheqi Lv, Wenqiao Zhang, Zhongle Xie, Peng LU, and Beng Chin Ooi. 2026. Ctrlcot: Dual-granularity chain-of-thought compression for controllable reasoning. arXiv preprint arXiv:2601.20467 .Elias Frantar and Dan Alistarh. 2023. Sparsegpt: Mas-sive language models can be accurately pruned in one-shot. In International conference on machine learning , pages 10323–10337. PMLR. Yichao Fu, Peter Bailis, Ion Stoica, and Hao Zhang. 2024. Break the sequential dependency of llm in-ference using lookahead decoding. arXiv preprint arXiv:2402.02057 .Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Alex Vaughan, et al. 2024. The llama 3 herd of mod-els. arXiv preprint arXiv:2407.21783 .Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, et al. 2025. Deepseek-r1: In-centivizing reasoning capability in llms via reinforce-ment learning. arXiv preprint arXiv:2501.12948 .Xinchen Han, Hossam Afifi, Michel Marot, Xilu Wang, and Lu Yin. 2026. Long chain-of-thought com-pression via fine-grained group policy optimization. In ICASSP 2026-2026 IEEE International Confer-ence on Acoustics, Speech and Signal Processing (ICASSP) , pages 4471–4475. IEEE. Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. 2020. Measuring massive multitask language under-standing. arXiv preprint arXiv:2009.03300 .Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Ja-cob Steinhardt. 2021. Measuring mathematical prob-lem solving with the math dataset. arXiv preprint arXiv:2103.03874 .Bairu Hou, Yang Zhang, Jiabao Ji, Yujian Liu, Kaizhi Qian, Jacob Andreas, and Shiyu Chang. 2025. Thinkprune: Pruning long chain-of-thought of llms via reinforcement learning. arXiv preprint arXiv:2504.01296 .Aaron Jaech, Adam Kalai, Adam Lerer, Adam Richard-son, Ahmed El-Kishky, Aiden Low, Alec Helyar, Aleksander Madry, Alex Beutel, Alex Carney, et al. 2024. Openai o1 system card. arXiv preprint arXiv:2412.16720 .Huiqiang Jiang, Qianhui Wu, Chin-Yew Lin, Yuqing Yang, and Lili Qiu. 2023. Llmlingua: Compressing prompts for accelerated inference of large language models. In Proceedings of the 2023 conference on empirical methods in natural language processing ,pages 13358–13376. Huiqiang Jiang, Qianhui Wu, Xufang Luo, Dongsheng Li, Chin-Yew Lin, Yuqing Yang, and Lili Qiu. 2024. Longllmlingua: Accelerating and enhancing llms in long context scenarios via prompt compression. In 
+
+Proceedings of the 62nd Annual Meeting of the As-sociation for Computational Linguistics (Volume 1: Long Papers) , pages 1658–1677. Hongye Jin, Xiaotian Han, Jingfeng Yang, Zhimeng Jiang, Zirui Liu, Chia-Yuan Chang, Huiyuan Chen, and Xia Hu. 2024. Llm maybe longlm: Self-extend llm context window without tuning. arXiv preprint arXiv:2401.01325 .Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph Gon-zalez, Hao Zhang, and Ion Stoica. 2023. Efficient memory management for large language model serv-ing with pagedattention. In Proceedings of the 29th symposium on operating systems principles , pages 611–626. Yaniv Leviathan, Matan Kalman, and Yossi Matias. 2023. Fast inference from transformers via spec-ulative decoding. In International Conference on Machine Learning , pages 19274–19286. PMLR. Yuhui Li, Fangyun Wei, Chao Zhang, and Hongyang Zhang. 2024. Eagle: Speculative sampling re-quires rethinking feature uncertainty. arXiv preprint arXiv:2401.15077 .Junhong Lin, Xinyue Zeng, Jie Zhu, Song Wang, Ju-lian Shun, Jun Wu, and Dawei Zhou. 2025. Plan and budget: Effective and efficient test-time scaling on large language model reasoning. arXiv preprint arXiv:2505.16122 .Jiachang Liu, Dinghan Shen, Yizhe Zhang, William B Dolan, Lawrence Carin, and Weizhu Chen. 2022. What makes good in-context examples for gpt-3? In 
+
+Proceedings of Deep Learning Inside Out (DeeLIO 2022): The 3rd workshop on knowledge extraction and integration for deep learning architectures , pages 100–114. Ziqing Qiao, Yongheng Deng, Jiali Zeng, Dong Wang, Lai Wei, Guanbo Wang, Fandong Meng, Jie Zhou, Ju Ren, and Yaoxue Zhang. 2025. Concise: Confidence-guided compression in step-by-step ef-ficient reasoning. In Proceedings of the 2025 Con-ference on Empirical Methods in Natural Language Processing , pages 8021–8040. Akshat Ramachandran, Marina Neseem, Charbel Sakr, Rangharajan Venkatesan, Brucek Khailany, and Tushar Krishna. 2025. Thinkv: Thought-adaptive kv cache compression for efficient reasoning models. 
+
+arXiv preprint arXiv:2510.01290 .Jiwon Song, Dongwon Jo, Yulhwa Kim, et al. 2026. Reasoning path compression: Compressing gener-ation trajectories for efficient llm reasoning. Ad-vances in Neural Information Processing Systems ,38:139724–139755. Mirac Suzgun, Nathan Scales, Nathanael Schärli, Se-bastian Gehrmann, Yi Tay, Hyung Won Chung, Aakanksha Chowdhery, Quoc Le, Ed Chi, Denny Zhou, et al. 2023. Challenging big-bench tasks and whether chain-of-thought can solve them. In Find-ings of the Association for Computational Linguistics: ACL 2023 , pages 13003–13051. Yuntian Tang, Bohan Jia, Wenxuan Huang, Lianyue Zhang, Jiao Xie, Wenxi Li, Rongrong Ji, and Shao-hui Lin. 2026. Towards efficient large language rea-soning models via extreme-ratio chain-of-thought compression. arXiv preprint arXiv:2602.08324 .Ye Tian and Aijun Liu. 2026. Shorter thoughts, same answers: Difficulty-scaled segment-wise rl for cot compression. arXiv preprint arXiv:2603.07598 .Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. 2022. Chain-of-thought prompting elicits rea-soning in large language models. Advances in neural information processing systems , 35:24824–24837. Heming Xia, Chak Tou Leong, Wenjie Wang, Yongqi Li, and Wenjie Li. 2025. Tokenskip: Controllable chain-of-thought compression in llms. In Proceed-ings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 3351–3363. Fangyuan Xu, Weijia Shi, and Eunsol Choi. 2023. Re-comp: Improving retrieval-augmented lms with com-pression and selective augmentation. arXiv preprint arXiv:2310.04408 .Silei Xu, Wenhao Xie, Lingxiao Zhao, and Pengcheng He. 2025. Chain of draft: Thinking faster by writing less. arXiv preprint arXiv:2502.18600 .An Yang, Beichen Zhang, Binyuan Hui, Bofei Gao, Bowen Yu, Chengpeng Li, Dayiheng Liu, Jianhong Tu, Jingren Zhou, Junyang Lin, et al. 2024a. Qwen2. 5-math technical report: Toward mathematical ex-pert model via self-improvement. arXiv preprint arXiv:2409.12122 .Ling Yang, Zhaochen Yu, Tianjun Zhang, Shiyi Cao, Minkai Xu, Wentao Zhang, Joseph E Gonzalez, and Bin Cui. 2024b. Buffer of thoughts: Thought-augmented reasoning with large language models. 
+
+Advances in Neural Information Processing Systems ,37:113519–113544. Peitian Zhang, Zheng Liu, Shitao Xiao, Ninglu Shao, Qiwei Ye, and Zhicheng Dou. 2025. Long context compression with activation beacon. In International Conference on Learning Representations , volume 2025, pages 101932–101948. Zhuosheng Zhang, Aston Zhang, Mu Li, and Alex Smola. 2022. Automatic chain of thought prompt-ing in large language models. arXiv preprint arXiv:2210.03493 .Appendix A Method and Implementation Details 
+
+This section provides additional implementation de-tails of Memory-Augmented Compression (MAC). We first describe the overall offline–online pipeline, followed by the memory representation, memory-bank construction procedure, tag-based retrieval, memory injection, and prompt templates used in our experiments. 
+
+A.1 Overall Pipeline 
+
+MAC consists of two stages: offline memory-bank construction and online memory-augmented com-pressed inference. During the offline stage, we construct a reusable memory bank B from historical solved examples 
+
+Dmem . For each example, we collect or generate a valid reasoning trace and associate it with struc-tured reasoning tags or a summary representation. The resulting memory bank is constructed once and reused across evaluation queries. During the online stage, given a new query x,MAC first constructs a query-side retrieval repre-sentation and retrieves the top-k relevant memories from B. The retrieved memories are serialized and injected into the prefill context together with the system instruction and the current query. The backbone model then performs inference under a specified reasoning compression method A.MAC does not update the parameters of the back-bone model. The memory representation, retriever, and compression method are modular components and can be replaced independently. Algorithm 1 summarizes the overall procedure. 
+
+A.2 Memory Representation 
+
+Each historical example is represented internally as a memory record 
+
+ei = ( xi, y i, r i, c i, t i, vi), (10) where xi and yi denote the historical problem and its answer, ri is the verified reasoning trace, ci is the memory content constructed under the selected memory format, ti denotes the structured reasoning tags, and vi is the embedding of ti. The complete memory bank is defined as 
+
+B = {ei}Ni=1 . (11) The complete record ei is retained internally for offline verification, retrieval, and analysis. At infer-ence time, MAC injects only the selected memory 
+
+Algorithm 1 MEMORY -A UGMENTED COMPRES -
+
+> SION
+
+Require: Historical examples Dmem , query x, sys-tem instruction I, model Mθ, compression method A, memory format f , and retrieval size k
+
+Ensure: Answer y and compressed reasoning trace z′ 
+
+> 1:
+
+B ← BuildMemoryBank( Dmem , f ) ▷
+
+Performed once offline  
+
+> 2:
+
+Online inference:  
+
+> 3:
+
+tx ← GenerateTags( x) 
+
+> 4:
+
+vx ← Embed( tx) 
+
+> 5:
+
+Mx ← RetrieveTopK( vx, B, k ) 
+
+> 6:
+
+fMx ← Serialize( Mx) 
+
+> 7:
+
+xmem ← [I; fMx; x] 
+
+> 8:
+
+(z′, y ) ← M θ(xmem ; A) 
+
+> 9:
+
+return (y, z ′)
+
+content ci, rather than the complete record, into the model context. Before injection, the memory content is converted into a textual representation: 
+
+mi = Serialize( ci). (12) We consider the following memory formats. 
+
+Long-CoT memory. The memory content ci con-tains the complete verified reasoning trace, pre-serving detailed intermediate derivations, subgoals, and operation sequences. Long-CoT memories re-tain the richest reasoning information but incur the largest prefill cost. 
+
+Short-CoT memory. The memory content ci
+
+contains a condensed reasoning trace that retains the principal solution steps and critical operations. This format reduces the number of injected tokens while preserving more procedural information than a high-level summary. 
+
+Summary memory. The memory content ci con-tains a structured summary of reusable reasoning information, including the problem type, key con-straints, subgoals, solution strategy, and critical operations. For a retrieved set Mx = {ei1 , . . . , e ik }, the corresponding injected memory context is 
+
+fMx = [ mi1 ; mi2 ; . . . ; mik ], (13) where the memories are ordered according to their retrieval scores. Algorithm 2 OFFLINE MEMORY BANK CON -
+
+> STRUCTION
+
+Require: Historical solved examples Dmem =
+
+{(xi, y i, r i)}Ni=1 , memory format f ∈{Long-CoT , Short-CoT , Summary }
+
+Ensure: Memory bank B 
+
+> 1:
+
+Initialize B ← ∅  
+
+> 2:
+
+for (xi, y i, r i) ∈ D mem do  
+
+> 3:
+
+if ri is incorrect, incomplete, or unparsable 
+
+then  
+
+> 4:
+
+continue  
+
+> 5:
+
+end if  
+
+> 6:
+
+ci ← BuildMemory( ri, f ) 
+
+> 7:
+
+ti ← GenerateTags( xi, c i) 
+
+> 8:
+
+if FormatCheck( ci, t i) then  
+
+> 9:
+
+vi ← Embed( ti) 
+
+> 10:
+
+ei ← (xi, y i, c i, t i, vi) 
+
+> 11:
+
+B ← B ∪ { ei} 
+
+> 12:
+
+end if  
+
+> 13:
+
+end for  
+
+> 14:
+
+return B
+
+A.3 Offline Memory-Bank Construction 
+
+The memory bank is constructed exclusively from historical examples that are disjoint from the cor-responding evaluation set. Algorithm 2 summa-rizes the offline construction procedure, including reasoning-trace validation, memory formatting, tag generation, and embedding computation. 
+
+Reasoning-trace collection. For each historical problem, we collect an available solution trace or generate a full reasoning trace using the designated reasoning model. The trace is paired with the cor-responding answer and source metadata. 
+
+Correctness and completeness filtering. We re-tain only examples whose final prediction matches the reference answer and whose reasoning trace contains a complete solution. Examples with un-parsable outputs, incomplete conclusions, or miss-ing solution annotations are discarded. 
+
+Memory annotation. For each retained example, we generate structured reasoning tags and, when required, a condensed summary. These annotations characterize the reusable reasoning structure of the example rather than only its surface-level vocabu-lary. 
+
+Data separation. Each memory bank is con-structed from historical examples that are disjoint from the corresponding evaluation set. Evaluation samples are never included in the memory bank or retrieval pool, and their answers and reasoning traces are not used during memory construction. Depending on the evaluation setting, historical ex-amples are drawn from official training splits, of-ficial prompt exemplars, or historical competition problems. Dataset-specific memory sources and filtering procedures are detailed in Appendix B.1, with final bank sizes summarized in Table 7. Once constructed, the memory bank remains fixed throughout evaluation. No evaluation answer or evaluation reasoning trace is used to construct or modify the memory bank. 
+
+A.4 Tag Generation and Query Representation 
+
+We use an LLM-based tag generator to produce structured reasoning descriptions for historical memory examples. The objective is to represent reusable reasoning attributes that may not be cap-tured by lexical similarity alone. For each historical example, the tag generator receives the problem together with the verified an-swer and produces a JSON object containing the following fields: • Knowledge Domains : the primary mathemat-ical, scientific, or logical domains involved in the problem. • Solution Strategies : the main reasoning pro-cedures, such as equation solving, case analy-sis, proportional reasoning, theorem applica-tion, or modeling. • Problem Type and Context : the problem form and application context, such as an arith-metic word problem, geometric calculation, scientific question, or logical deduction. • Complexity : the estimated reasoning depth, number of required steps, degree of interme-diate computation, and overall difficulty of solving the problem. A simplified representation of the output schema is shown below. 
+
+Reasoning-Tag Schema 
+
+> {"knowledge_domains": [...], "solution_strategies": [...], "problem_type_and_context": [...], "complexity": [...] }
+
+The generated tags are stored in si and used to construct the retrieval representation of each memory. For an evaluation query x, the same tag schema is applied using only the input question: 
+
+sx = TagGenerator( x). (14) The gold answer and gold reasoning trace of the evaluation query are never provided to the tag gen-erator. Memory-side tags can be generated offline when the bank is constructed. Query-side tags are gen-erated from the current input before retrieval. The exact tag-generation model and decoding settings are provided in Appendix B.4. 
+
+A.5 Retrieval and Memory Injection 
+
+Given a query x, we first obtain its structured tag representation sx and encode it into a dense vector: 
+
+qx = Enc( sx). (15) For every memory entry ei, the corresponding tag representation si is encoded as 
+
+qi = Enc( si). (16) We compute the relevance score between the query and each memory using cosine similarity: 
+
+ri = q⊤ 
+
+> x
+
+qi
+
+∥qx∥2∥qi∥2
+
+. (17) The top-k memories are selected according to 
+
+Mx = TopK ei∈B (ri, k ). (18) The selected memories are sorted in descending order of retrieval score and serialized according to the selected memory format. They are then con-catenated with the system instruction and current query: 
+
+xmem = [ I; fMx; x]. (19) The resulting sequence is processed during model prefill. The model subsequently generates a compressed reasoning trace z′ and final answer y
+
+under compression method A:
+
+(z′, y ) = Mθ(xmem ; A). (20) MAC does not require parameter updates dur-ing retrieval or inference. The retriever affects which memories are selected, while the compres-sion method independently determines how the model generates its decode-time reasoning trace. 
+
+A.6 Prompt Templates 
+
+We provide the principal prompt templates used in our experiments. The placeholder {question} 
+
+is replaced by the current input query, and 
+
+{retrieved_memory} is replaced by the serialized top-k memories. 
+
+Standard CoT Prompt        
+
+> Please reason step by step, and put your final answer within \boxed{}. Question: {question}
+
+CoD Prompt       
+
+> Think step by step, but only keep a minimum draft for each thinking step, with 5 words at most. Put your final answer within \boxed{}. Question: {question}
+
+Memory-Augmented Prompt                    
+
+> You are given relevant reasoning memories from historical examples. Use them as external reasoning scaffolds, but solve the current question independently. [Retrieved Memories] {retrieved_memory} [Current Question] {question} Think step by step, but keep the reasoning concise. Put your final answer within \boxed{}.
+
+For memory-augmented variants, the retrieved-memory block is inserted before the current query. The evaluation query itself is unchanged, and the re-trieved memories provide auxiliary reasoning con-text rather than a replacement for solving the cur-rent problem. 
+
+B Experimental Configuration 
+
+This section provides the complete experimental configuration used in our evaluation. We describe the dataset splits and memory sources, backbone models and compression baselines, hardware and software environment, decoding and retrieval hy-perparameters, answer-evaluation protocol, and la-tency measurement procedure. 
+
+B.1 Datasets, Splits, and Memory Banks 
+
+We evaluate MAC on arithmetic, mathematical, symbolic, scientific, and competition-level rea-soning benchmarks, including GSM8K (Cobbe et al., 2021), MATH-500 (Hendrycks et al., 2021), BBH (Suzgun et al., 2023), MMLU Sci-ence (Hendrycks et al., 2020), and AIME 2024. For every experimental setting, the memory source is disjoint from the corresponding evaluation set. Table 7 summarizes the evaluation splits, mem-ory sources, and final memory-bank sizes after cor-rectness, completeness, and format filtering. 
+
+GSM8K and MATH. For GSM8K and MATH, we construct memory banks from their official train-ing examples. We retain only examples with a correct and complete reasoning trace. GSM8K is evaluated on its official test set, while MATH is evaluated on the MATH-500 subset. The evaluation examples are not used during memory construction, tag generation, or retrieval-index construction. 
+
+BBH. We evaluate nine BBH tasks and use the three official CoT exemplars provided for each task as task-specific memories. This produces 27 mem-ories in total. The exemplars are used only as his-torical reasoning support and remain disjoint from the 495 evaluation examples. 
+
+MMLU Science. We select six science sub-jects: college physics, high school physics, college chemistry, high school chemistry, college biology, and high school biology. We perform a subject-stratified 80/20 split, using 80% of the examples for memory construction and the remaining 20% for evaluation. This setting keeps the memory and evaluation distributions aligned while ensuring that the two subsets remain disjoint. 
+
+AIME. For AIME 2024, we construct the mem-ory bank from historical AIME problems. We be-gin with problems collected from 1983 to 2024 and exclude all problems from 2023 and 2024 to pre-vent overlap with the evaluation period. We retain only problems with complete solution annotations and valid answers. The final bank contains 287 problems from 1983 to 2022. 
+
+B.2 Models and Baselines Open-weight models. Our main open-weight ex-periments use Qwen2.5-7B and LLaMA-3.1-8B. We additionally evaluate Qwen2.5-72B to examine whether the effect of memory-augmented compres-sion persists at a larger model scale. All models are used in their instruction-tuned form without additional fine-tuning or parameter updates. 
+
+API-based reasoning models. We further eval-uate MAC on three API-based reasoning mod-els: DeepSeek-V3.2, Qwen3.5-plus, and o4-mini. For all models, we preserve the same memory-construction, retrieval, and prompt-composition procedures whenever supported by the correspond-ing API. We report accuracy together with the num-bers of prefill and decode tokens, as well as their total, to characterize the effect of MAC on reason-ing performance and inference cost. 
+
+Reasoning baselines. Standard CoT prompts the model to generate an unconstrained step-by-step reasoning trace. Chain-of-Draft (CoD) constrains each intermediate reasoning step to at most five words. We additionally evaluate MAC as a plug-in module for TokenSkip, RPC, and Extra-CoT. For each compression method, the memory-augmented variant preserves the original compression instruc-tion and differs from its baseline only by the addi-tion of retrieved reasoning memories in the prefill context. We use the officially released implementations of the baseline methods whenever available. When an official implementation cannot be directly in-tegrated into our evaluation framework, we repro-duce the method according to the configuration reported in the corresponding paper. 
+
+B.3 Hardware and Software Environment 
+
+Open-weight model inference is conducted on a server equipped with eight NVIDIA H20 GPUs. The server runs Ubuntu 22.04, Python 3.12, and CUDA 12.8. Our implementation is based on PyTorch 2.5.1, Transformers 4.52.4, and vLLM 0.6.4.post1. We use vLLM for model serving, KV-cache man-agement, and batched generation. For each back-bone model, the tensor-parallel configuration re-mains fixed across all compared methods. Simi-larly, paired baseline and memory-augmented runs use the same hardware, model checkpoint, numeri-cal precision, batch size, and serving configuration. The memory bank, retrieval index, and memory-side tag embeddings are constructed before eval-uation. No model parameters are updated during memory construction, retrieval, or inference. 
+
+B.4 Decoding and Hyperparameter Settings 
+
+Unless otherwise specified, open-weight models use deterministic greedy decoding with tempera-ture T = 0 and ptop = 1 .0.Dataset Evaluation Split Eval. Size Memory Source Bank Size GSM8K Official test set 1,319 Filtered official training examples 4,307 MATH MATH-500 500 Filtered official training examples 2,242 BBH Nine selected tasks 495 Official task-specific CoT exemplars 27 MMLU-Sci Subject-stratified 20% split 79 Remaining 80% from the same six subjects 317 AIME 2024 Official 2024 problems 30 Historical AIME problems from 1983–2022 287 
+
+> Table 7: Dataset splits and memory-bank statistics. Bank Size denotes the number of retained memories after correctness, completeness, and format filtering. Evaluation examples are excluded from all memory banks and retrieval pools.
+
+Sampling is disabled for the main experiments. For robustness experiments involving nonzero tem-peratures, the corresponding temperature value is explicitly reported with the results. The maximum generation length is selected sep-arately for standard and compressed reasoning. Standard CoT is assigned a sufficiently large out-put budget to avoid truncating complete reasoning traces. Compressed baselines and their memory-augmented counterparts use the same maximum output length within each paired comparison. Thus, adding memory does not provide an additional decode-token budget. The retrieval size k, memory format, and com-pression strength are specified for each experimen-tal group. Unless otherwise indicated in the corre-sponding table or figure, the same retrieval size and memory format are used for all methods within a paired comparison. For retrieval-size analy-ses, we vary k ∈ { 1, 3, 5, 8, 10 , 12 , 14 , 16 , 18 , 20 }.For memory-format analyses, we compare Long-CoT, Short-CoT, and Summary memories under the same retriever, backbone model, and compression configuration. For TokenSkip experiments, the compression ratio is controlled by γ, which is varied over 
+
+{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}.For Extra-CoT, we evaluate the compression ra-tios reported in the corresponding experiment. All hyperparameters not directly related to memory in-jection are kept unchanged between a compressed baseline and its memory-augmented counterpart. The tag generator uses deterministic decoding. Memory-side tags and embeddings are generated once during offline memory-bank construction. For each evaluation input, query-side tags are generated using only the current question and then encoded using the same embedding model as the memory-side tags. The gold answer and gold reasoning trace are never provided during query-side tag gen-eration. 
+
+B.5 Evaluation Protocol 
+
+We report exact-match accuracy as the primary task-performance metric. For each model output, we first extract the final answer from the \boxed{} 
+
+field when present. If a valid boxed answer is un-available, we apply the corresponding benchmark-specific final-answer parser. 
+
+GSM8K. We normalize commas, whitespace, and numerical formatting before comparing the predicted answer with the reference answer. Only the final numerical answer is used for scoring. 
+
+MATH-500. We extract the final mathematical expression and evaluate it using the same normal-ization and mathematical-equivalence procedure for all methods. Equivalent fractions, algebraic expressions, and normalized numerical forms are treated as identical whenever recognized by the evaluator. 
+
+BBH and MMLU Science. For multiple-choice tasks, we extract the predicted option label and compare it with the gold option. Outputs that do not contain a valid option after parsing are counted as incorrect. 
+
+AIME. AIME predictions are normalized to an integer in the range [0 , 999] . Leading zeros do not affect correctness. Outputs that cannot be parsed as a valid integer are counted as incorrect. All methods are evaluated using the same answer-extraction and scoring scripts. Malformed, empty, or unparsable outputs are counted as incor-rect rather than discarded. Accuracy is computed as 
+
+Acc = 1
+
+|D eval |
+
+> |D eval |
+
+X
+
+> i=1
+
+I[ˆ yi = yi]. (21) In addition to accuracy, we report average prefill tokens, average decode tokens, total processed to-kens, model latency, and end-to-end latency when the required runtime measurements are available. B.6 Latency and Cost Measurement 
+
+We distinguish model execution latency from com-plete end-to-end latency. For an input query x,model latency is defined as 
+
+Tmodel = Tprefill + Tdecode (22) where Tprefill is the time required to process the complete input context and Tdecode is the time re-quired for autoregressive generation. The end-to-end latency of MAC additionally in-cludes online query processing and retrieval: 
+
+Te2e = Ttag + Tencode + Tsearch 
+
++ Tcompose + Tprefill + Tdecode . (23) denotes memory serialization and prompt construc-tion. Offline memory construction, memory-side tag generation, and memory-index construction are excluded from per-query latency because they are performed once and reused across evaluation in-puts. For prefill–decode cost analysis, we calculate the average per-token latencies over the complete evaluation set: 
+
+τpre =
+
+P 
+
+> i
+
+T (i)pre 
+
+P 
+
+> i
+
+N (i)pre 
+
+, τdec =
+
+P 
+
+> i
+
+T (i)dec 
+
+P 
+
+> i
+
+N (i)dec 
+
+. (24) All latency comparisons between a compressed baseline and its memory-augmented counterpart are performed using the same model, hardware, batch size, tensor-parallel configuration, and serv-ing process. Unless otherwise stated, latency re-sults are reported at batch size one. We additionally report batch-size-eight measurements to examine whether the prefill–decode asymmetry persists un-der batched inference. For API-based models, we calculate usage cost from the provider-reported input and output token counts and the applicable token prices at the time of evaluation. Memory tokens are counted as in-put tokens, while generated reasoning and final-answer tokens are counted as output tokens. Be-cause provider-side execution details are unavail-able, API experiments do not report separately mea-sured prefill and decode latency. 
+
+C Additional Experimental Results 
+
+This section provides the complete experimental results omitted from the main paper due to space constraints. We first report the overall results across                 
+
+> Method Acc. Prefill Decode Latency (ms) CoT 77.00 105.9 597.4 22592.1 CoD 62.20 121.9 122.9 4393.3 CoD+Memory 78.20 1772.6 373.0 13940.4
+
+Table 8: Results on MATH-500 with Qwen2.5-72B. Pre-fill and Decode denote the average numbers of input and generated tokens, respectively. CoD+Memory achieves a 1.62 × speedup over full CoT while improving accu-racy from 77.00% to 78.20%.                                                           
+
+> Model γBase +Mem. Gain Qwen2.5-7B 0.1 52.62 74.60 +21.99 0.2 60.65 74.53 +13.87 0.3 66.19 78.77 +12.59 0.4 68.08 80.74 +12.66 0.5 71.11 84.00 +12.89 0.6 77.26 84.99 +7.73 0.7 78.39 86.20 +7.81 0.8 82.79 86.88 +4.09 0.9 84.76 88.93 +4.17 LLaMA-3.1-8B 0.1 52.99 79.08 +26.08 0.2 66.19 80.21 +14.03 0.3 73.46 80.74 +7.28 0.4 74.37 80.36 +5.99 0.5 77.26 81.12 +3.87 0.6 77.10 81.73 +4.62 0.7 79.38 81.27 +1.90 0.8 79.68 81.20 +1.52 0.9 80.82 82.56 +1.74
+
+Table 9: Full TokenSkip plug-in results on GSM8K with top-k = 5 Long-CoT memories. 
+
+reasoning domains and compression methods, fol-lowed by detailed analyses of compression plug-in compatibility, memory format, retrieval size, com-pression strength, and decoding robustness. 
+
+C.1 Model Scaling Scaling to Qwen2.5-72B. We further evaluate MAC on Qwen2.5-72B using MATH-500 to ex-amine whether the benefits of memory-augmented compression persist at a larger model scale. As shown in Table 8, CoD substantially reduces de-code length and latency relative to full CoT, but incurs a notable accuracy drop. Adding retrieved reasoning memories recovers and slightly surpasses the full-CoT accuracy, while remaining consider-ably faster than full CoT. Compared with full CoT, CoD reduces aver-age decode tokens from 597.4 to 122.9 and low-ers latency from 22592.1 ms to 4393.3 ms, but its accuracy decreases by 14.8 percentage points. CoD+Memory increases the prefill context to 1772.6 tokens and generates 373.0 decode tokens Model γ Base +Mem. Gain Qwen2.5-7B 0.1 12.00 13.20 +1.20 0.2 19.60 22.20 +2.60 0.3 28.00 33.60 +5.60 0.4 34.40 44.80 +10.40 0.5 38.00 52.80 +14.80 0.6 42.60 58.40 +15.80 0.7 49.20 64.40 +15.20 0.8 50.40 67.60 +17.20 0.9 55.40 70.80 +15.40 LLaMA-3.1-8B 0.1 18.00 7.20 -10.80 0.2 17.60 19.80 +2.20 0.3 14.20 30.60 +16.40 0.4 22.20 37.60 +15.40 0.5 24.60 41.60 +17.00 0.6 29.40 43.20 +13.80 0.7 31.80 43.40 +11.60 0.8 34.20 43.40 +9.20 0.9 37.20 43.00 +5.80 
+
+Table 10: Full TokenSkip plug-in results on MATH-500 with top-k = 5 Long-CoT memories. 
+
+on average, recovering accuracy to 78.20%. De-spite the additional prefill and decode cost relative to CoD, CoD+Memory remains 1.62 × faster than full CoT. These results indicate that MAC contin-ues to provide a favorable accuracy–latency trade-off at the 72B model scale. 
+
+C.2 Compression Plug-in Results 
+
+We provide the complete compression-ratio re-sults for TokenSkip and Extra-CoT. For Token-Skip, the reported memory-augmented variants use top-k = 5 Long-CoT memories. Base denotes the original compression method without Mem-ory, and +Mem. denotes its memory-augmented counterpart. Accuracy and gains are reported in percentage points. 
+
+C.2.1 TokenSkip 
+
+Tables 9 and 10 report the complete TokenSkip re-sults on GSM8K and MATH-500, respectively. All memory-augmented variants use top-k = 5 Long-CoT memories. Across most compression ratios and both backbone models, Memory consistently improves the corresponding TokenSkip baseline. The gains are generally larger under strong or in-termediate compression, while becoming smaller as the compressed baseline approaches its uncom-pressed performance. On GSM8K, Memory improves TokenSkip across all reported compression ratios and both backbone models. On MATH-500, Memory also yields consistent gains except for the most aggres-                                  
+
+> Dataset Ratio kBase +Mem. GSM8K 0.2 574.07 67.70 0.4 578.92 71.65 0.6 584.69 80.74 0.8 585.75 80.52 1.0 583.70 81.80 MATH 0.2 529.20 24.40 0.4 531.80 27.00 0.6 541.80 37.60 0.8 539.80 41.20
+> 1.0 535.80 40.40
+
+Table 11: Full Extra-CoT plug-in results with Qwen2.5-7B and top-k = 5 Long-CoT memories. 
+
+sive LLaMA-3.1-8B setting at γ = 0.1. The strongest improvements generally occur under in-termediate compression, suggesting that retrieved reasoning is most effective when the model retains sufficient internal reasoning capacity to interpret and apply the external scaffold. 
+
+C.2.2 Extra-CoT 
+
+The Extra-CoT results reveal a method-dependent boundary of memory augmentation. Memory im-proves MATH at the two highest reported ratios, but does not improve the remaining configurations. This indicates that retrieved reasoning is not uni-formly beneficial for every compressor and com-pression strength. 
+
+C.3 End-to-End Latency Breakdown 
+
+We provide a full latency breakdown to quantify the online overhead of memory-augmented inference. We distinguish post-retrieval model inference from complete end-to-end latency. Post-retrieval infer-ence includes only model prefill and autoregressive decoding, whereas end-to-end latency additionally includes all online operations required to retrieve memories for the current query. The online retrieval latency is defined as 
+
+Tret = Ttag + Temb + Tsearch , (25) where Ttag denotes query-tag generation, Temb de-notes query embedding, and Tsearch denotes top-k
+
+vector search. The complete end-to-end latency is 
+
+Te2e = Tret + Tprefill + Tdecode . (26) Table 12 reports the latency breakdown on GSM8K. For standard CoT, no external retrieval is performed, and its end-to-end latency there-fore equals its prefill and decode latency. For Method Acc. (%) Prefill + Decode (ms) Query Tag + Embedding (ms) Vector Search (ms) End-to-End Latency (ms) E2E Speedup CoT 91.4 3742.5 – – 3742.5 1.00 ×            
+
+> CoD+Memory 89.3 2515.4 683.0 0.10 3198.5 1.17 ×
+> Table 12: End-to-end latency breakdown on GSM8K. Prefill + Decode denotes post-retrieval model inference latency. For CoD+Memory, end-to-end latency additionally includes query-tag generation, query embedding, and top-kvector search.
+> (a) Qwen2.5-7B on MATH. (b) LLaMA-3.1-8B on MATH.
+> Figure 6: Additional compression-ratio curves on MATH. We compare no-memory baselines with Memory using Long-CoT and Short-CoT formats under different retrieval sizes k∈ { 3,5,10 }.
+
+CoD+Memory, query-tag generation and query em-bedding require 683 .0 ms per query, while top-k
+
+vector search requires only 0.10 ms. Thus, vec-tor search itself contributes negligible overhead, whereas query-side semantic processing constitutes the dominant retrieval cost. After including all online retrieval operations, CoD+Memory requires 3198 .5 ms per query, com-pared with 3742 .5 ms for standard CoT, corre-sponding to a 1.17 × end-to-end speedup. There-fore, although query-tag generation and embedding introduce additional overhead, MAC still achieves lower end-to-end latency than standard CoT. The results further suggest that optimizing query-side representation is more important for reducing re-trieval overhead than optimizing the vector-search operation itself. 
+
+C.4 Compression Ratio Analysis 
+
+To complement the GSM8K compression-ratio analysis in the main paper, Figure 6 reports addi-tional results on MATH. The figure compares Long-CoT and Short-CoT memories under retrieval sizes 
+
+k ∈ { 3, 5, 10 }.Across Qwen2.5-7B and LLaMA-3.1-8B, mem-ory gains remain dependent on compression strength. Unlike GSM8K, where the largest gains frequently appear under strong compression, MATH often achieves its largest gains under inter-mediate compression. This suggests that retrieved memories do not fully replace model-side reason-ing. On harder problems, overly aggressive com-pression may remove the internal reasoning capac-ity needed to interpret and apply the retrieved scaf-fold. 
+
+C.5 Memory Format Analysis 
+
+Table 14 reports the complete per-γ results for the memory-format analysis. Experiments are con-ducted under TokenSkip compression on GSM8K with top-k = 5 retrieval. The main paper reports aggregated gains over strong, medium, and mild compression regimes, whereas this table provides the result for each compression ratio. The complete results follow the trend observed in the main paper: memory gains are generally largest under stronger compression, while Long-CoT memories remain more stable than Short-CoT memories as the compression constraint becomes milder. 
+
+C.6 Memory Size Analysis 
+
+Table 13 reports accuracy and token statistics un-der different numbers of retrieved memories. We vary k on Qwen2.5-7B and evaluate the resulting coverage–noise trade-off. For GSM8K and MATH, increasing k substan-tially increases the prefill length, while the decode length remains comparatively stable. Accuracy initially improves as the retrieved memories pro-vide broader reasoning coverage, but eventually saturates or decreases as irrelevant or redundant memories introduce additional noise. This behav-ior supports the coverage–noise trade-off discussed in the main paper. GSM8K MATH MMLU-Sci                                                                                                                          
+
+> kAcc. Prefill Decode kAcc. Prefill Decode kAcc. Prefill Decode 173.39 259.0 57.9 152.20 348.8 152.8 155.07 267.1 51.6 376.27 509.4 59.9 353.20 751.0 190.6 365.64 493.5 68.3 577.26 759.8 61.3 553.40 1134.4 202.6 562.11 493.6 66.5 878.15 1132.1 61.7 858.60 1729.8 218.1 866.52 493.6 67.7 10 78.47 1379.2 61.9 10 58.80 2124.9 227.1 10 65.20 493.6 67.8 12 78.62 1631.7 61.3 12 59.00 2522.5 313.7 12 66.96 493.5 68.8 14 80.52 1880.9 61.8 14 59.60 2927.7 273.4 14 65.64 493.6 68.9 16 79.91 2129.3 60.8 16 62.60 3329.5 297.0 16 64.32 493.6 68.3 18 80.29 2378.2 61.5 18 62.40 3715.0 327.4 18 66.56 493.6 66.9 20 79.68 2627.6 60.9 20 57.40 4120.3 226.5 20 65.20 493.6 69.1
+
+Table 13: Full memory-size results with Qwen2.5-7B. We report accuracy and average prefill and decode tokens under different values of k.                                         
+
+> γLLaMA-3.1-8B Qwen2.5-7B Long Short Long Short 0.1 +30.71 +31.54 +33.66 +29.04 0.2 +14.25 +13.57 +17.97 +16.15 0.3 +7.28 +7.05 +11.75 +8.49 0.4 +6.44 +4.85 +4.40 +1.67 0.5 +4.70 +3.18 +3.56 +1.06 0.6 +4.85 +3.56 +0.30 +0.91 0.7 +1.90 +1.44 +0.30 -0.45 0.8 +1.67 +1.52 +0.15 -2.05 0.9 +2.58 +0.08 -0.45 -0.91
+
+Table 14: Full memory-format results under TokenSkip compression on GSM8K. Values denote accuracy gains over the corresponding no-memory compressed baseline in percentage points. Both Long-CoT and Short-CoT memories use top-k = 5 retrieval. 
+
+C.7 Decoding Robustness 
+
+Table 15 reports the complete temperature analysis. We evaluate full CoT and the corresponding com-pressed memory-augmented method under temper-atures T ∈ [0 , 1] , reporting accuracy and average decode tokens. Across the evaluated temperatures, the memory-augmented method exhibits smaller variation in both accuracy and decode length. However, this analysis measures sensitivity across temperature settings and should not be interpreted as a repeated-seed estimate of statistical uncertainty. 
+
+D Statement on the Use of AI Assistants 
+
+During the preparation of this work, we utilized an AI assistant (e.g., ChatGPT) for tasks such as proofreading and improving language clarity. The core ideas, experimental design, and final text were authored by the human authors, who take full re-sponsibility for the content of this paper.                                        
+
+> Temperature Standard CoT Memory
+> TAcc. Decode Acc. Decode 0.0 90.1 282 81.8 68.2 0.2 90.8 288 82.1 68.7 0.4 91.2 293 82.3 69.0 0.6 89.8 297 81.9 68.5 0.8 90.5 301 82.0 68.9 1.0 91.0 304 82.0 69.1 Range 1.40 22.00 0.50 0.90 Across-TStd. 0.49 7.51 0.16 0.31
+
+Table 15: Full temperature results for decoding robust-ness. Accuracy is reported in percentage points, and Decode denotes the average number of generated tokens. Across-T Std. denotes the standard deviation across the six temperature settings rather than across repeated ran-dom runs. 
+
+E Data and Code Availability 
+
+All datasets used in this work are publicly available academic benchmarks, including GSM8K (Cobbe et al., 2021), MATH (Hendrycks et al., 2021), BBH (Suzgun et al., 2023), MMLU Sci-ence (Hendrycks et al., 2020), and AIME 2024. We use these datasets solely for research purposes and follow their respective licenses and terms of use. For baseline methods, including TokenSkip, RPC, and Extra-CoT, we use the officially released implementations whenever available or reproduce them according to their reported settings. An anonymized code package containing the MAC implementation, experimental configurations, and evaluation utilities is included in the supplemen-tary material. Upon publication, we will release the source code under the MIT License.
