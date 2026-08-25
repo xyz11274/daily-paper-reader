@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-24</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-25</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 15 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 0 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>5</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>10</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>0</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-08-24 20:26:35 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-08-25 21:16:26 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,10 +62,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共生成 15 篇推荐（精读 5 篇，速读 10 篇）</p>
-<p>精读：《AI4AI-Bench: Benchmarking LLM Agents in Algorithmic Design for Recursive Self-Improvement》（10.0/10）, 《SPADE: Self-Play in Adaptive Synthetic Executable Environments》（9.0/10）</p>
-<p>速读：《Adaptive Mixing of Policies from Searching and Policies from Learning》（7.0/10）, 《When AI Designs AI: Innovation or Imitation?》（7.0/10）, 《Automating Parent Selection Configuration in Genetic Programming with Agentic AI》（6.0/10）</p>
-<p>这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。</p>
+<p>今日无新推荐，系统未产出可展示论文。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -74,12 +71,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">5 篇</strong>
+    <strong class="dpr-home-dashboard-count">0 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="AI4AI-Bench: Benchmarking LLM Agents in Algorithmic Design for Recursive Self-Improvement">AI4AI-Bench: Benchmarking LLM Agents in Algorithmic Design for Recursive Self-Improvement</span></li><li><span class="dpr-home-dashboard-paper-title" title="SPADE: Self-Play in Adaptive Synthetic Executable Environments">SPADE: Self-Play in Adaptive Synthetic Executable Environments</span></li><li><span class="dpr-home-dashboard-paper-title" title="Eureka: Task-Conditioned Meta-Agent Orchestration for Scientific Discovery">Eureka: Task-Conditioned Meta-Agent Orchestration for Scientific Discovery</span></li></ul>
+<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span><span class="dpr-home-dashboard-tag">seb <strong>2</strong></span></div>
+
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -87,12 +84,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">10 篇</strong>
+    <strong class="dpr-home-dashboard-count">0 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Adaptive Mixing of Policies from Searching and Policies from Learning">Adaptive Mixing of Policies from Searching and Policies from Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="When AI Designs AI: Innovation or Imitation?">When AI Designs AI: Innovation or Imitation?</span></li><li><span class="dpr-home-dashboard-paper-title" title="Automating Parent Selection Configuration in Genetic Programming with Agentic AI">Automating Parent Selection Configuration in Genetic Programming with Agentic AI</span></li></ul>
+<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>9</strong></span><span class="dpr-home-dashboard-tag">seb <strong>1</strong></span></div>
+
 </section>
 </div>
 
