@@ -1,0 +1,535 @@
+Title: HarnessEvolve: Learning from Reference Trajectories for Reliable Agent Self-Evolution
+
+URL Source: https://arxiv.org/pdf/2609.00829v1
+
+Published Time: Wed, 02 Sep 2026 00:53:14 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# HarnessEvolve: Learning from Reference Trajectories for Reliable Agent Self-Evolution 
+
+Wen Jiang ∗, Mingmin Chu ∗, Yimeng Tian ∗, Qianxin Zhang ∗, Haofei Yang Rui Yang, Yang Liu, Tao Lv, Fangming Li 
+
+ICT AI Competence Center, Huawei Technologies, Shanghai, China 
+
+{yangrui235, lifangming1}@huawei.com 
+
+> ∗
+
+Equal contribution. Corresponding authors: Rui Yang, Fangming Li 
+
+Abstract 
+
+Self-evolving agents advance toward autonomy by optimizing their harness— prompts, skills, tools, and execution logic—based on environmental feedback. This paradigm, however, is hampered by three challenges: credit assignment failure , where terminal success/failure feedback makes it ambiguous which step caused the error; shortcut learning , where agents memorize task-specific patterns rather than acquire generalizable capabilities; and catastrophic forgetting , where unguarded updates degrade previously acquired competence. In this paper, we introduce HarnessEvolve, a self-evolving framework that learns from reference trajectories to achieve reliable agent self-evolution. HarnessEvolve decouples the execution agent from the evolutionary pipeline, assigning execution, evaluation, optimization, and gating to independent agent modules, enabling generalizable and stable harness improvements. Specifically, HarnessEvolve overcomes credit assignment failure by generating reference trajectories (execution paths produced when given the ground-truth answers) and aligning failed executions against them to extract error signals, which are clustered to reveal systematic failure patterns. To prevent shortcut learning and catastrophic forgetting, candidate harness updates must pass two gates: a quality gate that filters data leakage and prompt bloat, and a performance gate that accepts each update if it improves on the current batch without degrading recent batches, with epoch-end validation on a held-out set selecting the best-performing accepted agent snapshot. We conduct extensive ex-periments on several benchmarks spanning open-domain and enterprise scenarios, using different models and agent frameworks. Results demonstrate that HarnessE-volve consistently outperforms state-of-the-art baselines across all benchmarks and settings, confirming reliability across task domains. 
+
+1 Introduction 
+
+Large language models (LLMs) have demonstrated remarkable capabilities in reasoning, planning, and tool use, enabling the development of autonomous agents that tackle complex tasks across domains ranging from software engineering to enterprise data analysis. At the core of such agents is their harness : the prompts, skills, tools, and execution logic that collectively shape their capabilities and execution behavior. The design of such harnesses has evolved through several waves of decreasing reliance on human priors. Early systems relied on handcrafted workflows [Wei et al., 2022, Yao et al., 2023b], where human experts explicitly design execution logic, search topologies, and collaboration structures, while LLMs serve as execution nodes within predefined boundaries. While this paradigm offers high controllability, it lacks flexibility: deviations from anticipated workflows can cause the entire pipeline to fail, and agents remain bounded within human-designed frameworks, unable to expand without 
+
+> Preprint. arXiv:2609.00829v1 [cs.LG] 1 Sep 2026
+
+human intervention [Sumers et al., 2024]. Skill-augmented agents relax this rigidity: humans provide skills (described in natural language) and models operate within autonomous perception-planning-action-observation loops, exemplified by systems such as Claude Code and OpenClaw. This paradigm enables dynamic trial-and-error and self-healing through iterative reasoning, but it remains bounded by the quality of human-provided skills and can become stuck in iterative retry loops when initial planning decisions are incorrect. These limitations motivate the pursuit of self-evolving agents that can autonomously synthesize, refine, and iteratively improve their own harness from environmental feedback, progressively reducing reliance on human priors. Despite recent progress, self-evolving agents remain difficult to deploy in real-world settings. Existing frameworks typically provide only sparse, terminal rewards (i.e., a binary success/failure signal at the end of execution), without mechanisms for fine-grained trajectory analysis to indicate which intermediate actions were correct or incorrect. Under such sparse signals, models tend to take shortcuts and overfit to specific evaluation instances, while unverified updates compound over iterations, gradually degrading prior capabilities. We identify three fundamental challenges that hinder reliable self-evolution: • Credit Assignment Failure: In long-horizon tasks, agents receive only binary suc-cess/failure signals at the end. When a failure occurs, the agent cannot identify which specific action caused it, because later errors are downstream consequences of earlier mis-takes. Solely reflecting on the whole trajectory may misidentify the root cause, leaving optimization directionless. • Shortcut Learning: Without safeguards, agents tend to hardcode answers or inject excessive task-specific in-context examples into the harness, causing data leakage and prompt bloat that inflate training accuracy without genuine capability gain. • Catastrophic Forgetting: Since each harness update is optimized on a subset of trajectory data, it may conflict with previously acquired competence, gradually degrading existing capabilities over multiple iterations. These challenges cannot be resolved by designing yet another iterative prompt optimization algo-rithm; they necessitate a system-level architectural shift. To this end, we introduce HarnessEvolve, a self-evolving framework that learns from reference trajectories to achieve reliable agent self-evolution. Rather than entangling execution and optimization in a single reasoning loop, HarnessEvolve decou-ples the execution agent from the evolutionary pipeline, assigning execution, evaluation, optimization, and gating to independent modules, ensuring that optimization decisions are auditable and cannot be gamed by the execution agent. Concretely, the execution agent runs tasks using its harness, which serves as the target of optimization. An evaluation agent assesses both the accuracy of the execution agent and the reliability of reference trajectories, the latter produced by the execution agent given the question and its ground-truth answer. Based on these assessments, an optimization agent analyzes failed executions by comparing them against reference trajectories to identify the first point of divergence, isolating the root-cause action from downstream cascading errors; these error signals are aggregated via error clustering to identify systematic failure patterns. A gate agent then inspects candidate updates for data leakage (by comparing content against failed training instances) and prompt bloat (by counting injected in-context examples), rejecting updates that exhibit either. Finally, the performance gate accepts each candidate only if it improves on the current batch without degrading recent batches, with epoch-end validation on a held-out set selecting the best-performing accepted agent snapshot. We evaluate HarnessEvolve against several self-evolving baselines (GEPA [Agrawal et al., 2025], ACE [Zhang et al., 2026b], and SkillOpt [Yang et al., 2026]), each optimizing only a single component of the harness (e.g., SkillOpt optimizes solely skill.md ), on five benchmarks spanning open-domain tasks (SearchQA [Dunn et al., 2017], OfficeQA [Opsahl-Ong et al., 2026], SpreadsheetBench [Ma et al., 2024b]) and specialized enterprise QA and text-to-SQL tasks (CloudCoreNetwork-QA and Wireless-QA, two in-house datasets from cloud core network and wireless network domains). Harnes-sEvolve consistently outperforms all baselines on all five benchmarks in terms of accuracy. Notably, on CloudCoreNetwork-QA, HarnessEvolve outperforms the strongest baseline by 21.6 percentage points, demonstrating substantial gains on complex multi-skill enterprise tasks. In summary, the main contributions of HarnessEvolve are fourfold: 2• Reference-Guided Error Diagnosis: A diagnostic method that overcomes credit assign-ment failure by comparing failed executions against reference trajectories. The resulting error signals are aggregated via error clustering to identify systematic failure patterns. • Quality Gate against Shortcut Learning: A filtering mechanism that inspects candidate updates for data leakage and prompt bloat. Only harness updates that pass both checks are retained for downstream validation. • Performance Gate for Stable Evolution: A validation-gated update protocol that mitigates catastrophic forgetting. Each harness candidate is accepted into an agent snapshot pool only if it improves on the current batch without degrading recent batches, with epoch-end validation on a held-out set selecting the best-performing snapshot. • Comprehensive and Reliable Harness Self-Evolution: Built on a decoupled multi-agent architecture, HarnessEvolve constitutes a comprehensive and reliable harness self-evolution framework that optimizes the entire harness rather than a single component, achieving state-of-the-art accuracy on both in-house enterprise and open-source benchmarks. 
+
+2 Related Work 
+
+Handcrafted agents rely on human-designed static workflows, where experts define prompt templates, reasoning structures, search topologies, and collaborative pipelines [Wei et al., 2022, Yao et al., 2023b, Press et al., 2023, Yao et al., 2023a, Besta et al., 2024, Hong et al., 2024, Qian et al., 2024, Wu et al., 2023, Schick et al., 2023]. Representative systems include LangChain/LangGraph and visual builders like Flowise and Dify. While offering high controllability, this paradigm confines agents within predefined boundaries and scales poorly as task complexity grows [Khattab et al., 2024, Zhou et al., 2024, Sumers et al., 2024, Liu et al., 2024, Ma et al., 2024a]. Skill-augmented agents relax this rigidity: humans provide skills in natural language while models operate within autonomous reasoning loops [Yao et al., 2023b], exemplified by Claude Code and OpenClaw. While enabling dynamic trial-and-error, this paradigm faces a critical limitation: agent performance remains heavily dependent on the quality of human-provided skills [Yang et al., 2026, Liang et al., 2026], creating a bottleneck for scalability. These limitations motivate self-evolving systems that can autonomously synthesize, refine, and iteratively improve their own harness from environmental feedback, progressively reducing reliance on human priors. Self-evolving agents aim to autonomously optimize their inner logic. Current approaches opti-mize along multiple dimensions: workflow-level architecture design [Zhang et al., 2025, Liu et al., 2025], prompt-level optimization (e.g., OPRO [Yang et al., 2023], APO [Pryzant et al., 2023], and GEPA [Agrawal et al., 2025]), context-level evolution such as Reflexion [Shinn et al., 2023], Ex-peL [Zhao et al., 2024], and ACE [Zhang et al., 2026b], and tool/skill-level refinement including Voyager [Wang et al., 2024] and SkillOpt [Yang et al., 2026]. However, each optimizes only a single component of the harness independently, leaving the rest untouched and limiting the space of achievable improvements. More recently, methods that directly evolve a more comprehensive harness system have emerged: Self-Harness [Zhang et al., 2026a] introduces an iterative loop of weakness mining, harness proposal, and regression-testing-based validation, while Agentic Harness Engineering (AHE) [Lin et al., 2026] evolves coding-agent harnesses through observability-driven falsifiable contracts. Despite their advances, these methods keep credit assignment unresolved (i.e., no reference-based root-cause localization), leave shortcut learning unguarded (i.e., no inspection of data leakage or prompt bloat), and only partially mitigate catastrophic forgetting (i.e., no agent snapshot pool)—gaps that HarnessEvolve addresses. 
+
+3 Methodology 
+
+3.1 Overview 
+
+We consider the problem of agent self-evolution. Given a task corpus T = {(qi, a ∗ 
+
+> i
+
+)}Mi=1 of M query-answer pairs (where a∗ 
+
+> i
+
+is the ground-truth answer to query qi) split into training Ttrain , validation 
+
+Tval , and test Ttest sets, and a base execution agent Aexec powered by a frozen LLM that runs tasks 3Rollout Failed Trajectories Generated Reference 
+
+Batch 1 Batch 
+
+Batch 
+
+Data Pre-processing 
+
+Epoch Optimization 
+
+SELF-EVOLUTION Next  Epoch 
+
+Internal Batch Optimization Loop 
+
+( is the snapshot pool) 
+
+Stage IV: Gated Update 
+
+Data Leakage & Prompt Bloat 
+
+Quality Gate 
+
+> x
+
+Stage I:  Trajectory Comparison 
+
+Error Signal 
+
+First Divergence Point 
+
+Stage II:  Error Clustering 
+
+Structured Error Groups 
+
+> Group by Error Type
+> Feature Space
+
+Stage III:  Candidate Generation 
+
+> Candidate Generator
+
+Edits : Prompts, Skills, Tools, Execution Logic 
+
+Candidate Update 
+
+> try: result = future.result() status = "SUCCESS" if result["success"] else "FAILED" completed += 1 print( f"[Collection] [{completed}/{total}] Worker-{worker_id} ({result['question'][:50]}) ({status})" )try: result = future.result() status = "SUCCESS" if result["success"] else "FAILED" completed += 1 print( f"[Collection] [{completed}/{total}] Worker-{worker_id} ({result['question'][:50]}) ({status})" )try: result = future.result() status = "SUCCESS" if result["success"] else "FAILED" completed += 1 print( f"[Collection] [{completed}/{total}] Worker-{worker_id} ({result['question'][:50]}) ({status})" )
+
+Performance Gate 
+
+> REJECT ACCEPT
+
+Batch 2 Current Harness  (End of All Batches  )
+
+Final  Test Stopping Criteria 
+
+OR 
+
+Optimization Agent 
+
+Excution Agent Evaluation Agent 
+
+Gate Agent 
+
+Pass! No Improvement for  Epochs Maximum Epoch Reached 
+
+> Max
+
+Figure 1: Overview of the HarnessEvolve self-evolution framework. Four agents— Aexec , Aeval , Aopt ,
+
+Agate —collaborate in a batch-driven loop: the execution agent produces trajectories, the evaluation agent identifies failures and verifies references, the optimization agent diagnoses and clusters errors to generate candidate harness updates, and the gate agent enforces quality and performance checks before accepting updates into the snapshot pool V.from T , the goal is to find the optimal execution agent A∗ by iteratively optimizing its harness— prompts, skills, tools, and execution logic—on Ttrain without human intervention, such that accuracy on the validation set Tval is maximized. The test set Ttest is used to evaluate the final accuracy of A∗.HarnessEvolve addresses this through an architecture (Figure 1) that separates the execution agent from the evolutionary pipeline, assigning execution, evaluation, optimization, and gating to indepen-dent agent modules: • Execution: The execution agent Aexec , the target of optimization, runs tasks from Ttrain 
+
+using its harness. For each task in Ttrain , the execution agent is also run with the question and its ground-truth answer to produce reference trajectories that reach the correct answer. • Evaluation: The evaluation agent Aeval performs two assessments: (1) it evaluates the task accuracy of the execution agent and identifies failed trajectories; (2) it verifies that reference trajectories are genuine execution paths rather than shortcuts where the agent directly returns the known answer, ensuring reference trajectory reliability. • Optimization: The optimization agent Aopt analyzes failed trajectories and, when ref-erence trajectories are available, compares them to identify the root cause of failures. It clusters batch-level errors to identify systematic error patterns, and based on these diagnoses, proposes targeted modifications for the harness of Aexec .• Gating: The gate agent Agate enforces two checks for the harness modifications proposed by Aopt : (1) a data leakage and prompt bloat inspection, where modifications violating these constraints are returned to Aopt for revision; (2) a performance check, where a modification is accepted only if it improves accuracy on the current batch without degrading performance on R previously executed batches. To optimize the harness of the base execution agent Aexec , HarnessEvolve runs in a batch-driven loop. At the start of each epoch, Ttrain is randomly permuted and partitioned into mini-batches 
+
+B = PermuteAndPartition( Ttrain , b ) = {B1, B 2, . . . }, where b is the batch size and Bj denotes the j-th mini-batch. For each mini-batch Bj , the four agents collaborate in sequence: the execution agent produces trajectories, the evaluation agent identifies failed trajectories, the optimization agent generates candidate modifications, and the gate agent validates and accepts beneficial modifications, storing each accepted harness as a snapshot in a pool V. After all mini-batches in B complete, the best-performing snapshot on Tval is selected as the final harness of the epoch, and the optimization loop continues for several epochs. 43.2 Execution 
+
+The execution agent Aexec runs tasks from Ttrain using its harness, the collection of prompts, skills, tools, and execution logic that defines its behavioral space. For each query qi in Ttrain , Aexec 
+
+produces a trajectory τi = [( o1, a 1), (o2, a 2), . . . , (oTi , a Ti )] , where ot and at denote the observation and action at step t, and Ti is the trajectory length. To address credit assignment failure, prior to the optimization loop, Aexec is also run on all tasks in 
+
+Ttrain with both the questions and their ground-truth answers. For each task, Aexec attempts up to 
+
+Tatt times; after each attempt, the evaluation agent Aeval verifies whether the produced trajectory is genuine (Section 3.3). Once a trajectory passes verification, it is stored as the verified reference trajectory τ + 
+
+> i
+
+in a global cache C. If all Tatt attempts fail to produce the correct answer or to pass 
+
+Aeval ’s verification, the task is left without a reference trajectory and falls back to single-trajectory analysis during optimization. These reference trajectories provide successful execution paths that can be compared against failed trajectories to pinpoint the first point of divergence (the specific action where Aexec went wrong) rather than attributing failure to the entire trajectory. This reference-guided comparison enables fine-grained error diagnosis that cannot be achieved by reflecting on failed trajectories alone. 
+
+3.3 Evaluation 
+
+The evaluation agent Aeval serves a dual role: assessing execution accuracy during optimization and verifying reference trajectory genuineness during reference trajectory generation. Both assessments are essential for reliable error diagnosis. 
+
+Accuracy Assessment. During each optimization batch, Aeval collects the trajectories produced by Aexec on the current mini-batch Bj , and compares the final output of each trajectory against the corresponding ground-truth answer a∗ 
+
+> i
+
+. Trajectories that fail to produce the correct answer are collected as the failed set Fj = {(qi, τ − 
+
+> i
+
+)}, which serves as input to the error diagnosis pipeline (Section 3.4). Moreover, the accuracy assessment on Bj also determines whether the candidate harness updates are accepted by the performance gate (Section 3.5). 
+
+Reference Verification. Since Aexec is given the ground-truth answer during reference trajectory generation, it might produce a trajectory that shortcuts through the reasoning: for example, directly outputting the answer without invoking the necessary tools or following the expected workflow. To prevent this, Aeval verifies each produced trajectory before it enters the cache C. The verification checks that the trajectory follows a legitimate reasoning chain: Aexec invokes appropriate tools, processes intermediate observations, and arrives at the answer through valid steps rather than trivially restating the provided answer. Only verified trajectories are stored as τ + 
+
+> i
+
+; unverified ones are rejected, and Aexec continues to the next attempt (Section 3.2). 
+
+3.4 Optimization 
+
+The optimization agent Aopt analyzes failed trajectories, compares them against reference trajectories to identify root causes, clusters errors into systematic patterns, and generates candidate modifications to the harness. 
+
+Trajectory Comparison. Given a failed trajectory τ − 
+
+> i
+
+, the question qi, and a verified reference trajectory τ + 
+
+> i
+
+(if available), Aopt produces a structured error signal Fi = ( si, m i, h i), where si is the severity, mi is the error cause (e.g., tool hallucination, argument omission, premature termination), and hi is a natural-language fix hint. When τ + 
+
+> i
+
+is available, Aopt can identify more fine-grained differences by comparing τ + 
+
+> i
+
+and τ − 
+
+> i
+
+, such as the first action divergence point t∗ 
+
+> i
+
+(the earliest step at which the action in τ − 
+
+> i
+
+deviates from that in τ + 
+
+> i
+
+), enabling more accurate error cause identification. When no reference trajectory is available, Aopt analyzes only τ − 
+
+> i
+
+and qi, outputting its best assessment of si, mi, and hi without divergence-point localization. While less precise than reference-guided diagnosis, this fallback ensures that all failed instances contribute to the optimization signal. 
+
+Error Clustering. Individual error signals Fi are instance-level diagnoses that, if processed in-dependently, would lead to fragmented and potentially conflicting modifications. To address this, 
+
+Aopt clusters error signals {F i}|Fj | 
+
+> i=1
+
+by error cause mi into groups P = {C1, . . . , C K }, where each 
+
+Ck = (¯ sk, ¯mk, ¯ek, ¯hk): ¯sk is the aggregated severity level, ¯mk is the shared error cause, ¯ek contains 5representative failed trajectories for ¯mk, and ¯hk is the suggested fix direction derived from the fix hints of its members. This aggregation enables the optimization agent to identify systematic failure patterns and generate coherent modifications. The clustering enforces three principles: • Cause-Based Grouping: Groups are formed by error cause mi rather than coarse severity labels, preventing semantically distinct errors from being merged. Thus, each cluster corresponds to a coherent fix strategy, enabling Aopt to generate targeted modifications that uniformly address all instances within the cluster. • Root-Cause Priority: When a reference trajectory is available, Aopt is instructed to prioritize the first action divergence point t∗ 
+
+> i
+
+between τ + 
+
+> i
+
+and τ − 
+
+> i
+
+as the root error cause, since subsequent divergence points are likely cascading effects of the initial error rather than independent root causes. Clustering by the root cause ensures that Aopt addresses the original failure rather than its downstream symptoms. • Long-Tail Protection: Unlike conventional distance-based clustering (e.g., K-Means) [Xiong et al., 2006], which forces every sample into a fixed number of clusters, 
+
+Aopt preserves single-member clusters, ensuring rare but critical failure patterns are not absorbed into dominant clusters [Liu et al., 2019, Feldman, 2020]. The complete diagnosis and clustering procedure is formalized in Algorithm 1 (Appendix). 
+
+Candidate Generation. The clustering result P is provided to Aopt , which generates targeted modifications to the current harness. Aopt is instructed to prioritize root causes with more instances (i.e., clusters containing more error signals Fi) and higher severity. Based on the root cause, severity, and fix direction of each cluster, the agent synthesizes specific edits to the harness of Aexec to address the root cause. The output is a candidate harness update set ∆harness , which is passed to the gate agent for validation. 
+
+3.5 Gating Quality Gate. The gate agent Agate ensures generalization by verifying that the optimization agent has not introduced shortcuts into the harness. The gate agent inspects candidate updates for data leakage and prompt bloat. For data leakage, the gate agent checks whether the edits proposed by the optimization agent directly embed failed queries and their ground-truth answers into the harness files, using LLM-as-judge with a score ranging from 0 to 1; if the score exceeds the threshold ηleak , the update is rejected. For prompt bloat, the gate agent counts newly injected in-context examples; if the count exceeds the threshold ηblo , the update is rejected. A candidate update passes the quality gate if and only if, for every file f in ∆harness (the set of harness files edited by the optimization agent), the data leakage score of f does not exceed ηleak , and the number of injected in-context examples in f
+
+does not exceed ηblo . An update that passes yields a verified update ∆verified ; a rejected update is returned to the optimization agent along with a rejection reason ρ (a natural-language explanation of the violated constraint) for revision. If the gate remains unsatisfied after a fixed number of revisions, the update is abandoned (i.e., ∆verified = ∅). The gate agent operates as an isolated judge, structurally decoupled from the optimization agent, preventing self-serving evaluation. 
+
+Performance Gate. The verified update ∆verified is used to construct a candidate agent Acandidate =Build( Acurrent , ∆verified ), where Acurrent denotes the current version of Aexec being optimized. The candidate is evaluated on the current mini-batch Bj and a buffer of R recent mini-batches 
+
+{Bmax(1 , j −R), . . . , B j−1} (empty when j = 1 ). A candidate is accepted if and only if it improves accuracy on Bj by at least a margin δ while not degrading on any recent batch beyond tolerance ϵ:
+
+Acandidate is accepted ⇐⇒ 
+
+(Acc( Acandidate , B j ) − Acc( Acurrent , B j ) ≥ δ, 
+
+max 
+
+> l∈[max(1 , j −R), j −1]
+
+Acc( Acurrent , B l) − Acc( Acandidate , B l) ≤ ϵ. 
+
+(1) Accepted candidates are stored as snapshots in the pool V and immediately become the active agent 
+
+Acurrent for subsequent batches; performance-gate rejections increment a consecutive-rejection counter c. If c reaches the patience threshold Pbatch , the current epoch terminates early (bypassing remaining batches) and proceeds directly to epoch-end selection, thereby mitigating redundant computation upon convergence. 6Table 1: Main results on in-house datasets. Accuracy (%) is reported. Best results are in bold .
+
+Method CloudCoreNetwork-QA Wireless-QA Qwen DeepSeek Qwen DeepSeek 
+
+Base 43.4 47.5 79.0 85.9 GEPA 65.3 57.6 82.4 86.5 ACE 59.3 64.6 84.3 90.1 SkillOpt 61.9 65.3 89.0 89.3 HarnessEvolve 86.9 85.9 89.7 92.8 Epoch-End Selection. At epoch completion, all snapshots accumulated in the pool V are evaluated on the validation set Tval , and the best-performing one is selected: 
+
+Acurrent ← arg max  
+
+> A∈ V
+
+Acc( A, Tval ),
+
+A∗ ← A current . (2) This two-tiered architecture (batch-level updates within each epoch and epoch-level selection on 
+
+Tval ) ensures that the final agent is no worse than the best-performing snapshot in the pool. The optimization loop terminates when the epoch count reaches E, or when the validation accuracy of 
+
+A∗ fails to improve for Pep consecutive epochs, indicating convergence. The complete HarnessEvolve self-evolution procedure (encompassing execution, evaluation, opti-mization, and gating) is formalized in Algorithm 2 (Appendix). After all epochs complete, the final agent A∗ is evaluated on the test set Ttest to report accuracy. 
+
+4 Experiments 
+
+4.1 Experimental Setup Datasets. We evaluate all methods on three open-source datasets (SearchQA [Dunn et al., 2017], OfficeQA [Opsahl-Ong et al., 2026], SpreadsheetBench [Ma et al., 2024b]) and two in-house datasets (CloudCoreNetwork-QA and Wireless-QA) to assess generalization across open-domain and en-terprise scenarios. SearchQA is an open-domain QA dataset where agents retrieve and synthesize information from a search engine. OfficeQA is an enterprise-level document reasoning benchmark where agents parse, retrieve, and reason across unstructured text and tabular data to answer complex questions. SpreadsheetBench is a spreadsheet manipulation benchmark where agents perform data and formula operations. CloudCoreNetwork-QA and Wireless-QA are constructed from cloud core network and wireless network domains, where agents perform network-domain QA and text-to-SQL tasks such as KPI metric querying and network element configuration querying. Queries in both datasets require selecting and combining multiple skills. 
+
+Baselines. We compare HarnessEvolve against three state-of-the-art agent self-optimization frame-works, each operating at a different granularity: GEPA [Agrawal et al., 2025] performs prompt-level optimization via reflective prompt evolution, ACE [Zhang et al., 2026b] optimizes at the context level, and SkillOpt [Yang et al., 2026] refines skill descriptions at the text level. All baselines are deployed under identical environmental constraints and an initial harness to ensure fair comparison. We also report the accuracy of the agent with the unoptimized harness (Base) as a reference. 
+
+Implementation Details. We use two models of different scales as reasoning engines: Qwen3.6-27B, post-trained with domain-specific fine-tuning, and DeepSeek-V4-Flash, used without fine-tuning. On the in-house datasets (CloudCoreNetwork-QA and Wireless-QA), both models are used under our in-house LAMAgent framework, where the harness being optimized includes the full project code, skills, prompts, and tools. On the open-source datasets (SearchQA, OfficeQA, and SpreadsheetBench), DeepSeek-V4-Flash is used under OpenClaw, where the harness being optimized comprises skills, 
+
+AGENTS.md , SOUL.md , and tools. Unlike SkillOpt, which optimizes only skill.md , HarnessEvolve optimizes the entire skill directory including reference files and scripts. All methods use the same training, validation, and test split on each dataset. We set max reference attempts Tatt = 5 in reference trajectory generation (Section 3.2), and batch patience Pbatch = 10 , epoch patience Pep = 5 , epoch 7Table 2: Main results on open-source datasets. Accuracy (%) is reported. Best results are in bold .
+
+Method SearchQA OfficeQA SpreadsheetBench 
+
+Base 86.5 62.8 44.3 GEPA 88.6 64.0 69.6 ACE 90.0 68.9 52.2 SkillOpt 89.4 66.9 74.6 HarnessEvolve 92.9 70.9 76.4 
+
+Table 3: Cross-framework transfer: skills optimized on OpenClaw, evaluated on four frameworks. Accuracy (%) is reported. Best results are in bold .
+
+Framework SearchQA OfficeQA SpreadsheetBench 
+
+Base HarnessEvolve Base HarnessEvolve Base HarnessEvolve Hermes 95.0 95.0 77.9 80.8 72.1 73.2 
+
+OpenCode 90.0 92.7 75.6 80.3 57.5 87.9 
+
+LAMAgent 92.9 94.3 74.4 75.0 45.0 80.0 
+
+DeepSeek Harness 93.6 95.0 79.1 79.7 56.4 86.8 
+
+limit E = 20 , batch size b = 40 , replay buffer size R = 2 , step margin δ = 0 .0, degradation tolerance 
+
+ϵ = 0 .025 , data leakage threshold ηleak = 0 .8, prompt bloat threshold ηblo = 5 , and revision limit 
+
+Trev = 3 in Algorithm 2 (Appendix). 
+
+4.2 Results and Analysis Main Results. Tables 1 and 2 compare HarnessEvolve against three baselines on the in-house and open-source datasets, respectively. HarnessEvolve consistently achieves the highest accuracy across all evaluated settings. Notably, on the in-house datasets, HarnessEvolve improves accuracy on CloudCoreNetwork-QA with Qwen3.6-27B from 43.4% (Base) to 86.9%, outperforming the strongest baseline GEPA at 65.3% by 21.6 percentage points, and reaches 92.8% on Wireless-QA with DeepSeek-V4-Flash, surpassing the best baseline ACE at 90.1% by 2.7 percentage points. On the open-source datasets, HarnessEvolve consistently achieves significant accuracy improvements over all baselines across all three benchmarks. These improvements on both enterprise and open-domain benchmarks confirm that the gains from reference-guided diagnosis and comprehensive harness optimization generalize across task domains and model settings. 
+
+Cross-Framework Generalization. To evaluate whether the harness optimized by HarnessEvolve can transfer across frameworks, we take the skills optimized on SearchQA, OfficeQA, and Spread-sheetBench and deploy them directly on four frameworks to test on Ttest , namely Hermes, OpenCode, LAMAgent, and DeepSeek Harness, without re-optimization. As shown in Table 3, HarnessEvolve-optimized skills consistently improve or maintain accuracy over Base across all four frameworks. These results indicate that HarnessEvolve produces transferable improvements rooted in general error patterns rather than framework-specific shortcuts. 
+
+Self-Evolution Curve. Figure 2 traces the self-evolution procedures of HarnessEvolve, with each point corresponding to one optimization step evaluated on Tval . A substantial fraction of candidate updates are rejected by the two-tier gating mechanism, indicating effective filtering of low-quality modifications. The peak accuracy in the snapshot pool V increases gradually throughout evolution, reaching its highest point at the final harness A∗. This also demonstrates that the gating mechanism ensures strict quality control while retaining only beneficial updates. 
+
+Ablation Study. To assess the contribution of each component in HarnessEvolve, we conduct ablation studies on CloudCoreNetwork-QA using Qwen3.6-27B. We consider three variants: • M1 (w/o reference trajectory): bypassing reference trajectory comparison and performing error diagnosis solely on failed trajectories. This variant isolates the contribution of reference-guided error diagnosis, reverting to a coarser single-trajectory diagnosis. 80 10 20 30 40 50           
+
+> Evolution Step
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> Accuracy
+> CloudCoreNetwork-QA
+> Rejected Accepted Peak Accuracy Final Harness ( *)036912 15 18
+> Evolution Step
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> Accuracy
+> SpreadsheetBench
+> Rejected Accepted Peak Accuracy Final Harness ( *)
+
+Figure 2: HarnessEvolve self-evolution curves on CloudCoreNetwork-QA and SpreadsheetBench. Green points denote accepted snapshots that pass both the quality gate and performance gate and are saved to the snapshot pool V; gray points denote rejected candidates. The blue curve tracks the peak accuracy in V. The red star marks the final harness A∗.Table 4: Ablation study results on CloudCoreNetwork-QA (Qwen3.6-27B). Accuracy (%) is reported. Best results are in bold .
+
+Variant CloudCoreNetwork-QA 
+
+HarnessEvolve (full) 86.9 
+
+M1: w/o reference trajectory 57.8 M2: w/o error clustering 68.6 M3: w/o quality gate 80.1 • M2 (w/o error clustering): optimizing directly over instance-level error signals Fi without grouping. This variant tests whether aggregating errors into systematic patterns is necessary, as processing each error signal independently may lead to fragmented and conflicting modifications. • M3 (w/o quality gate): removing the quality gate, accepting all candidate updates without filtering for data leakage and prompt bloat. This variant evaluates whether the quality gate meaningfully prevents shortcut learning, or whether the optimization agent alone can produce generalizable updates. Table 4 presents the ablation results. M1, which removes reference trajectory comparison, yields the largest degradation from 86.9% to 57.8%, confirming that reference-guided diagnosis is the most critical component. Without this comparison, the agent misidentifies root causes and generates ineffective modifications. M2, which removes error clustering, shows significant degradation to 68.6%, confirming that aggregating instance-level errors into systematic patterns is essential for coherent modifications. M3, which removes the quality gate, shows moderate degradation to 80.1%, indicating that the quality gate helps prevent shortcut learning and overfitting to training data. 
+
+Qualitative Analysis. To inspect what HarnessEvolve modifies during self-evolution, Figure 3 (Appendix) compares the harness of the execution agent before and after optimization. The optimized harness exhibits targeted edits that span the entire execution agent, covering skill.md files, Python scripts within skills, prompt instructions, tool-argument specifications, and code related to agent execution logic, instead of being confined to a single component. This contrasts with SkillOpt [Yang et al., 2026], which optimizes only skill.md , and corroborates the comprehensiveness of the harness optimization of HarnessEvolve. 
+
+5 Conclusion 
+
+We have presented HarnessEvolve, a self-evolving framework that learns from reference trajectories for reliable agent self-evolution. By decoupling execution, evaluation, optimization, and gating into independent modules, HarnessEvolve addresses three fundamental challenges: credit assignment failure via reference-guided error diagnosis, shortcut learning via the quality gate, and catastrophic forgetting via the performance gate with epoch-end validation. Extensive evaluations on both open-domain and enterprise benchmarks demonstrate that HarnessEvolve consistently outperforms state-of-the-art baselines across all five benchmarks. 9References 
+
+Lakshya A. Agrawal, Shangyin Tan, Dilara Soylu, Noah Ziems, Rishi Khare, Krista Opsahl-Ong, Arnav Singhvi, Herumb Shandilya, Michael J. Ryan, Meng Jiang, Christopher Potts, Koushik Sen, Alexandros G. Dimakis, Ion Stoica, Daniel Klein, Matei Zaharia, and Omar Khattab. GEPA: reflective prompt evolution can outperform reinforcement learning. CoRR , abs/2507.19457, 2025. Maciej Besta, Nils Blach, Ales Kubicek, Robert Gerstenberger, Michal Podstawski, Lukas Gianinazzi, Joanna Gajda, Tomasz Hoang, Hubert Niewiadomski, Piotr Nyczyk, and Torsten Hoefler. Graph of thoughts: Solving elaborate problems with large language models. In AAAI , 2024. Matthew Dunn, Levent Sagun, Mike Higgins, V. Ugur Güney, Volkan Cirik, and Kyunghyun Cho. Searchqa: A new q&a dataset augmented with context from a search engine. CoRR , abs/1704.05179, 2017. Vitaly Feldman. Does learning require memorization? a short tale about a long tail. In Proceedings of the 52nd Annual ACM SIGACT Symposium on Theory of Computing . Association for Computing Machinery, 2020. Sirui Hong, Mingchen Zhuge, Jonathan Chen, Xiawu Zheng, Yuheng Cheng, Jinlin Wang, Ceyao Zhang, Zili Wang, Steven Ka Shing Yau, Zijuan Lin, Liyang Zhou, Chenyu Ran, Lingfeng Xiao, Chenglin Wu, and Jürgen Schmidhuber. Metagpt: Meta programming for A multi-agent collaborative framework. In ICLR . OpenReview.net, 2024. Omar Khattab, Arnav Singhvi, Paridhi Maheshwari, Zhiyuan Zhang, Keshav Santhanam, Sri Vard-hamanan, Saiful Haq, Ashutosh Sharma, Thomas T. Joshi, Hanna Moazam, Heather Miller, Matei Zaharia, and Christopher Potts. Dspy: Compiling declarative language model calls into state-of-the-art pipelines. In ICLR . OpenReview.net, 2024. Yuan Liang, Ruobin Zhong, Haoming Xu, Chen Jiang, Yi Zhong, Runnan Fang, Jia-Chen Gu, Shumin Deng, Yunzhi Yao, Mengru Wang, Shuofei Qiao, Xin Xu, Tongtong Wu, Kun Wang, Yang Liu, Zhen Bi, Jungang Lou, Yuchen Eleanor Jiang, Hangcheng Zhu, Gang Yu, Haiwen Hong, Longtao Huang, Hui Xue, Chenxi Wang, Yijun Wang, et al. Skillnet: Create, evaluate, and connect ai skills. 
+
+arXiv preprint arXiv:2603.04448 , 2026. Jiahang Lin, Shichun Liu, Chengjun Pan, Lizhi Lin, Shihan Dou, Zhiheng Xi, Xuanjing Huang, Hang Yan, Zhenhua Han, Tao Gui, and Yu-Gang Jiang. Agentic harness engineering: Observability-driven automatic evolution of coding-agent harnesses. arXiv preprint arXiv:2604.25850 , 2026. Siwei Liu, Jinyuan Fang, Han Zhou, Yingxu Wang, and Zaiqiao Meng. SEW: self-evolving agentic workflows for automated code generation. CoRR , abs/2505.18646, 2025. Xiao Liu, Hao Yu, Hanchen Zhang, Yifan Xu, Xuanyu Lei, Hanyu Lai, Yu Gu, Hangliang Ding, Kaiwen Men, Kejuan Yang, Shudan Zhang, Xiang Deng, Aohan Zeng, Zhengxiao Du, Chenhui Zhang, Sheng Shen, Tianjun Zhang, Yu Su, Huan Sun, Minlie Huang, Yuxiao Dong, and Jie Tang. Agentbench: Evaluating llms as agents. In ICLR . OpenReview.net, 2024. Ziwei Liu, Zhongqi Miao, Xiaohang Zhan, Jiayun Wang, Boqing Gong, and Stella X. Yu. Large-scale long-tailed recognition in an open world. 2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 2532–2541, 2019. Chang Ma, Junlei Zhang, Zhihao Zhu, Cheng Yang, Yujiu Yang, Yaohui Jin, Zhenzhong Lan, Lingpeng Kong, and Junxian He. Agentboard: An analytical evaluation board of multi-turn LLM agents. In NeurIPS , 2024a. Zeyao Ma, Bohan Zhang, Jing Zhang, Jifan Yu, Xiaokang Zhang, Xiaohan Zhang, Sijia Luo, Xi Wang, and Jie Tang. Spreadsheetbench: Towards challenging real world spreadsheet manipulation. In 
+
+NeurIPS , 2024b. Krista Opsahl-Ong, Arnav Singhvi, Jasmine Collins, Ivan Zhou, Cindy Wang, Ashutosh Baheti, Owen Oertell, Jacob Portes, Sam Havens, Erich Elsen, et al. Officeqa pro: An enterprise benchmark for end-to-end grounded reasoning. arXiv preprint arXiv:2603.08655 , 2026. 10 Ofir Press, Muru Zhang, Sewon Min, Ludwig Schmidt, Noah A. Smith, and Mike Lewis. Measuring and narrowing the compositionality gap in language models. In EMNLP (Findings) , volume EMNLP 2023 of Findings of ACL , pages 5687–5711. Association for Computational Linguistics, 2023. Reid Pryzant, Dan Iter, Jerry Li, Yin Tat Lee, Chenguang Zhu, and Michael Zeng. Automatic prompt optimization with "gradient descent" and beam search. In EMNLP , pages 7957–7968. Association for Computational Linguistics, 2023. Chen Qian, Wei Liu, Hongzhang Liu, Nuo Chen, Yufan Dang, Jiahao Li, Cheng Yang, Weize Chen, Yusheng Su, Xin Cong, Juyuan Xu, Dahai Li, Zhiyuan Liu, and Maosong Sun. Chatdev: Communicative agents for software development. In ACL (1) , pages 15174–15186. Association for Computational Linguistics, 2024. Timo Schick, Jane Dwivedi-Yu, Roberto Dessì, Roberta Raileanu, Maria Lomeli, Eric Hambro, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. Toolformer: Language models can teach themselves to use tools. In NeurIPS , 2023. Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. Reflexion: language agents with verbal reinforcement learning. In NeurIPS , 2023. Theodore R. Sumers, Shunyu Yao, Karthik Narasimhan, and Thomas L. Griffiths. Cognitive architec-tures for language agents. Trans. Mach. Learn. Res. , 2024, 2024. Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and Anima Anandkumar. Voyager: An open-ended embodied agent with large language models. Trans. Mach. Learn. Res. , 2024, 2024. Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed H. Chi, Quoc V. Le, and Denny Zhou. Chain-of-thought prompting elicits reasoning in large language models. In NeurIPS , 2022. Qingyun Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu, Shaokun Zhang, Erkang Zhu, Beibin Li, Li Jiang, Xiaoyun Zhang, and Chi Wang. Autogen: Enabling next-gen LLM applications via multi-agent conversation framework. CoRR , abs/2308.08155, 2023. Hui Xiong, Junjie Wu, and Jian Chen. K-means clustering versus validation measures: a data distribution perspective. In KDD , pages 779–784. ACM, 2006. Chengrun Yang, Xuezhi Wang, Yifeng Lu, Hanxiao Liu, Quoc V. Le, Denny Zhou, and Xinyun Chen. Large language models as optimizers. CoRR , abs/2309.03409, 2023. Yifan Yang, Ziyang Gong, Weiquan Huang, Qihao Yang, Ziwei Zhou, Zisu Huang, Yan Li, Xuemei Gao, Qi Dai, Bei Liu, Kai Qiu, Yuqing Yang, Dongdong Chen, Xue Yang, and Chong Luo. Skillopt: Executive strategy for self-evolving agent skills. CoRR , abs/2605.23904, 2026. Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Tom Griffiths, Yuan Cao, and Karthik Narasimhan. Tree of thoughts: Deliberate problem solving with large language models. In NeurIPS , 2023a. Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik R. Narasimhan, and Yuan Cao. React: Synergizing reasoning and acting in language models. In ICLR . OpenReview.net, 2023b. Hangfan Zhang, Shao Zhang, Kangcong Li, Chen Zhang, Yang Chen, Yiqun Zhang, Lei Bai, and Shuyue Hu. Self-harness: Harnesses that improve themselves. arXiv preprint arXiv:2606.09498 ,2026a. Jiayi Zhang, Jinyu Xiang, Zhaoyang Yu, Fengwei Teng, Xionghui Chen, Jiaqi Chen, Mingchen Zhuge, Xin Cheng, Sirui Hong, Jinlin Wang, Bingnan Zheng, Bang Liu, Yuyu Luo, and Chenglin Wu. Aflow: Automating agentic workflow generation. In ICLR . OpenReview.net, 2025. Qizheng Zhang, Changran Hu, Shubhangi Upasani, Boyuan Ma, Fenglu Hong, Vamsidhar Kama-nuru, Jay Rainton, Chen Wu, Mengmeng Ji, Hanchen Li, et al. Agentic context engineering: Evolving contexts for self-improving language models. In International Conference on Learning Representations , volume 2026, pages 86069–86100, 2026b. 11 Andrew Zhao, Daniel Huang, Quentin Xu, Matthieu Lin, Yong-Jin Liu, and Gao Huang. Expel: LLM agents are experiential learners. In AAAI , pages 19632–19642. AAAI Press, 2024. Shuyan Zhou, Frank F. Xu, Hao Zhu, Xuhui Zhou, Robert Lo, Abishek Sridhar, Xianyi Cheng, Tianyue Ou, Yonatan Bisk, Daniel Fried, Uri Alon, and Graham Neubig. Webarena: A realistic web environment for building autonomous agents. In ICLR . OpenReview.net, 2024. 12 A Before-and-After Comparison of Harness Optimization 
+
+Figure 3 compares the harness before and after the optimization of HarnessEvolve across six cases: (a) skill.md modification on OfficeQA, (b) skill.md modification on CloudCoreNetwork-QA, (c) script creation within the skill on SpreadsheetBench, (d) system prompt modification on CloudCoreNetwork-QA, (e) tool description modification on CloudCoreNetwork-QA, and (f) execu-tion logic modification on CloudCoreNetwork-QA. 
+
+B Reference-Guided Error Diagnosis and Clustering 
+
+Algorithm 1 details the error diagnosis and clustering procedure. For each failed instance, the optimization agent retrieves the corresponding reference trajectory from the global cache C and performs trajectory comparison to identify the first action divergence point as the root cause. When no reference trajectory is available, the agent falls back to isolated trajectory analysis. The collected error signals are then grouped via error clustering to preserve rare failure patterns. 
+
+Algorithm 1 Reference-Guided Error Diagnosis and Clustering 
+
+Require: Failed instances Fj = {(qi, τ − 
+
+> i
+
+)}, global cache C (containing verified reference trajectories 
+
+τ + 
+
+> i
+
+for queries that yielded a genuine execution path). 
+
+Ensure: Error groups P = {C1, . . . , C K }, where each Ck = (¯ sk, ¯mk, ¯ek, ¯hk). 
+
+> 1:
+
+Initialize error batch M ← ∅ . 
+
+> 2:
+
+for i = 1 to |Fj | do  
+
+> 3:
+
+τ + 
+
+> i
+
+← C [qi]. ▷ look up pre-computed reference  
+
+> 4:
+
+if τ + 
+
+> i
+
+= ∅ then  
+
+> 5:
+
+Fi ← AnalyzeTrajectory( τ − 
+
+> i
+
+, q i). ▷ without reference  
+
+> 6:
+
+else  
+
+> 7:
+
+Fi ← AnalyzeTrajectory( τ − 
+
+> i
+
+, τ + 
+
+> i
+
+, q i). ▷ compare for fine-grained root cause  
+
+> 8:
+
+end if  
+
+> 9:
+
+M ← M ∪ {F i}. 
+
+> 10:
+
+end for  
+
+> 11:
+
+P ← ErrorCluster( M). 
+
+> 12:
+
+return P
+
+C HarnessEvolve Self-Evolution Procedure 
+
+Algorithm 2 presents the complete self-evolution loop. Each epoch partitions the training set into mini-batches and iterates through them. For each batch, the optimization agent generates candidate updates, the gate agent filters them, and the performance gate decides acceptance based on improvement margin δ and replay degradation ϵ. Accepted snapshots are added to the pool V. At epoch end, the best-performing snapshot on the validation set is selected as A∗. The loop terminates early when either batch-level patience Pbatch or epoch-level patience Pep is exhausted. 13 (c) Skill scripts (SpreadsheetBench)  
+
+> (d) Prompt (CloudCoreNetwork-QA) (e) Tool description (CloudCoreNetwork-QA)
+> (f) Execution logic (CloudCoreNetwork-QA)
+> (a) Skill.md (OfficeQA)
+> (b) Skill.md (CloudCoreNetwork-QA)
+
+Figure 3: Before-and-after comparison of the harness optimization of HarnessEvolve across six cases: (a) skill.md modification on OfficeQA, (b) skill.md modification on CloudCoreNetwork-QA, (c) script creation within the skill on SpreadsheetBench, (d) system prompt modification on CloudCoreNetwork-QA, (e) tool description modification on CloudCoreNetwork-QA, and (f) exe-cution logic modification on CloudCoreNetwork-QA. HarnessEvolve modifies the entire execution agent—including skill.md files, scripts, prompts, tool descriptions, and execution-logic code— rather than optimizing a single component in isolation. 14 Algorithm 2 HarnessEvolve Self-Evolution Procedure 
+
+Require: Task corpora Ttrain , Tval , Ttest , agents (Aexec , Aeval , Aopt , Agate ), global cache C (con-taining verified reference trajectories τ + 
+
+> i
+
+for queries that yielded a genuine execution path), batch patience Pbatch , epoch patience Pep , step margin δ ≥ 0, degradation tolerance ϵ ≥ 0, replay buffer size R, filter bounds (ηleak , η blo ), epoch limit E, batch size b, revision limit Trev .
+
+Ensure: Optimized agent A∗, snapshot pool V.
+
+1: Initialize Acurrent ← A exec , A∗ ← A exec , snapshot pool V ← {A exec }, index n ← 0, rejection count c ← 0, best validation accuracy abest ← Acc( Aexec , Tval ), epoch non-improvement count 
+
+cep ← 0.
+
+2: for e = 1 to E do 
+
+3: B ← PermuteAndPartition( Ttrain , b )
+
+4: for each batch Bj ∈ B do 
+
+5: Run Acurrent on Bj to produce trajectories {τi}
+
+6: Fj ← A eval ({τi}, B j ) ▷ identify failed instances 
+
+7: P ← DiagnoseAndCluster( Fj , C) ▷ Algorithm 1 
+
+8: ∆harness ← A opt (P, Acurrent )
+
+9: ∆verified , ρ ← A gate (∆ harness ; ηleak , η blo )
+
+10: for r = 1 to Trev do 
+
+11: if ∆verified ̸ = ∅ then 
+
+12: break 
+
+13: end if 
+
+14: ∆harness ← A opt (P, Acurrent , ρ ) ▷ revise with rejection feedback 
+
+15: ∆verified , ρ ← A gate (∆ harness ; ηleak , η blo )
+
+16: end for 
+
+17: if ∆verified = ∅ then 
+
+18: continue 
+
+19: end if 
+
+20: Acandidate ← Build( Acurrent , ∆verified )
+
+21: ∆Acc ← Acc( Acandidate , B j ) − Acc( Acurrent , B j )
+
+22: ∆deg ← max l∈[max(1 , j −R), j −1] [Acc( Acurrent , B l) − Acc( Acandidate , B l)] 
+
+23: if ∆Acc ≥ δ and ∆deg ≤ ϵ then ▷ accept 
+
+24: n ← n + 1 ;
+
+25: A(n) ← A candidate ; V ← V ∪ {A (n)}; Acurrent ← A (n); c ← 0
+
+26: else ▷ reject 
+
+27: c ← c + 1 
+
+28: end if 
+
+29: if c ≥ Pbatch then 
+
+30: break 
+
+31: end if 
+
+32: end for 
+
+33: Acurrent ← arg max A∈ V Acc( A, Tval ); A∗ ← A current 
+
+34: if Acc( A∗, Tval ) > a best then 
+
+35: abest ← Acc( A∗, Tval ); cep ← 0
+
+36: else 
+
+37: cep ← cep + 1 
+
+38: end if 
+
+39: if cep ≥ Pep then 
+
+40: break 
+
+41: end if 
+
+42: end for 
+
+43: return A∗ ▷ Report Acc( A∗, Ttest )
+
+15

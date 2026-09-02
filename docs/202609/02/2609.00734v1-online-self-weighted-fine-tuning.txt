@@ -1,0 +1,716 @@
+Title: Online Self-Weighted Fine-Tuning
+
+URL Source: https://arxiv.org/pdf/2609.00734v1
+
+Published Time: Wed, 02 Sep 2026 00:45:01 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# Online Self-Weighted Fine-Tuning 
+
+Haiquan Wen 1,* Yiwei He 1,* Bei Peng 2 Guangliang Cheng 1, †
+
+> 1
+
+University of Liverpool 2University of Sheffield   
+
+> *Equal contribution. †Correspondence: guangliang.cheng@liverpool.ac.uk
+
+Abstract 
+
+Standard supervised fine-tuning (SFT) assigns the same explicit loss weight to every expert demonstration, regardless of the model’s chang-ing competence over training queries. Rein-forcement learning (RL) based methods adapt update strength using model-generated rollouts, but often require substantially more sampling and can be unstable on hard tasks. We propose 
+
+Online Self-Weighted Fine-Tuning (OSW-FT) , a simple method that augments SFT with online, trajectory-level weighting. For each query, OSW-FT estimates the model’s current success rate using a small number of inference-only rollouts and rescales the standard SFT loss accordingly. The optimization direction remains anchored to the expert trajectory, while the update magnitude adapts online. For binary-verifiable reasoning, we connect this weighting to SFT and RL at the gradient level, inspired by variance-reduction principles. The resulting estimator is unbiased for the exact OSW-FT surrogate update for any finite rollout count, and we analyze convergence with respect to the corresponding surrogate objective. Evalu-ated across Qwen3 series ranging from 0.6B to 4B on multiple challenging benchmarks (e.g., AIME), OSW-FT consistently improves over SFT on small-to-medium scale models. OSW-FT offers a favorable compute-performance trade-off as a practical approach for fine-tuning small-to-medium LLMs on binary-verifiable reasoning tasks with only 2 online rollouts .
+
+1 Introduction 
+
+Post-training a LLM raises a deceptively simple question: how much should each training sample update the model at its current stage of training? 
+
+This question is especially consequential for veri-fiable reasoning tasks, where the model’s compe-tence on individual training queries can vary sub-stantially and evolves throughout training. Some queries may already be reliably solved by the model and provide limited additional learning sig-nal, while others remain near its capability frontier and warrant concentrated optimization effort. Stan-dard Supervised Fine-Tuning (SFT) (Ouyang et al., 2022), however, assigns a uniform sample weight to every expert demonstration throughout training, treating already-mastered and unresolved queries identically. While this design is simple and sta-ble, it allocates optimization effort coarsely across examples with very different learning value. Reinforcement learning (RL) based post-training methods (Guo et al., 2025; Schulman et al., 2017) address this issue from a different direction. By computing advantages from model-generated roll-outs, they adapt update strength to the model’s current behavior and can focus learning on more informative examples. This adaptivity is appealing, but it comes with substantial online sampling cost and optimization instability, especially on hard rea-soning tasks where failing to discover any correct trajectories entirely deprives the model of a viable learning direction. SFT avoids this failure mode by always providing a high-quality expert trajectory as the supervision target, but lacks a mechanism to modulate how strongly that trajectory should be learned from. This suggests a natural middle ground: preserve the stable, expert-anchored op-timization direction of SFT, while introducing a lightweight online signal that adjusts update magni-tude according to the model’s current competence. We propose Online Self-Weighted Fine-Tuning (OSW-FT) , a simple post-training method for ver-ifiable reasoning that changes how much to learn from each expert trajectory without changing what to learn from. For each training query, OSW-FT performs a small number of inference-only roll-outs to estimate the model’s current pass rate ˆp(q),and reweights the standard SFT loss by a factor of (1 − ˆp(q)) . This weight is largest for queries the model consistently fails on, thereby concentrat-ing optimization effort near the capability frontier, arXiv:2609.00734v1 [cs.LG] 1 Sep 2026 and naturally decreases toward zero as the model masters a query. Crucially, OSW-FT uses online rollouts only to estimate this scalar weight; it does not optimize on model-generated trajectories, does not perform token-level reward shaping, and does not modify the training distribution. This design targets settings with a limited online rollout budget while retaining expert-trajectory supervision. For binary-verifiable reasoning, we construct an explanatory framework connecting this weighting to RL control variates at the gradient level. OSW-FT restores this quantity online through a Monte Carlo estimate from a small number of rollouts. Under our analysis, the resulting estimator is un-biased for the exact OSW-FT surrogate update for any finite rollout count K, and the convergence analysis applies to the corresponding surrogate ob-jective under the stated assumptions. The method is naturally most useful when the training distri-bution remains challenging for the current model; when most training queries are already solved, the online weight correspondingly diminishes. We evaluate OSW-FT on Qwen3 series (Yang et al., 2025) models ranging from 0.6B to 4B pa-rameters across AIME (AIME, 2025), AMC (AMC, 2023), MATH-500 (Lightman et al., 2023), and GPQA-Diamond (Rein et al., 2024). Empirically, OSW-FT consistently improves over standard SFT on small-to-medium model scales. Compared with GRPO (Shao et al., 2024), the results vary across models and metrics: OSW-FT performs favorably in several limited-rollout settings, whereas GRPO remains stronger in some configurations. OSW-FT is therefore not intended as a general replacement for RL; it targets binary-verifiable reasoning when the available online rollout budget is limited. Abla-tion studies further validate the benefit of continu-ous online success-rate weighting over alternative hard-thresholding or random heuristics. In summary, this work makes the following core contributions: First , we introduce OSW-FT, an expert-trajectory-anchored method that modulates SFT updates using an online success-rate weight for verifiable reasoning. Second , we analyze finite-rollout unbiasedness and convergence with respect to the proposed surrogate update. Third , evalu-ations show that OSW-FT consistently improves over standard SFT on small-to-medium scales and provides a favorable compute–performance trade-off under a limited online rollout budget. 
+
+2 Online Self-Weighted Fine-Tuning 
+
+Supervised Fine-Tuning (SFT) aligns language models by maximizing the log-likelihood of expert demonstrations. Given a dataset D = {(q, o ∗)} of input queries q and ground-truth output trajectories 
+
+o∗, SFT trains the model πθ by applying a uniform weight of 1 to the gradient of every ground-truth trajectory: 
+
+−∇ θJSFT = ∇θLSFT 
+
+= −E(q,o ∗)∼D [1 · ∇ θ log πθ(o∗ | q)] 
+
+(1) From a classical estimation perspective, this uni-form weighting is strictly principled as the stan-dard maximum likelihood estimator over the data distribution. However, from an online optimiza-tion perspective, applying full gradient magni-tude to queries the model has already mastered (πθ(o∗ | q) → 1) becomes statistically inefficient; it injects redundant gradient noise regarding the evolving policy and dampens the learning efficacy on unresolved frontier queries. To derive a princi-pled variance-reduced gradient estimator that dy-namically modulates this update intensity, we cast the problem within the framework of score function estimation. 
+
+2.1 Score Function Decomposition and Optimal Control Variate 
+
+For verifiable reasoning tasks, let R(o) ∈ { 0, 1}
+
+denote the binary correctness of a generated tra-jectory. The alignment objective is to maximize expected correctness: 
+
+J (θ) = Eq∼D Eo∼πθ (·| q)[R(o)] (2) Applying the log-derivative trick and sub-tracting a query-dependent control variate c(q)—which leaves the expected gradient unbiased since 
+
+Eo∼πθ [∇θ log πθ(o | q)] = 0 —yields the standard variance-reduced score function estimator: 
+
+∇θJ = Eq∼D Eo∼πθ
+
+h
+
+(R(o) − c(q)) ∇θ log πθ(o | q)
+
+i (3) We seek optimal control variate c∗(q) that mini-mizes the MSE of the scalar learning signal: 
+
+min  
+
+> c(q)
+
+Eo∼πθ
+
+(R(o) − c(q)) 2 (4) Setting the derivative to zero yields the exact an-alytical solution c∗(q) = Eo∼πθ [R(o) | q], which for binary tasks simplifies to the model’s current success probability ps(q). Crucially, this optimal control variate is identical to the advantage of the oracle trajectory: 
+
+A(o∗, q ) ≜ R(o∗) − Eo∼πθ [R(o) | q]= 1 − ps(q) (5) The MSE-minimizing baseline and the unbiased advantage estimator for o∗ are therefore identical for binary rewards, providing a unified statistical justification for the signal magnitude derived be-low. Substituting c∗(q) = ps(q) and applying the Law of Total Expectation to decompose by reward outcome, we observe a dual role of ps(q): it rep-resents both probability of generating correct tra-jectory ( Pr[ R = 1] ) and determines its advantage magnitude: 
+
+∇θJ = Eq∼D 
+
+h
+
+ps(q)
+
+| {z } 
+
+> Pr[ R=1]
+
+·Eo∼πθ |R(o)=1 
+
+h
+
+(1 − ps(q)) 
+
+| {z }
+
+> A(o∗, q )
+
+∇θ log πθ(o | q)
+
+i
+
++ (1 − ps(q)) · Eo∼πθ |R(o)=0 
+
+h
+
+(0 − ps(q)) ∇θ log πθ(o | q)
+
+ii 
+
+(6) 
+
+2.2 Oracle Substitution in SFT 
+
+The equation highlights a fundamental tension: the positive learning signal is gated by the success prob-ability ps(q). In the low-resource or early-training regime where ps(q) → 0, pure reinforcement learning methods suffer from gradient starva-tion , as the agent cannot explore and discover valid reasoning paths from scratch. 
+
+SFT as Deterministic Oracle Substitution. The essence of SFT is to bypass this exploration bottle-neck by replacing the intractable generative prob-ability with the absolute certainty of the dataset 
+
+D. By manually setting the probability of en-countering a correct trajectory strictly to unity (Pr[ R = 1] → 1), SFT not only guarantees a con-tinuous learning signal but also mathematically nullifies the negative gradient term :
+
+∇θJ ≈ Eq∼D 
+
+h
+
+1|{z} 
+
+> Dataset Certainty
+
+·
+
+Eo∼πθ |R(o)=1 
+
+(1 − ps(q)) 
+
+| {z }
+
+> A(o∗, q )
+
+∇θ log πθ(o | q)
+
+i
+
+(7) The oracle trajectory o∗ serves as a deterministic surrogate for the intractable conditional expectation 
+
+Eo∼πθ |R(o)=1 [·], translating to: ∇θ log πθ(o | q) ≈∇θ log πθ(o∗ | q).
+
+Justification for Asymmetric Substitution. Atechnical subtlety arises in this transition: the suc-cess probability ps(q) is substituted by 1 in the empirical frequency slot ( Pr[ R = 1] ) but retained within the inner advantage term (1 − ps(q)) . We justify this asymmetric treatment through the lens of distributional decoupling :• Directional Alignment (Data-centric): SFT performs a strict distributional shift, replacing the model’s stochastic generative distribution 
+
+πθ(· | R(o) = 1) with the deterministic expert dataset D. In this expert domain, the empirical frequency of encountering an oracle trajectory is unity ( PD(R = 1) = 1 ), which nullifies the negative gradient term and anchors the optimization direction to o∗.• Magnitude Regulation (Model-centric): 
+
+While the optimization direction is dictated by the static data distribution, the update magni-tude must respect the variance-reduced base-line governed by the evolving policy. Retain-ing (1 − ps(q)) serves as a crucial regularizer to evaluate the competence gap between the current policy state and the oracle target. Consequently, this formulation is not an algebraic identity, but a regularized Surrogate Gradient that decouples data-driven direction from policy-driven step-size. Standard SFT applies the distributional shift but simplifies the policy magnitude to a static value of 1, yielding: 
+
+∇θJSFT ∝ E(q,o ∗)∼D [1 · ∇ θ log πθ(o∗ | q)] (8) 
+
+2.3 OSW-FT Gradient Advantage-Guided SFT Magnitude. We argue that while the update frequency and direction Algorithm 1 Online Self-Weighted Fine-Tuning 
+
+Require: Dataset D, Model πθ, Rollout K, Batch Size B 
+
+> 1:
+
+while not converged do  
+
+> 2:
+
+B = {(qi, o ∗ 
+
+> i
+
+)}Bi=1 ∼ D  
+
+> 3:
+
+Initialize buffer M ← ∅  
+
+> 4:
+
+for each qi in B do  
+
+> 5:
+
+Sample K outputs {ˆoi,k } ∼ πθ(·| qi) 
+
+> 6:
+
+Calculate rewards and success probability 
+
+ˆpi 
+
+> 7:
+
+Compute weight wi = 1 − ˆpi 
+
+> 8:
+
+Store tuple (qi, o ∗ 
+
+> i
+
+, w i) into M 
+
+> 9:
+
+end for  
+
+> 10:
+
+Compute weighted SFT loss on current πθ:
+
+L(θ) = − 1
+
+|M| 
+
+X
+
+> (q,o ∗,w )∈M
+
+w · log πθ(o∗ | q) 
+
+> 11:
+
+Update parameters.  
+
+> 12:
+
+end while 
+
+should be guided by the oracle o∗, the magnitude 
+
+must respect the variance-reduced baseline. Re-taining the oracle’s deterministic frequency while restoring the advantage magnitude weight yields the OSW-FT gradient: 
+
+∇θJOSW ∝ E(q,o ∗)∼D [(1 − ˆp(q)) · ∇ θ log πθ(o∗ | q)] 
+
+(9) where ˆp(q) = 1
+
+> K
+
+PKk=1 R(ˆ ok) is an online Monte Carlo estimate of the success probability. Consequently, (1 − ˆp(q)) serves as a principled heuristic that modulates the expert trajectory up-date using the model’s empirical advantage. 
+
+2.4 Discussion 
+
+OSW-FT preserves the original data distribution and dynamically assesses the learning value of each sample online via model rollouts, re-allocating only the gradient magnitude through the advan-tage weight. This ability to adaptively optimize directly on datasets with unlabeled difficulty elim-inates the need for manual data sorting. Unlike rollout-optimized RFT methods such as GRPO, the gradient direction in OSW-FT is anchored by the high-quality expert demonstration o∗; only the mag-nitude is modulated by the model’s current capa-bility. This retains supervised optimization while incorporating an online estimate of the model’s current success rate. The additional online sam-pling relative to standard SFT is K inference-only rollouts per query. In our experiments, K = 2 
+
+captures a useful advantage signal under a lim-ited online rollout budget. Finally, OSW-FT has a gradient-level structural connection to SFT and RL. Appendix C presents this connection under policy-gradient theorem (Sutton et al., 1999; Schulman et al., 2017). 
+
+3 Theoretical Analysis 
+
+We establish two key theoretical properties of OSW-FT: robustness to finite rollout estimation and con-vergence guarantees with smaller gradient second moment than SFT. Full proofs are deferred to Ap-pendix B. 
+
+3.1 Robustness to Finite Rollouts 
+
+Success probability ps(q) is estimated via K roll-outs: ˆp(q) = 1
+
+> K
+
+PKk=1 R(ˆ ok). Denoting g0(q) := 
+
+∇θ log πθ(o∗|q), we analyze the OSW-FT estima-tor ˆgK (q) = (1 − ˆp(q)) · g0(q).
+
+Theorem 1 (Finite Rollout Properties) . For a fixed query q with p := ps(q) ∈ (0 , 1) and K
+
+i.i.d. rollouts, the OSW-FT estimator is unbiased: 
+
+Eˆp[ˆ gK (q)] = (1 − p) · g0(q).
+
+Remark 1 (Choice of K). The signal loss proba-bility pK predicts a qualitative transition at K = 2 .At K = 1 , the weight is binary ( {0, 1}) and a query with p = 0 .5 loses its signal with 50% probability, reducing OSW-FT to hard example selection. At 
+
+K = 2 , signal loss drops to p2 = 25% and the intermediate weight w = 0 .5 enables soft discrimi-nation. For K ≥ 2, pK is already small and further increases yield diminishing returns. 
+
+3.2 Convergence Analysis 
+
+A subtlety of OSW-FT is that the weight 1 − ps(q)
+
+depends on the current policy πθ, yet Algorithm 1 holds it fixed within each batch of gradient up-dates. To handle this, we define a surrogate objec-tive J(t)(θ) at each outer iteration t, which freezes the weights at their current values while optimizing only the log-likelihood (see Definition 1 in Ap-pendix). Under standard smoothness and bounded-gradient assumptions (Assumption 2 in Appendix), the following guarantee holds. 
+
+Theorem 2 (Convergence Rate) . Suppose OSW-FT runs for T total gradient steps with learning rate η = 1 /√T , updating weights every S steps. Let L be the smoothness constant of J(t), B an upper bound on | log πθ(o∗|q)|, and ϵp the maxi-mum change in ps(q) between consecutive weight updates. Then: 
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+E
+
+h
+
+∥∇ θJ(⌊t/S ⌋)(θt)∥2i
+
+≤ 2∆ 0 + L · Σ2
+
+√T + B · ϵp,
+
+(10) 
+
+where ∆0 is the initial optimality gap. The stochastic-gradient second moment is 
+
+Σ2 := Eq∼D
+
+h  (1 − ps(q)) 2
+
++ ps(q)(1 − ps(q)) 
+
+K
+
+
+
+∥g0(q)∥2i
+
+,
+
+(11) 
+
+which satisfies Σ2 < Σ2SFT := Eq∼D[∥g0(q)∥2]
+
+for any K ≥ 1, whenever the model has nonzero success probability on a positive-measure set of queries. 
+
+The first term vanishes at rate O(1 /√T ); the sec-ond term B · ϵp reflects the cost of holding weights fixed between updates, which is small under typical learning rates. The strict inequality Σ2 < Σ2SFT im-plies that OSW-FT converges with smaller second moment than SFT under identical conditions. 
+
+4 Experiments 
+
+4.1 Experimental Setup 
+
+We evaluate our method across model scales with the Qwen3 series (0.6B, 1.7B, and 4B) (Yang et al., 2025) to comprehensively study the interaction be-tween model capacity and our dynamic weighting mechanism. We compare OSW-FT against stan-dard SFT and GRPO (Shao et al., 2024). 
+
+Training Dataset. To establish a rigorous testbed for reasoning capabilities, we curated a high-quality training set of 10k multiple-choice ques-tions (MCQs) sampled from AM-Qwen3-Distilled (Tian et al., 2025) — a NuminaMATH dataset (LI et al., 2024) distilled via Qwen3-235B. To ensure the provision of high-quality oracle trajectories ( o∗)required for both SFT and OSW-FT, we manually filter and clean the dataset. Specifically, we rigor-ously enforce a single-choice answer format and constrain the reasoning trajectories to a maximum length of 4k tokens with the vast majority around 2k tokens. This length distribution ensures that even small-capacity base models can learn from substantial reasoning steps efficiently. 
+
+Experiment Details. All models undergo full-parameter fine-tuning. We employ the AdamW op-timizer (Loshchilov and Hutter, 2019) with a con-stant learning rate schedule, alongside DeepSpeed ZeRO3 and bfloat16 precision across all model scales. To minimize generation overhead, we in-tegrate vLLM (Kwon et al., 2023) for both training rollouts and evaluation. Its high-throughput capa-bilities enable us to maintain a large training rollout batch size (128), making the online cost of OSW-FT highly efficient. The maximum sequence length is set to 5k to-kens, with a maximum completion length of 4k to-kens allocated for online rollouts. For OSW-FT and GRPO, we use Math-Verify (Huggingface, 2025) for binary accuracy reward function. • SFT: We fine-tune the models for 1 epoch with a learning rate of 1 × 10 −5.• OSW-FT (Ours): Following the same 1-epoch schedule and 1 × 10 −5 learning rate. For each query, we generate K = 2 trajecto-ries at a temperature of T = 1 .0 to estimate the online success probability ˆp(q).• GRPO: For each query, we generate K = 8 
+
+trajectories (group size of G = 8 ) at a tem-perature of T = 1 .0. We adopt 1 × 10 −6
+
+learning rate, aligning with established com-munity best practices for stable RL training. To mitigate variance from trajectory lengths, we employ token-level policy gradient loss (DAPO, (Yu et al., 2025)). We set KL penalty coefficient β = 0 (disabling KL) and apply clipping bound of [0 .8, 1.28] .
+
+Evaluation Protocol. To thoroughly assess ver-ifiable reasoning capabilities, we report perfor-mance on several challenging benchmarks, includ-ing advanced mathematical reasoning tasks such as AMC (AMC, 2023), AIME (AIME, 2025), and MATH-500 (Lightman et al., 2023), as well as the expert-level general question answering GPQA-Diamond (Rein et al., 2024). We report 
+
+Pass@1 /Pass@16 for competition benchmarks (AMC, AIME). We use Pass@16 as an empiri-cal indicator of exploration: under the same 16-sample budget, a higher Pass@16 means that the model can discover a correct solution on more queries through sampling. Additionally, for bench-marks comprising hundreds of items (MATH-500 and GPQA-Diamond), we report Pass@1 as an Table 1: Main Results. Comparison across different post-training paradigms. We report Pass@1 / Pass@16 for competition benchmarks (AIME, AMC) to highlight both stability and exploration potential. For MATH-500, GPQA-Diamond, we report Pass@1 . Bold indicates the best performance. † indicates the base model shows lower performance due to limited instruction-following ability, which recovers after fine-tuning.                                                                                                                                       
+
+> Model AIME 24 AIME 25 AMC 22 AMC 23 AMC 24 MATH-500 GPQA-D
+> Qwen3-0.6B-Base 00.83 / 06.67 00.21 / 03.34 11.05 /41.86 11.82 / 54.35 04.58 / 26.67 22.00 14.14 + GRPO 00.83 /10.00 00.00 / 00.00 08.14 / 25.58 16.30 / 43.48 08.61 /31.11 36.20 26.77
+> + SFT 00.00 / 00.00 00.21 / 03.34 09.01 / 32.56 11.55 / 50.00 03.89 / 24.44 24.20 15.66 + OSW-FT 00.83 / 06.67 01.04 /10.00 08.72 / 41.86 13.04 / 56.52 05.14 / 28.89 24.20 20.20 Qwen3-1.7B-Base 03.75 / 20.00 03.96 / 20.00 23.84 /58.14 28.67 / 65.22 14.17 / 48.89 56.40 25.76 + GRPO 06.25 / 23.33 02.08 / 13.33 20.20 / 48.84 34.10 /65.22 13.06 / 42.22 59.40 28.79
+> + SFT 02.92 / 20.00 03.12 / 10.00 18.31 / 55.81 26.90 / 65.22 13.75 / 48.89 52.20 17.17 + OSW-FT 05.42 / 26.67 03.96 /23.34 22.24 / 55.81 27.45 / 65.22 17.78 /48.89 57.40 26.27 Qwen3-4B-Base 09.58 / 30.00 06.88 / 23.34 36.63 / 69.77 39.27 / 78.26 29.31 / 60.00 69.60 10.10 †
+> + GRPO 05.63 / 20.00 05.20 / 23.33 39.53 / 58.14 34.92 / 67.39 22.92 / 53.33 71.40 30.32 + SFT 12.29 / 26.67 15.42 / 26.67 40.70 / 69.77 44.57 / 73.91 35.00 /75.56 76.40 27.27 + OSW-FT 13.33 /36.67 16.25 /36.67 41.42 /74.42 45.11 /78.26 35.00 /75.56 79.00 32.32
+
+auxiliary test to evaluate deterministic problem-solving accuracy on relatively simpler or out-of-distribution (OOD) tasks. We apply sampling with 
+
+T op p=0.95, T op k = 20 , and a sampling tempera-ture of T = 0 .6, allowing a maximum generation length of 8k tokens. 
+
+4.2 Main Results 
+
+Table 1 presents the main comparative results. Overall, OSW-FT improves over standard SFT across the evaluated small-to-medium model scales. Its comparison with GRPO varies across mod-els and metrics, reflecting a trade-off rather than a general performance ordering between expert-anchored training and RFT. 
+
+Enhancing Exploration in Small Language Mod-els. For the 0.6B, 1.7B, and 4B models, OSW-FT consistently outperforms or matches standard SFT on Pass@16. For instance, on the 4B model, OSW-FT achieves a Pass@16 of 36.67% on both AIME 24 and AIME 25, compared with 26.67% for SFT. From these Pass@16 results, we observe that OSW-FT encourages more exploration under the same sampling budget: it discovers correct solutions for a larger fraction of queries across repeated samples. Relative to GRPO, OSW-FT performs favorably on several competition-math metrics, while GRPO re-mains stronger in some other settings, particularly on Pass@1 for the smaller models. 
+
+The Capacity-Data Mismatch Phenomenon. 
+
+The optimization dynamics of OSW-FT further ex-plain its scale-dependent behavior. As illustrated in Figure 1, the advantage weight (1 − ˆp) acts 
+
+Figure 1: OSW-FT weight (1 − ˆp) stratifies by model scale, validating the model-data matching hypothesis. 
+
+as an implicit curriculum, decaying as the model masters the dataset. Crucially, these trajectories cleanly stratify by model capacity: the highly capa-ble 4B model masters the dataset rapidly, causing its weights to plummet toward zero, whereas the 0.6B model maintains a sustained learning signal. 
+
+4.3 Performance under Limited Rollout Budgets 
+
+As established in Remark 1 (Section 3), our theo-retical analysis of the signal loss probability pre-dicts a critical qualitative transition at K = 2 . At this minimal threshold, the advantage weight shifts from binary hard-example mining to fine-grained soft discrimination. Guided by this theoretical in-sight, a central computational consideration is em-pirically verifying this optimal trade-off against the overhead introduced by the online rollouts. Because these rollouts strictly serve to estimate the baseline for variance reduction rather than to Table 2: Ablation on the number of rollouts ( K). We report Pass@16 for AIME 24, AIME 25 and Pass@1 for MATH-500, GPQA-D on Qwen3-0.6B-Base. OSW-FT maintains robust performance at K = 2 , while GRPO is more sensitive to the rollout count on the AIME benchmarks in this setting.                                              
+
+> Rollouts GRPO OSW-FT AIME 24 AIME 25 MATH-500 GPQA-D AIME 24 AIME 25 MATH-500 GPQA-D
+> K= 1 ––––06.67 06.67 22.80 15.15
+> K= 2 00.00 00.00 29.00 22.72 06.67 10.00 24.20 20.20
+> K= 4 06.67 00.00 37.00 26.27 06.67 10.00 24.00 20.71
+> K= 8 10.00 00.00 36.20 26.77 06.67 10.00 24.60 20.71
+
+Table 3: Ablation on alternative weighting strategies (K = 4 ). We report Pass@16 for AIME 24, AIME 25 and Pass@1 for MATH-500, GPQA-D on Qwen3-0.6B-Base. OSW-FT consistently outperforms alternative weighting heuristics, validating the necessity of smooth online success-rate anchoring.                 
+
+> Strategy AIME 24 AIME 25 MATH-500 GPQA-D
+> Hard-thresholded 06.67 06.67 23.80 15.15 Random 00.00 00.00 21.40 15.17
+> OSW-FT 06.67 10.00 24.00 20.71
+
+discover the correct reasoning path from scratch, minimal generation overhead should theoretically suffice. To validate this, we conduct an ablation study on the Qwen3-0.6B-Base model, varying 
+
+K ∈ { 1, 2, 4, 8}. The results are shown in Table 2. 
+
+OSW-FT. As shown in Table 2, setting K = 1 
+
+acts as a highly noisy, binarized estimator and yields the lowest performance across all metrics (e.g., 15 .15% on GPQA-D). However, simply in-creasing the rollouts to K = 2 produces a sharp performance improvement, jumping to 20 .20% 
+
+on GPQA-D and matching or exceeding K = 1 
+
+on all other benchmarks. Critically, the perfor-mance plateaus for K > 2. Increasing the roll-outs to K = 4 or K = 8 yields only negligible marginal benefits. Consequently, a coarse estimate via K = 2 captures the necessary advantage signal without demanding excessive generation overhead. 
+
+Contrast with GRPO under Limited Rollout Budgets. To fully contextualize this computa-tional efficiency, we contrast OSW-FT with the GRPO baseline under matched rollout budgets. Ta-ble 2 suggests a potential limitation of pure RL: while GRPO can optimize shorter-horizon tasks (MATH, GPQA) at minimal compute ( K = 2 ), it obtains zero scores on the most challenging rea-soning benchmarks, scoring 0.00 on both AIME 24 and AIME 25. This outcome may stem from RL’s reliance on model-generated exploration. On highly complex tasks like AIME, the probability of finding a correct long-horizon reasoning path with only 2 random attempts can be low. Consequently, the advantage signal for these hard queries can become sparse, providing the model with limited learning signal. To alleviate this exploration bot-tleneck and achieve non-zero AIME performance, GRPO can benefit from larger group sizes (e.g., 
+
+K = 8 ). 
+
+Advantage of GT Anchoring. This contrast suggests a potential advantage of OSW-FT for capacity-constrained models. By deterministically anchoring the gradient direction to the ground-truth oracle trajectory ( o∗), OSW-FT provides a stable, expert-anchored optimization path across the eval-uated tasks. Thus, it can mitigate the exploration bottleneck that can affect pure RL on hard queries, showing consistent performance across the evalu-ated benchmarks while operating at a limited com-putational budget ( K = 2 ). 
+
+4.4 Ablation on Weighting Strategies 
+
+To thoroughly investigate whether the performance gains of OSW-FT stem from the mathematically derived online success-rate weighting rather than naive data filtering or generic optimization artifacts, we conduct a rigorous ablation study on Qwen3-0.6B-Base under rollout budget of K = 4 . We implement two critical control baselines: • Hard-thresholded Weighting: A discrete control scheme where a query receives a bi-nary weight w ∈ { 0, 1}. Specifically, w = 0 
+
+if all K rollouts succeed (indicating the query is fully mastered), and w = 1 otherwise. This mimics hard rejection sampling or hard mistake-driven learning. • Random Weighting: A control scheme that decouples the loss weights from the model’s actual performance. It assigns ran-dom weights drawn from a uniform distribu-tion, calibrated to match the exact empirical mean weight of OSW-FT across the dataset, thereby testing if our method simply acts as an implicit learning rate decay. (a) GRPO learning rate of 1 × 10 −6 (b) GRPO learning rate of 1 × 10 −5       
+
+> Figure 2: GRPO training reward under two learning rates. In our setup, the reward collapses toward zero at 1×10 −5
+> across the evaluated model scales, whereas 1×10 −6produces the stable runs used in the main comparison.
+
+The empirical results are summarized in Table 3. We observe a severe performance degradation when utilizing alternative heuristics. In contrast, OSW-FT scales down gradient updates as capability in-creases, supporting the benefit of content-aware weighting under a limited online rollout budget. 
+
+4.5 On the Optimization Stability of GRPO Learning Rate Sensitivity. We initially trained the GRPO baseline using the 1×10 −5 learning rate employed by SFT and OSW-FT. In our setup, this learning rate causes the training reward to collapse toward zero across the evaluated model scales, as shown in Figure 2b. Once all sampled trajectories receive the same reward, the relative-advantage signal vanishes and optimization stalls. We therefore use 1×10 −6 for the reported GRPO baseline. This lower learning rate produces the stable training dynamics shown in Figure 2a. 
+
+Late-Stage Instability and Checkpoint Selection. 
+
+We also observe late-stage degradation in some GRPO runs, particularly for the smaller-capacity models. To report a stable GRPO baseline, we evaluate the checkpoint at which the reward reaches a plateau, before subsequent degradation, rather than using the final checkpoint unconditionally. 
+
+5 Related Work 
+
+Offline Reweighting and Regularization. Agrowing body of work views standard SFT through an offline Reinforcement Learning lens, aiming to mitigate over-optimization without incurring the computational cost of online generation. One line of research focuses on reweighting (e.g., SoftD-edup (He et al., 2024), iw-SFT (Qin and Springen-berg, 2025), DFT (Wu et al., 2026)). Another line introduces structural regularization, such as ASFT (Zhu et al., 2026), which apply KL-divergence penalties against a static reference model to pre-vent catastrophic forgetting and stylistic overfitting. While these approaches improve upon uniform SFT, they operate entirely offline. OSW-FT bypasses these static heuristics by operating online, directly tracking the model’s continuously evolving capa-bilities via real-time rollouts. 
+
+Online Rollout-Driven Alignment. To incor-porate real-time generative feedback, recent paradigms increasingly rely on online rollouts (Schulman et al., 2017; Shao et al., 2024; Yu et al., 2025; Zheng et al., 2025; Gao et al., 2025; Wang et al., 2025; Chen et al., 2025). STaR (Zelikman et al., 2022) filters and trains exclusively on self-generated rationales that yield correct final answers. RL or hybrid-RL methods like GRPO (Shao et al., 2024) and CHORD (Zhang et al., 2026) are in-herently bottlenecked by massive compute over-head. Conversely, rollout-augmented SFT meth-ods attempt to simplify this optimization but intro-duce new flaws. OSFT (Li et al., 2025) fine-tunes on model-generated trajectories without filtering by correctness, and lacks explicit mechanisms for accuracy-based gradient scaling. OTR (Ming et al., 2025) guides SFT using a localized policy gradient. However, its one-token lookahead provides only myopic, token-level credit signals, lacking explicit trajectory-level credit assignment for long-horizon reasoning. OSW-FT resolves these bottlenecks by unifying trajectory evaluation with deterministic optimization. Data Selection and Curriculum Learning. Re-cent findings highlight that alignment depends heavily on data quality rather than sheer quan-tity (Zhou et al., 2023; Li et al., 2024). To maxi-mize data efficiency, traditional curriculum learn-ing (Bengio et al., 2009) presents training examples in a manually predefined order of increasing diffi-culty. This static paradigm has largely evolved into Automatic Curriculum Learning (Narvekar et al., 2020; Portelas et al., 2020), where interme-diate tasks are dynamically selected based on the agent’s real-time competence. More recently, cur-riculum paradigms have been adapted for LLMs (Shi et al., 2025), alongside advanced data selec-tion methods like FisherSFT (Deb et al., 2025). However, these LLM-specific approaches typically rely on static heuristics that struggle to accurately track the model’s continuously evolving capabil-ities during training. OSW-FT seamlessly shifts the optimization budget toward the model’s true capability frontier, entirely eliminating the need for offline filtering or manual data sorting. 
+
+6 Conclusion 
+
+We introduced Online Self-Weighted Fine-Tuning (OSW-FT) , a simple method that augments supervised fine-tuning with online, trajectory-level weighting for verifiable reasoning. By estimating the model’s current success rate with a small number of inference-only rollouts, OSW-FT adjusts how strongly each expert trajectory should update the model while keeping the opti-mization direction anchored to expert demonstra-tions. Empirically, OSW-FT consistently improves over SFT on small-to-medium models and offers a favorable performance–rollout trade-off when the available online rollout budget is limited. 
+
+Limitations 
+
+OSW-FT currently assumes a reliable binary veri-fier and high-quality expert trajectories. Its success-rate weight is designed for binary-verifiable reason-ing and has not been validated for continuous re-wards or open-ended generation. Although GPQA-Diamond broadens the evaluation beyond math-ematics, it remains a binary-verifiable multiple-choice task and therefore does not establish appli-cability to non-binary settings. Our experiments also focus on Qwen3 model family and primarily mathematical reasoning tasks. Extending OSW-FT to code generation and other reward formulations remains future work. 
+
+References     
+
+> AIME. 2025. AIME problems and solutions 2025.
+> https://artofproblemsolving.com/wiki/ index.php/AIME_Problems_and_Solutions .AMC. 2023. AMC problems and solutions. Yoshua Bengio, Jérôme Louradour, Ronan Collobert, and Jason Weston. 2009. Curriculum learning. In ICML. Aili Chen, Aonian Li, Bangwei Gong, Binyang Jiang, Bo Fei, Bo Yang, Boji Shan, Changqing Yu, Chao Wang, Cheng Zhu, et al. 2025. Minimax-m1: Scaling test-time compute efficiently with lightning attention. Arxiv. Rohan Deb, Kiran Koshy Thekumparampil, Kousha Kalantari, Gaurush Hiranandani, Shoham Sabach, and Branislav Kveton. 2025. FisherSFT: Data-efficient supervised fine-tuning of language models using information gain. In ICML. Chang Gao, Chujie Zheng, Xiong-Hui Chen, Kai Dang, Shixuan Liu, Bowen Yu, An Yang, Shuai Bai, Jingren Zhou, and Junyang Lin. 2025. Soft adaptive policy optimization. Arxiv. Saeed Ghadimi and Guanghui Lan. 2013. Stochastic first-and zeroth-order methods for nonconvex stochas-tic programming. SIAM Journal on Optimization. Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, et al. 2025. Deepseek-r1: In-centivizing reasoning capability in llms via reinforce-ment learning. Arxiv. Nan He, Weichen Xiong, Hanwen Liu, Yi Liao, Lei Ding, Kai Zhang, Guohua Tang, Xiao Han, and Yang Wei. 2024. Softdedup: an efficient data reweighting method for speeding up language model pre-training. In ACL. Huggingface. 2025. Math-Verify. https://github. com/huggingface/Math-Verify .Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gon-zalez, Hao Zhang, and Ion Stoica. 2023. Efficient memory management for large language model serv-ing with pagedattention. In Proceedings of the ACM SIGOPS 29th Symposium on Operating Systems Principles. Jia LI, Edward Beeching, Lewis Tunstall, Ben Lipkin, Roman Soletskyi, Shengyi Costa Huang, Kashif Ra-sul, Longhui Yu, Albert Jiang, Ziju Shen, Zihan Qin, Bin Dong, Li Zhou, Yann Fleureau, Guillaume Lam-ple, and Stanislas Polu. 2024. Numinamath.
+
+Mengqi Li, Lei Zhao, Anthony Man-Cho So, Ruoyu Sun, and Xiao Li. 2025. Online sft for llm reason-ing: Surprising effectiveness of self-tuning without rewards. Arxiv. Ming Li, Yong Zhang, Zhitao Li, Jiuhai Chen, Lichang Chen, Ning Cheng, Jianzong Wang, Tianyi Zhou, and Jing Xiao. 2024. From quantity to quality: Boosting llm performance with self-guided data selection for instruction tuning. In NAACL. Hunter Lightman, Vineet Kosaraju, Yuri Burda, Harri-son Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. 2023. Let’s verify step by step. In ICLR. Ilya Loshchilov and Frank Hutter. 2019. Decoupled weight decay regularization. In ICLR. Rui Ming, Haoyuan Wu, Shoubo Hu, Zhuolun He, and Bei Yu. 2025. One-token rollout: Guiding supervised fine-tuning of llms with policy gradient. Arxiv. Sanmit Narvekar, Bei Peng, Matteo Leonetti, Jivko Sinapov, Matthew E Taylor, and Peter Stone. 2020. Curriculum learning for reinforcement learning do-mains: A framework and survey. JMLR. Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. 2022. Training language models to follow instruc-tions with human feedback. In NeurIPS. Rémy Portelas, Cédric Colas, Lilian Weng, Katja Hof-mann, and Pierre-Yves Oudeyer. 2020. Automatic curriculum learning for deep rl: A short survey. Arxiv. Chongli Qin and Jost Tobias Springenberg. 2025. Su-pervised fine tuning on curated data is reinforcement learning (and can be improved). Arxiv. David Rein, Betty Li Hou, Asa Cooper Stickland, Jack-son Petty, Richard Yuanzhe Pang, Julien Dirani, Ju-lian Michael, and Samuel R Bowman. 2024. Gpqa: A graduate-level google-proof q&a benchmark. In COLM. John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 2017. Proximal policy optimization algorithms. Arxiv. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. 2024. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. Arxiv. Taiwei Shi, Yiyang Wu, Linxin Song, Tianyi Zhou, and Jieyu Zhao. 2025. Efficient reinforcement finetuning via adaptive curriculum learning. Arxiv. Richard S Sutton, David McAllester, Satinder Singh, and Yishay Mansour. 1999. Policy gradient methods for reinforcement learning with function approxima-tion. In NeurIPS. Xiaoyu Tian, Yunjie Ji, Haotian Wang, Shuaiting Chen, Sitong Zhao, Yiping Peng, Han Zhao, and Xiangang Li. 2025. Not all correct answers are equal: Why your distillation source matters. Arxiv. Jiakang Wang, Runze Liu, Lei Lin, Wenping Hu, Xiu Li, Fuzheng Zhang, Guorui Zhou, and Kun Gai. 2025. Aspo: Asymmetric importance sampling policy opti-mization. Arxiv. Yongliang Wu, Yizhou Zhou, Zhou Ziheng, Yingzhe Peng, Xinyu Ye, Xinting Hu, Wenbo Zhu, Lu Qi, Ming-Hsuan Yang, and Xu Yang. 2026. On the gen-eralization of SFT: A reinforcement learning perspec-tive with reward rectification. In ICLR. An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Dayi-heng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, and 41 others. 2025. Qwen3 technical report. Arxiv. Qiying Yu, Zheng Zhang, Ruofei Zhu, Yufeng Yuan, Xi-aochen Zuo, YuYue, Weinan Dai, Tiantian Fan, Gao-hong Liu, Juncai Liu, LingJun Liu, Xin Liu, Haibin Lin, Zhiqi Lin, Bole Ma, Guangming Sheng, Yuxuan Tong, Chi Zhang, Mofan Zhang, and 17 others. 2025. DAPO: An open-source LLM reinforcement learning system at scale. In NeurIPS. Eric Zelikman, Yuhuai Wu, Jesse Mu, and Noah Good-man. 2022. Star: Bootstrapping reasoning with rea-soning. In NeurIPS. Wenhao Zhang, Yuexiang Xie, Yuchang Sun, Yanxi Chen, Guoyin Wang, Yaliang Li, Bolin Ding, and Jin-gren Zhou. 2026. On-policy RL meets off-policy ex-perts: Harmonizing supervised fine-tuning and rein-forcement learning via dynamic weighting. In ICLR. Chujie Zheng, Shixuan Liu, Mingze Li, Xiong-Hui Chen, Bowen Yu, Chang Gao, Kai Dang, Yuqiong Liu, Rui Men, An Yang, Jingren Zhou, and Jun-yang Lin. 2025. Group sequence policy optimization. Arxiv. Chunting Zhou, Pengfei Liu, Puxin Xu, Srinivasan Iyer, Jiao Sun, Yuning Mao, Xuezhe Ma, Avia Efrat, Ping Yu, Lili Yu, et al. 2023. Lima: Less is more for alignment. In NeurIPS. He Zhu, Junyou Su, Peng Lai, Ren Ma, Wenjia Zhang, Linyi Yang, and Guanhua Chen. 2026. Anchored supervised fine-tuning. In ICLR. A Ethics Statement 
+
+We acknowledge the use of Large Language Models (LLMs) during the preparation of this manuscript. Specifically, LLMs were utilized solely as auxiliary tools for minor writing assis-tance (such as grammar checking, typo correc-tion, and phrasing refinement) and for debugging code implementations. We have reviewed all LLM-assisted output and take full responsibility for the accuracy, originality, and integrity of the work pre-sented in this paper. 
+
+B Theoretical Proofs 
+
+Throughout, we use p := ps(q) = Eo∼πθ [R(o)|q]
+
+and g0(q) := ∇θ log πθ(o∗|q) for a fixed query q
+
+satisfying Assumption 1. 
+
+Assumption 1 (Binary Verifiable Reward) . For each query q, the reward is binary: R(o) ∈{0, 1}, and the success probability ps(q) := 
+
+Eo∼πθ [R(o)|q] ∈ (0 , 1) is well-defined. 
+
+B.1 Finite Rollout Analysis (Proof of Theorem 1) 
+
+Proof. Let ˆp(q) = 1
+
+> K
+
+PKk=1 R(ˆ ok) where ˆok ∼
+
+πθ(·| q) are i.i.d. rollouts. Since R(ˆ ok) ∼
+
+Bernoulli( p), we have E[ˆ p] = p and Var[ˆ p] = 
+
+p(1 − p)/K .
+
+Unbiasedness. Since g0(q) is deterministic for a fixed query q:
+
+Eˆp[ˆ gK (q)] = E[1 − ˆp(q)] · g0(q) = (1 − p) · g0(q).
+
+(12) 
+
+Signal loss. The event w(q) = 0 occurs iff ˆp(q) = 1, i.e., all K rollouts are correct. By independence: 
+
+P (w(q) = 0) = P (ˆ p(q) = 1) = pK . (13) The following results provide additional quanti-tative characterization of the estimator under finite rollouts. 
+
+Remark 2 (Total second moment) . Using the iden-tity E[X2] = ( E[X]) 2 + Var[ X] with X = 1 − ˆp:
+
+Eˆp[∥ˆgK (q)∥2] = 
+
+
+
+(1 − p)2 + p(1 − p)
+
+K
+
+
+
+∥g0(q)∥2.
+
+(14) 
+
+This decomposes into a signal term (1 − p)2∥g0∥2
+
+and an estimation noise term p(1 −p) 
+
+> K
+
+∥g0∥2 that van-ishes as K → ∞ . This expression is used in the convergence analysis (Theorem 2). 
+
+Remark 3 (Estimation-induced MSE) . The MSE due to weight estimation can be isolated as: 
+
+Eˆp
+
+∥ˆgK (q) − (1 − p)g0(q)∥2 =
+
+p(1 − p)
+
+K ∥g0(q)∥2, (15) 
+
+which follows from ˆgK − (1 − p)g0 = ( p − ˆp)g0
+
+and E[( p − ˆp)2] = Var[ˆ p] = p(1 − p)/K .
+
+B.2 Convergence Analysis (Proof of Theorem 2) Definition 1 (OSW-FT Surrogate Objective) . At outer iteration t with parameters θt, define: 
+
+J(t)(θ) = Eq∼D 
+
+(1 − pθt (q)) 
+
+| {z }
+
+> fixed weight
+
+· log πθ(o∗ | q)
+
+ ,
+
+(16) 
+
+where the weight is computed from πθt and held fixed during inner-loop updates. 
+
+Remark 4 (Necessity of stop-gradi-ent) . Differentiating the naive objective 
+
+Eq[(1 − pθ(q)) log πθ(o∗|q)] through the weight would introduce a ∇θpθ(q) term that the OSW-FT estimator (1 − ˆp) g0 does not capture. The surrogate J(t) makes explicit that (1 − ˆp) g0 is an unbiased gradient of J(t)(θ) at θ = θt, which is the quantity optimized in practice. This matches Algorithm 1, where rollouts and weights are computed once per batch before gradient updates. 
+
+Assumption 2 (Regularity Conditions) . (i) 
+
+L-smoothness : For each fixed weight configuration, J(t)(θ) is L-smooth in θ.(ii) Bounded second moment : Eq, ˆp[∥(1 −
+
+ˆp(q)) g0(q)∥2] ≤ M for all θ.(iii) Weight stability : |pθt+1 (q) − pθt (q)| ≤ ϵp for all q between consecutive outer iterations. (iv) Bounded log-likelihood : | log πθ(o∗|q)| ≤ B
+
+for all θ, q .Proof of Theorem 2. The proof proceeds in four steps. 
+
+Step 1: Inner-loop convergence. Within each outer iteration t, the weights are fixed, and by the unbiasedness established in Theorem 1, the stochas-tic gradient (1 − ˆp(q)) g0(q) is an unbiased esti-mator of ∇θJ(t)(θt). Applying the standard SGD convergence result for L-smooth non-convex ob-jectives (Ghadimi and Lan, 2013) over the S inner steps: 1
+
+S
+
+> S
+
+X
+
+> s=1
+
+E[∥∇ J(t)(θt,s )∥2]
+
+≤ 2( J(t)(θ∗) − J(t)(θt, 0)) 
+
+Sη + Lη Σ2,
+
+(17) where 
+
+Σ2 := Eq∼D 
+
+
+
+(1 − p(q)) 2
+
++ p(q)(1 − p(q)) 
+
+K
+
+
+
+∥g0(q)∥2
+
+(18) follows from the total second moment expres-sion in Remark 2 and linearity of expectation over 
+
+q.
+
+Step 2: Cross-iteration mismatch. When switch-ing from outer iteration t to t + 1 , the surrogate objective changes. The mismatch is bounded by: 
+
+|J(t+1) (θ) − J(t)(θ)|
+
+= Eq
+
+(pθt (q) − pθt+1 (q)) log πθ(o∗|q)
+
+≤ Eq
+
+|pθt (q) − pθt+1 (q)| · | log πθ(o∗|q)|
+
+≤ ϵp · B, 
+
+using Assumption 2(iii) and (iv). 
+
+Step 3: Accumulating the switching cost. Since there are M = T /S outer-iteration transitions, the mismatch accumulates as 
+
+PT /S m=1 
+
+J(m)(θ) − J(m+1) (θ) ≤ TS ϵpB, 
+
+(19) which, after dividing by ηT = √T , contributes a term of order (ϵpB/S )√T to the averaged bound. This term is bounded by the single-transition mis-match ϵpB whenever T ≤ S2, i.e. over training horizons commensurate with the chosen update interval S: ϵpBS
+
+√T ≤ ϵpB. (20) 
+
+Step 4: Telescoping. Summing (17) over all 
+
+T /S outer iterations and accounting for the mis-match (19) at each transition (with the switching cost bounded as in Step 3), with η = 1 /√T :
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+E
+
+h
+
+∥∇ θJ(⌊t/S ⌋)(θt)∥2i
+
+≤ 2∆ 0 + L · Σ2
+
+√T + B · ϵp.
+
+(21) 
+
+Corollary 1 (Σ2 < Σ2SFT ). The SFT gradient sec-ond moment is Σ2SFT = Eq[∥g0(q)∥2]. We show that Σ2 < Σ2SFT for any K ≥ 1.Decompose the difference: 
+
+Σ2SFT − Σ2
+
+= Eq
+
+∥g0∥2
+
+− Eq
+
+ 
+
+(1 − p)2 + p(1 − p)
+
+K
+
+
+
+∥g0∥2
+
+
+
+= Eq
+
+ 
+
+p(2 − p) − p(1 − p)
+
+K
+
+
+
+∥g0∥2
+
+
+
+.
+
+We verify the integrand is strictly positive for 
+
+p ∈ (0 , 1) and K ≥ 1:
+
+p(2 − p) − p(1 − p)
+
+K = p
+
+
+
+(2 − p) − 1 − pK
+
+
+
+≥ p[(2 − p) − (1 − p)] = p > 0,
+
+(22) 
+
+where the inequality uses K ≥ 1. Therefore, whenever P (p(q) > 0) > 0, the expectation in (22) 
+
+is strictly positive, giving Σ2 < Σ2SFT .
+
+C Unifying SFT and RL via General Policy Gradient 
+
+To reveal the structural connection between Su-pervised Fine-Tuning (SFT) and Reinforcement Learning (RL), we unify them under the General Policy Gradient framework. In RL, the gradient update for a model πθ takes the standard form: 
+
+∇θJ = E
+
+(R(τ ) − b(q)) 
+
+| {z }
+
+> Advantage / Weight
+
+·∇ θ log πθ(τ | q)
+
+
+
+(23) We view SFT as maximizing an objective func-tion JSFT = −L SFT . Under this lens, SFT re-stricts the trajectory entirely to the deterministic ground-truth oracle ( τ = o∗, where the reward 
+
+R(o∗) ≡ 1) and implicitly operates with a zero baseline (b(q) ≡ 0). Consequently, the SFT gradi-ent collapses into a static, uniform update: 
+
+∇θJSFT ∝ E
+
+ (1 − 0) 
+
+| {z } 
+
+> Static Weight ≡1
+
+·∇ θ log πθ(o∗ | q)
+
+
+
+(24) The Missing Baseline Problem. While RL meth-ods (such as GRPO) actively employ dynamic base-lines (e.g., the group mean) to reduce variance and scale updates based on the policy’s evolving capability, SFT’s implicit zero baseline treats all ground-truth trajectories as having identical, maxi-mal advantage. As a consequence, SFT assigns the exact same gradient coefficient to trivial, already-mastered samples ( πθ(o∗ | q) ≈ 1) as it does to completely unsolved ones. This leads to inefficient gradient allocation and unnecessary variance in-jection during training. Notably, this inefficiency arises not from noisy supervision, but from a sys-tematic mathematical mismatch between the static gradient estimator and the policy’s true compe-tence. By formally deriving the variance-reduced base-line under the constraint of deterministic ground-truth trajectories, we naturally arrive at the for-mulation of Online Self-Weighted Fine-Tuning (OSW-FT) . As established in Section 2, assigning this optimal baseline to the model’s current success probability ( b(q) = ps(q)) perfectly restores the dynamic advantage missing from standard SFT, en-suring optimal gradient reallocation while preserv-ing the optimization stability inherent to supervised learning.

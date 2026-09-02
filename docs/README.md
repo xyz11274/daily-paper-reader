@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-01</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-02</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 18 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 14 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-01 22:57:24 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-02 22:59:59 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026年9月1日完成18篇AI领域论文研读，含7篇精读、11篇速读。</p>
-<p>两篇高分精读均聚焦大模型自我提升方向，满分论文探讨LLM能否通过自测自评实现自我进化。</p>
-<p>对大模型自主进化感兴趣的普通读者，可优先阅读本次满分精读论文。</p>
+<p>2026年9月2日完成14篇智能体领域论文筛选，精读6篇、速读8篇。</p>
+<p>最值得关注的两个满分研究方向是大模型驱动智能体自我改进与基于参考轨迹的可靠智能体自进化。</p>
+<p>普通读者若关注智能体自我进化领域，可优先精读这两篇满分论文。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +73,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="S3Gym: Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement?">S3Gym: Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement?</span></li><li><span class="dpr-home-dashboard-paper-title" title="Meta$^n$: Recursive Self-Improvement through Emergent Depth">Meta$^n$: Recursive Self-Improvement through Emergent Depth</span></li><li><span class="dpr-home-dashboard-paper-title" title="Recursive Experiential-Working Memory Evolution for Long-Horizon Agent Harnesses">Recursive Experiential-Working Memory Evolution for Long-Horizon Agent Harnesses</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="S3Gym: Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement?">S3Gym: Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement?</span></li><li><span class="dpr-home-dashboard-paper-title" title="HarnessEvolve: Learning from Reference Trajectories for Reliable Agent Self-Evolution">HarnessEvolve: Learning from Reference Trajectories for Reliable Agent Self-Evolution</span></li><li><span class="dpr-home-dashboard-paper-title" title="ARISE-RL: Agentic Rubric-Grounded Iterative Self-Evolution with Reinforcement Learning">ARISE-RL: Agentic Rubric-Grounded Iterative Self-Evolution with Reinforcement Learning</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>6</strong></span><span class="dpr-home-dashboard-tag">seb <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>4</strong></span><span class="dpr-home-dashboard-tag">seb <strong>2</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">8 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Learning to Act While Waiting: RL Finetuning of Generalist Robot Policies Under Inference Latency">Learning to Act While Waiting: RL Finetuning of Generalist Robot Policies Under Inference Latency</span></li><li><span class="dpr-home-dashboard-paper-title" title="Iron: Intent-Aligned and Retrospective Dual Learning Framework for Enhancing Generalist Virtual Agents">Iron: Intent-Aligned and Retrospective Dual Learning Framework for Enhancing Generalist Virtual Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="DuMateBench: Evaluating Autonomous Agents in Complex Real-World Workflows">DuMateBench: Evaluating Autonomous Agents in Complex Real-World Workflows</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Auditing Harness Tampering in Self-Improving Agents">Auditing Harness Tampering in Self-Improving Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Online Self-Weighted Fine-Tuning">Online Self-Weighted Fine-Tuning</span></li><li><span class="dpr-home-dashboard-paper-title" title="EvoSkill Injection: Red-Teaming Autonomous Skill Generation and Evolution in Self-Evolving Agents">EvoSkill Injection: Red-Teaming Autonomous Skill Generation and Evolution in Self-Evolving Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>10</strong></span><span class="dpr-home-dashboard-tag">seb <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span><span class="dpr-home-dashboard-tag">seb <strong>3</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>2</strong></span></div>
 </section>
 </div>
 
