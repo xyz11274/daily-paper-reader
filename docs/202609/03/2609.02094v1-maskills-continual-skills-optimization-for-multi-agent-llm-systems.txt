@@ -1,0 +1,529 @@
+Title: MASkills: Continual Skills Optimization for Multi-Agent LLM Systems
+
+URL Source: https://arxiv.org/pdf/2609.02094v1
+
+Published Time: Thu, 03 Sep 2026 00:32:51 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# MASkills: Continual Skills Optimization for Multi-Agent LLM Systems 
+
+Huaiyuan Yao 1 Xiaoou Liu 1 Charles Fleming 2 Tianlong Chen 3 Hua Wei 1 
+
+> 1
+
+Arizona State University {huaiyuan, xiaoouli, hua.wei}@asu.edu  
+
+> 2
+
+Cisco Research chflemin@cisco.com  
+
+> 3
+
+University of North Carolina at Chapel Hill tianlong@cs.unc.edu 
+
+LLM-based multi-agent systems have shown strong performance on complex tasks, yet continual improvement from interaction experience remains challenging. Existing self-reflection methods build experience memories, but memories are mostly hard to invoke, refine, or scale, while agent skills offer a more actionable unit: structured procedural knowledge that specifies when to act, how to act, and which resources or tools to use. We introduce MASkills , a continual learning framework that optimizes multi-agent LLM systems through agent skills. MASkills presents a new agent-optimization pipeline that integrates skill-conditioned credit assignment, hierarchical credit aggregation, and momentum-smoothed optimization, enabling agent skill libraries to evolve through refinement, induction, consolidation, and pruning. Experiments on HotpotQA, LoCoMo, and GAIA demonstrate the effectiveness of MASkills across multiple agentic tasks. Our code is available at https://github.com/DaRL-GenAI/MASkills 
+
+1. Introduction 
+
+LLM-based multi-agent systems have emerged as a practical paradigm for solving complex tasks through coordination, role specialization, and long-horizon interaction [1, 2, 3]. However, how to continually improve a multi-agent LLM system over time remains challenging. Existing methods typically use self-reflection to construct an experience memory [4, 5]. Such memories can preserve useful experience, but they remain a weak basis for continual improvement: they record what happened in past trajectories, but not which action policy should be reused; they lack reliable invocation conditions; and as the memory grows, useful lessons become mixed with noisy, redundant, or stale free-form records [6]. A more useful unit for continual improvement is a skill . According to Anthropic [7], a skill is a structured package of procedural knowledge that tells an agent how to perform a class of tasks, including when to invoke it, how to act, which resources or tools to use. Skills make experience reusable: agents can discover relevant skills from lightweight descriptions, load detailed instructions and resources on demand, and refine them as new experience accumulates. This progressive-disclosure design makes skills more scalable and actionable than large unstructured memory stores. Recent methods [8, 9, 10] develop such reusable procedural abstractions, but remain predominantly single-agent and do not optimize skills under the coordination dynamics that determine team-level utility in multi-agent systems. Extending skill evolution to multi-agent settings requires agents to refine their skills through interaction, so that skill updates reflect not only individual outcomes but also their contributions to team-level coordination. This goal raises three concrete challenges: (1) Skill-level credit assignment. Team rewards should be attributed not only to the correct agent, but also to the correct skill. In multi-agent settings, a skill may only be invoked at a few timesteps, and its effect is entangled with the behaviors and skills of other agents. As a result, team-level or even agent-level feedback is insufficient to determine which specific skills should be improved. 
+
+(2) Noisy and heterogeneous interaction. Language-based feedback extracted from trajectories is often arXiv:2609.02094v1 [cs.AI] 2 Sep 2026 MASkills: Continual Skills Optimization for Multi-Agent LLM Systems 
+
+noisy, inconsistent, and unstable across learning cycles. Moreover, multi-agent systems may operate under very different coordination structures, such as centralized planning or decentralized peer communication, which induce different patterns of interaction dependency and credit propagation. (3) Discrete and high-risk skill updates. Unlike parameter vectors, skills are discrete language artifacts such as SKILL.md files, scripts, and references. Skill evolution, therefore, requires open-ended structural modifications rather than smooth numerical updates. Incorrect edits may directly alter the agent’s effective action space, making continual skill optimization inherently high-risk and difficult to stabilize. To address these challenges, we introduce MASkills , a language-based continual learning framework that performs policy improvement directly in agents’ skill spaces rather than parameter spaces. Under decentralized execution, each agent invokes reusable skill artifacts as part of its latent policy reasoning, while the system continually evolves these skills through language-space optimization. MASkills adopts a unified language-space policy-gradient-style framework, following the structural interpretation of TextGrad [11] and LangMARL [12], with three components corresponding to the challenges above: (1) skill-conditioned credit assignment, where a critic attributes trajectory feedback to specific skill invocations through counterfactual comparison; (2) hierarchical credit aggregation and momentum-smoothed optimization, which stabilize noisy feedback across trajectories, agents, skills, and interaction topologies; and (3) credit-driven skill-space optimization, where stable credit signals drive skill refinement, induction, consolidation, and pruning, together with held-out validation and rollback mechanisms. Our contributions are summarized as follows: (1) We introduce a new paradigm for continual multi-agent LLM learning that casts policy improvement as optimization over reusable skill spaces distilled from interaction traces. (2) We propose MASkills , a continual learning framework for multi-agent skill optimization that combines skill-conditioned credit assignment, aggregation, and optimization to evolve agent skill libraries through refinement, induction, consolidation, and pruning, together with held-out validation and rollback for stable updates. (3) We evaluate MASkills on HotpotQA, LoCoMo, and GAIA, demonstrating strong performance across memory and agentic tasks. 
+
+2. Related Work 
+
+Agent Skill Discovery. Voyager [13] pioneered an ever-growing skill library for an embodied LLM agent. Recent work has extended this paradigm in three complementary directions. MemSkill [8] treats memory operations themselves as a learnable skill bank: a controller selects a Top-K subset of skills per text span, an LLM executor applies them, and a designer periodically revises the bank from clustered hard cases. EvoSkill [9] casts skill discovery as iterative textual feedback descent: an Executor runs tasks, a Proposer diagnoses failures, and a Skill-Builder materializes proposals into structured SKILL.md folders, retained on a Pareto frontier only if they improve held-out validation. PolySkill [10] introduces polymorphic abstraction, separating a skill’s abstract goal from its concrete site-specific implementation, enabling cross-website transfer. However, these methods assume single-agent feedback and cannot directly attribute team-level outcomes to interacting agents and skills. 
+
+Multi-agent LLM Systems. LLM multi-agent frameworks such as AutoGen [14], MetaGPT [15], agentic neural networks [16], and symbolic learning [17] have demonstrated that division of labor among LLMs improves coverage on complex tasks. Most of these systems rely on hand-engineered roles and prompts [18, 19, 20]; the few that self-improve do so by either rewriting prompts globally such as TextGrad [11], DSPy [21] or sharing a memory like Reflexion [22]. LangMARL [12] introduced explicit credit assignment into language-space optimization. 
+
+> 2MASkills: Continual Skills Optimization for Multi-Agent LLM Systems
+
+3. Problem Formulation 
+
+We formalize MASkills on top of a cooperative multi-agent setting, a skill artifact, and a language-based notion of credit. 
+
+Cooperative multi-agent setting. We model a team of N LLM agents as a Dec-POMDP 
+
+M = ⟨S, {Ai}Ni=1, {Oi}Ni=1, P, R, γ⟩ (1) The agents share a team reward rt = R(st, a1 
+
+> t
+
+, . . . , aNt ), and each agent i executes a decentralized policy 
+
+πi(ait | oit) that maps its local observation to an action. The team objective is the expected discounted return 
+
+J(π) = Eπ [∑︀ t γtrt]. MASkills inherits this Dec-POMDP and re-parameterizes each πi through a skill library. 
+
+Skill artifacts. Following [9], we model each skill artifact as a structured, file-system-based representation. For agent i, the j-th skill artifact is defined as 
+
+k(j) 
+
+> i
+
+=(︁ y(j) 
+
+> i
+
+, m(j) 
+
+> i
+
+, R(j)
+
+> i
+
+)︁ , (2) where y(j) 
+
+> i
+
+denotes the metadata file, such as skill.yaml ; m(j) 
+
+> i
+
+denotes the procedural instruction file, such as SKILL.md ; and R(j) 
+
+> i
+
+denotes a set of auxiliary resources, such as scripts, references, assets, and configu-ration files. In implementations such as Claude/Codex-style skills, this representation often corresponds to a directory containing a procedural instruction file and optional resource folders, while some variants separate metadata into a dedicated skill.yaml file. This structure supports concise procedural abstraction, actionable execution guidance, hierarchical disclosure, and reusable skill composition. Each agent i maintains an evolving skill library Ki = {k(1) 
+
+> i
+
+, k(2) 
+
+> i
+
+, . . . , k(Mi ) 
+
+> i
+
+}, where Mi denotes the current number of skills available to agent i. We treat Ki as the learnable component of agent i’s policy. MASkills therefore optimizes reusable structured skill artifacts that parameterize decentralized agent behavior. 
+
+Skill-space optimization. Whereas classical MARL optimizes network parameters θ, MASkills directly optimizes the agents’ skill libraries: 
+
+max  
+
+> {K i}Ni=1
+
+Eτ∼π(·|{K i })[︀ R(τ)]︀ . (3) Here, the optimization variables {K i} are skill artifacts. We approach Eq. 3 through a language-space policy-gradient-style framework, following the structural interpretation introduced by TextGrad [11]. The analogy is conceptual rather than differentiable: decentralized rollouts provide trajectory sampling, language critics provide skill-level advantage-like feedback, hierarchical aggregation and momentum smoothing approximate Monte-Carlo expectation and variance reduction, and credit-driven skill editing operators act as pseudo-gradient updates over each Ki. Throughout the paper, terms such as gradient , advantage , and momentum 
+
+should therefore be understood as language-space analogies rather than literal derivatives. 
+
+4. MASkills Framework 
+
+MASkills operationalizes the skill-space objective as a closed-loop process structured as a language-space analogue of a policy gradient: decentralized rollouts produce skill traces; a language critic emits per-agent, 
+
+> 3MASkills: Continual Skills Optimization for Multi-Agent LLM Systems Agent Credit
+> Induction
+> Skill Credit
+> Language
+> Gradients
+
+(1) Multi-Agent Skill Execution 
+
+> Skill Library
+> skill.yaml
+> SKILL.md
+> resources/
+
+⋯
+
+> skill.yaml
+> SKILL.md
+> resources/
+
+⋯
+
+> skill.yaml
+> SKILL.md
+> resources/
+
+⋯
+
+> Trajectories
+
+(2) Fine-Grained Skill Credit Assignment 
+
+𝑠 1 𝑠 2 ⋯ 𝑠 T𝑠 0
+
+𝑠 1 𝑠 2 ⋯ 𝑠 T𝑠 0
+
+⋯
+
+⋯
+
+⋯
+
+𝑎 0𝐴 , 𝑘 0𝐴  𝑎 1𝐴 , ∅  𝑎 2𝐴 , 𝑘 2𝐴 
+
+𝑎 0𝐵 , ∅  𝑎 1𝐵 , 𝑘 1𝐵  𝑎 2𝐵 , ∅ 
+
+𝑎 0𝐶 , 𝑘 0𝐶  𝑎 1𝐶 , 𝑘 1𝐶  𝑎 3𝐶 , ∅   
+
+> LLM Critic
+> Prompt: … analyze whether each agent and invoked skill contributed positively or
+> negatively to the final team outcome …
+> Agent B
+> successfully
+> synthesized evidence
+> from……
+> The skill
+> connected Richard Dawkins to
+> ……
+
+(3) Stabilized Language Gradient Descent 
+
+> Assignment
+
+(4) Skill Evolution   
+
+> Trajectory-level edit directions.
+> •Refinements, Adjustments
+> •Generalizations, Removals
+
+⋯ 
+
+> Hierarchical Aggregation
+> Trajectories
+> Skills
+> Agents
+> Topologies
+> Momentum Smoothing
+> Current
+
++ History 
+
+Skill Library 
+
+> Refinement
+> Consolidation
+> Pruning
+
+Operators 
+
+> Validation &
+> Rollback
+
+Figure 1: Overview of the MASkills pipeline as a four-step language-space analog of policy optimization. Agents execute skills to generate trajectories, receive skill-conditioned linguistic credit, aggregate temporally stable advantages, and update the skill library through refinement, induction, consolidation, and pruning. per-skill counterfactual credits; a hierarchical aggregator over a batch plus momentum smoothing across cycles produces a temporally stable skill advantage; and this advantage drives four credit-driven operators on each skill space under a held-out validation, as shown in Fig. 1. 
+
+4.1 Multi-Agent Skill Execution 
+
+Each agent is an LLM equipped with a skill space Ki. At rollout time, lightweight metadata from each 
+
+skill.yaml (e.g., skill name and short description) is injected into the agent prompt, exposing the currently available skills to the model. The agent then autonomously decides whether to invoke a skill, which skill to invoke, and how to compose multiple skills during reasoning. Skills are exposed as callable tools rather than fully expanded prompts. When a skill is selected, its corresponding SKILL.md and auxiliary resources R are dynamically loaded into the context. This keeps the active context compact while enabling specialized procedural behavior. Formally, the agent policy is conditioned on its local observation oit, interaction history hit, and skill space Ki:
+
+ait ∼ πθ(︀ · | oit, Ki, hit)︀ . (4) Let cit ∈ K i ∪ { ∅} denote the skill invoked by agent i at timestep t, where cit = ∅ means the agent acted directly without loading a skill. Since skill invocations are explicit tool calls, the resulting skill trace 
+
+ξi = {(t, cit)}T−1
+
+> t
+
+=0 is directly observable from execution logs. The resulting trajectory becomes τ =⟨︀ s0, {ai
+
+> 0
+
+, ξi
+
+> 0
+
+}Ni=1, . . . , sT⟩︀ , augmenting the standard multi-agent trajectory with explicit skill-invocation records that later support skill-level credit assignment. 
+
+> 4MASkills: Continual Skills Optimization for Multi-Agent LLM Systems
+
+4.2 Fine-Grained Skill Credit Assignment 
+
+Optimizing LLM agents at the skill level requires identifying which invoked skills actually contributed to team success or failure. Agent-level feedback alone is insufficient: a single trajectory may involve multiple interacting skills across multiple agents, and only a subset of them may be responsible for the final outcome. MASkills therefore assigns credit at the granularity of individual skill invocations. Given a trajectory τ
+
+with skill traces, a centralized language critic evaluates how each invoked skill affected the team outcome relative to the counterfactual where that skill had not been used. For each skill k ∈ K i(τ) actually invoked by agent i along trajectory τ, the critic produces a structured natural-language credit: 
+
+Ctext  
+
+> i
+
+(τ, k) = LLM Critic (τ, i, k, ξi), (5) which explains whether the skill helped coordination, was redundant, caused a failure, or should be generalized or specialized. In addition to per-skill feedback, the critic also emits an agent-level residual credit: Ctext  
+
+> i
+
+(τ) = LLM Critic (τ, i), which captures effects not attributable to any single skill. This residual is particularly important for skill induction: if a failure cannot be explained by existing skills, the agent-level critique signals that a new skill may be needed. 
+
+4.3 Stabilized Language Gradient Descent 
+
+Trajectory-level language critiques are inherently noisy and often contradictory across rollouts. To stabilize optimization, MASkills converts raw critiques into stable language-space gradients through gradient extraction, hierarchical aggregation, and momentum-based updates. 
+
+Trajectory-level edit directions. Given a trajectory τ and an invoked skill k, the language critic first converts the textual credit signal into a trajectory-level edit direction: 
+
+gi(τ, k) = LLM Grad (︁ Ctext  
+
+> i
+
+(τ, k))︁ , (6) where LLM Grad (·) extracts a structured update direction from the credit signal, including suggested re-finements, behavioral adjustments, generalizations, or removals in skill space. Unlike numerical gradients, 
+
+gi(τ, k) is a structured natural-language edit direction over skills. 
+
+Hierarchical aggregation. Given a rollout batch B = {τ1, . . . , τB}, trajectory-level gradients are recursively aggregated across trajectories, skills, agents, and interaction topologies. At the skill level, the gradients associated with skill k are merged into a single language-space gradient estimate: 
+
+G(m) 
+
+> i
+
+(k) = LLM Agg (︁ {gi(τb, k)}Bb=1)︁ , (7) where LLM Agg (·) is an LLM-based operator that merges recurring behavioral patterns, resolves conflicting update directions, removes redundancy, and summarizes the coordination utility of the skill. Higher-level aggregation recursively combines these gradients across agents into a stable language gradient estimate. 
+
+> 5MASkills: Continual Skills Optimization for Multi-Agent LLM Systems
+
+Momentum-stabilized skill editing. Even after aggregation, edit directions may still fluctuate across optimization cycles. Instead of treating each cycle independently, MASkills carries forward persistent historical edit directions together with the current aggregated feedback. The skill-space update therefore follows a language-space analogue of momentum gradient descent: 
+
+K(m+1) 
+
+> i
+
+= LLM Edit (︁ K(m) 
+
+> i
+
+, G(m) 
+
+> i
+
+, G(m−1)
+
+> i
+
+)︁ , (8) where LLM Edit (·) denotes a language-space editing procedure that modifies the skill library using both the current aggregated feedback and persistent historical edit directions from previous optimization cycles. Conceptually, the current edit direction plays the role of the current gradient update, while the historical edit direction acts as a momentum term that preserves persistent behavioral improvements over time. This stabilization suppresses transient or contradictory critiques and encourages consistent long-horizon skill evolution. In practice, the abstract editing operator LLM Edit (·) is instantiated through four concrete skill-space transformations: refinement, induction, consolidation, and pruning. 
+
+4.4 Skill Evolution Operators 
+
+MASkills improves agent behavior by directly modifying the skill space Ki. Since skills are structured language artifacts rather than differentiable parameters, policy improvement is realized through a set of credit-driven editing operators acting on different regions of the skill space. 
+
+Refinement. Useful but imperfect skills are refined through localized diff-style edits guided by the aggre-gated edit direction: 
+
+k ← k ⊕ ∆k, ∆k = LLM Refine (︀ k, G(m) 
+
+> i
+
+(k))︀ , (9) where ∆k is a structured edit patch rather than a full skill rewrite. The refinement operator modifies only the skill regions implicated by the aggregated feedback while preserving unrelated procedural structure and previously validated behavior. 
+
+Induction. When persistent failures or unresolved coordination patterns cannot be adequately addressed by the current skill library, MASkills expands the skill space by inducing new skills from difficult trajectories. Let Hi denote the set of hard trajectories associated with persistent unresolved critiques, missing behavioral capabilities, or repeated coordination failures for agent i. The system proposes a new skill 
+
+knew ∼ LLM Propose (︀ Hi, G(m)
+
+> i
+
+)︀ , (10) where the proposal is conditioned on both the hard-case trajectories and the aggregated edit directions accumulated during optimization. Unlike refinement, which applies localized edits to existing skills, induction introduces entirely new procedural abstractions into the skill space. 
+
+Consolidation. To prevent uncontrolled growth and fragmentation of the skill space, MASkills periodically consolidates related skills into higher-level procedural abstractions. Given a set of functionally overlapping skills {ka, kb, . . . }, it constructs a consolidated skill 
+
+kmacro = LLM Merge (ka, kb, . . . ), (11) where LLM Merge (·) synthesizes shared behavioral structure and reusable procedural patterns into a unified skill. Consolidation reduces redundancy in the skill library and encourages reusable higher-level abstractions. 
+
+> 6MASkills: Continual Skills Optimization for Multi-Agent LLM Systems
+
+Table 1: Main results across HotpotQA, LoCoMo, and GAIA.  
+
+> (a) Multi-Hop Reasoning: HotpotQA
+
+Method IO CoT CoT-SC MedPrompt MultiPersona Self-Refine ADAS MASkills 
+
+F1 68.1 67.9 68.9 68.3 69.2 60.8 64.5 76.3  
+
+> (b) Long-horizon Memory: LoCoMo
+
+Method SH-F1 SH-BLEU MH-F1 MH-BLEU 
+
+MemoryBank 5.00 4.77 5.56 5.94 ReadAgent 9.15 6.48 5.31 5.12 LoCoMo 25.02 19.75 12.04 11.16 MemGPT 26.65 17.72 9.15 7.44 
+
+MASkills 27.61 21.30 17.22 12.87  
+
+> (c) General AI Assistants Benchmark
+
+Framework L1 L2 L3 Avg. 
+
+Base 12.8 3.8 0.0 6.8 Search-o1 23.1 17.3 0.0 17.5 Vanilla ReAct 28.2 15.3 0.0 18.4 R1-Searcher 28.2 19.2 8.3 20.4 
+
+MASkills 35.3 22.6 0.0 23.3 Pruning. Not all skills remain useful as the skill space evolves. Some skills become obsolete after consolida-tion, others exhibit persistently poor coordination utility, and some are rarely invoked across trajectories. To control skill-space growth and remove low-value behaviors, MASkills periodically prunes skills with consis-tently weak utility signals. Given the momentum-stabilized edit directions accumulated across optimization cycles, low-utility skills are removed from the skill library: 
+
+Ki ← K i \ { k : LLM LowUtility (︀ G(m) 
+
+> i
+
+(k))︀ }, (12) where LLM LowUtility (·) identifies skills whose behavioral contribution remains persistently negative, redun-dant, unstable, or negligible across trajectories. 
+
+Validation and rollback. Because skill updates directly modify the agent’s skill space, incorrect edits may introduce behavioral regressions. To ensure stable skill evolution, all candidate edits are evaluated on a held-out validation set before being committed to the skill library. Let Dval denote a held-out set of validation tasks and rollouts that are not used during the current optimization cycle. Given a candidate updated skill space K′ 
+
+> i
+
+, MASkills estimates its validation performance while keeping all other agents’ skills fixed: 
+
+ˆJval (K′ 
+
+> i
+
+| K −i) = Eτ∼D val [︀ R(τ)]︀ . (13) A candidate update is accepted only if 
+
+ˆJval (K′ 
+
+> i
+
+| K −i) ≥ ˆJval (Ki | K −i) − δ, (14) where δ ≥ 0 absorbs rollout variance and evaluation noise. Otherwise, the proposed edit is discarded and the previous skill space is restored. This validation-and-rollback mechanism acts as a trust-region-style constraint in skill space, preventing unstable edits caused by noisy critiques, or overfitting to recent trajectories. 
+
+> 7
+
+MASkills: Continual Skills Optimization for Multi-Agent LLM Systems 1 2 3 4 5             
+
+> Iteration
+> 0.45 0.50 0.55 0.60 0.65 0.70 0.75 0.80
+> Test F1
+> HotPotQA
+> Test F1 (MASkills) val_base val_new (accepted) val_new (rolled back)
+> 12345
+> Iteration
+> 0.00 0.05 0.10 0.15 0.20 0.25 0.30
+> Test F1
+> LoCoMo Single-Hop
+> Test F1 (MASkills) Test BLEU (MASkills)
+> 012345
+> Iteration
+> 0.00 0.05 0.10 0.15 0.20
+> Test F1
+> LoCoMo Multi-Hop
+> Test F1 (MASkills) Test BLEU (MASkills)
+> 12345
+> Iteration
+> 0.100 0.125 0.150 0.175 0.200 0.225 0.250
+> Test accuracy
+> GAIA
+> Test accuracy (MASkills)
+> 0.00 0.05 0.10 0.15 0.20 0.25 0.30
+> Test BLEU
+> 0.00 0.05 0.10 0.15 0.20
+> Test BLEU
+
+Figure 2: Training curves of MASkills across benchmarks with validation-based skill update decisions. 
+
+5. Experiments 
+
+We organize the empirical evaluation around three research questions (RQ1–RQ3). 
+
+• RQ1 (Task Performance): Does continual skill optimization improve the performance of multi-agent LLM systems across diverse tasks, and which components contribute most to the improvements? 
+
+• RQ2 (Skill Quality and Transferability): Do continually optimized skills become more reusable, transfer-able, and coordination-effective over time? 
+
+• RQ3 (Robustness and Generalization): Is MASkills robust across different multi-agent coordination topologies and LLM backbones? 
+
+5.1 Experimental Setup 
+
+We instantiate all tasks as cooperative Dec-POMDP environments in which a team of specialized LLM agents interacts under decentralized execution and a shared team-level objective. Each agent maintains a local observation space and executes a role-specialized policy conditioned on its observation history and skill library. To enable coordinated problem solving, agents are assigned complementary functional responsibilities, such as information retrieval, verification, planning, memory tracking, tool use, and decision making. Agents communicate through decentralized peer-to-peer interaction. For continual skill optimization, we use GPT-5.1 as the optimizer backbone responsible for skill-conditioned credit assignment, trajectory aggregation, skill refinement, induction, consolidation, and pruning. Following prior work [23, 24, 25], we use GPT-4o-mini (HotpotQA and LoCoMo) and Qwen2.5-7B (GAIA) as the primary actor backbones for agent execution. 
+
+5.2 Benchmarks Tasks. We instantiate experiments on three benchmarks: (1) Multi-hop Reasoning : HotpotQA [26], a multi-document question answering benchmark requiring compositional reasoning across supporting evidence. (2) Long-horizon dialogue memory : LoCoMo [27], a very-long-term multi-session conversation benchmark designed to evaluate persistent conversational memory and temporal reasoning. (3) General AI Assistants Benchmark (GAIA) [28] is a benchmark designed to evaluate general AI agents on real-world tasks, with a focus on reasoning, multimodal understanding, web browsing, and tool-use capabilities. 
+
+Metrics. We report both benchmark-specific task metrics and skill-evolution diagnostics. For HotpotQA , we follow the standard evaluation protocol and report answer-level F1. For LoCoMo , we report both F1 and 
+
+8MASkills: Continual Skills Optimization for Multi-Agent LLM Systems no-skills prompt-generated skills MASkills       
+
+> 0.00 0.05 0.10 0.15 0.20 0.25 0.30 0.35
+> Score
+> 0.04 0.03 0.28 0.03 0.03 0.21
+> LoCoMo Single-Hop
+> F1 BLEU
+> no-skills prompt-generated skills MASkills
+> 0.00 0.05 0.10 0.15 0.20
+> Score
+> 0.01 0.02 0.17 0.01 0.02 0.13
+> LoCoMo Multi-Hop
+> F1 BLEU
+> no-skills prompt-generated skills MASkills
+> 0.00 0.05 0.10 0.15 0.20 0.25 0.30
+> Accuracy
+> 0.1068 0.0680 0.2330
+> GAIA
+> CoT MultiPersona GAIA HotpotQA
+> LoCoMo-MH HotpotQA
+> 020 40 60 80
+> F1 ×100
+> 67.90 69.20 74.71 77.91
+> HotpotQA
+> MemoryBank ReadAgent MemGPT LoCoMo-MH LoCoMo-SH
+> 0510 15 20 25 30 35
+> F1 ×100
+> 5.00 9.15 26.65 29.41
+> LoCoMo Single-Hop
+> (a) Evolved vs prompt-generated skills (b) Cross-task skill transfer
+
+Figure 3: Skill quality and transferability analysis of MASkills. (a) Comparison between evolved skills, prompt-generated skills, and no-skill baselines on LoCoMo and GAIA. (b) Cross-task skill transfer results show that skills learned in one environment generalize effectively to unseen target tasks, indicating that MASkills acquires reusable procedural abstractions rather than task-specific prompting heuristics. BLEU across the four question categories defined by the benchmark (multi-hop, temporal, open-domain, and single-hop memory queries). For GAIA , we report averaged success rate across various tasks. 
+
+5.3 Main Results (RQ1) 
+
+Table 1 summarizes the main results on HotpotQA, LoCoMo, and GAIA. Overall, MASkills achieves strong and consistent performance across a diverse set of reasoning, long-context memory, and agentic problem-solving benchmarks, demonstrating the effectiveness of skill optimization in multi-agent systems. On HotpotQA, MASkills outperforms existing prompting-based and multi-agent reasoning baselines, indicating stronger multi-hop reasoning and evidence integration capabilities. On LoCoMo, MASkills consistently improves long-context memory retrieval and response quality across both single-hop and multi-hop settings, suggesting better temporal reasoning and memory coordination over extended interactions. On GAIA, MASkills achieves the strongest overall performance among compared agent frameworks, demonstrating improved planning, decomposition, and tool-use abilities in open-ended environments. The training dynamics of MASkills are shown in Figure 2, showing how skill optimization contributes to performance improvement over time. 
+
+5.4 Skill Quality and Transferability (RQ2) 
+
+We next evaluate whether continually optimized skills become more reusable, transferable, and coordination-effective over time. To this end, we analyze both the intrinsic quality of evolved skills and their ability to generalize across benchmarks. Figure 3(a) compares MASkills against no-skill baselines and prompt-generated skills across LoCoMo and GAIA. We observe that prompt-generated skills provide only marginal improvements over directly prompting the agents, while continually optimized skills learned by MASkills lead to substantial gains across all evaluated settings. In particular, MASkills significantly improves both F1 and BLEU on LoCoMo single-hop and multi-hop memory tasks, while also achieving the strongest performance on GAIA. These results suggest that iterative skill refinement and trajectory-driven optimization produce substantially higher-quality procedural abstractions than one-shot prompt-generated skills. Figure 3(b) further evaluates cross-task skill transfer. We transfer skill libraries learned from one environ-ment into previously unseen target tasks without additional optimization. Transferred skills consistently 
+
+9MASkills: Continual Skills Optimization for Multi-Agent LLM Systems HotpotQA F1 LoCoMo Avg F1 GAIA Acc 0.0 0.2 0.4 0.6 0.8   
+
+> Score
+> 0.763 0.217 0.233 0.718 0.299 0.155 0.743 0.206 0.197
+> GPT-4o-mini Claude-3.5-Sonnet Llama-3.1-70B
+
+Figure 4: Backbone comparison across different underlying language models. 
+
+Method LoCoMo-MH GAIA MASkills (Full) 17.2 23.3 
+
+w/o Skill Credit assignment 14.2 17.1 w/o Momentum Smoothing 16.4 21.9 w/o Validation Rollback 6.6 13.5 w/o Consolidation / Pruning 13.9 13.0 
+
+Table 2: Ablation Study improve downstream performance across all evaluated source-target pairs. For example, skills optimized on GAIA improve HotpotQA reasoning performance beyond strong prompting-based baselines such as CoT and MultiPersona, while LoCoMo-derived skills improve downstream long-horizon memory reasoning. These findings suggest that MASkills captures some reusable behavioral patterns. 
+
+5.5 Robustness and Generalization (RQ3) 
+
+We next evaluate whether MASkills generalizes across different coordination structures and underlying language model backbones. 
+
+Topology Robustness. We instantiate MASkills under centralized, decentralized peer, and hierarchical structures while keeping the optimization pipeline unchanged. Table 3 shows that MASkills maintains com-petitive performance across different coordination topologies, suggesting that the proposed skill optimization framework is not tightly coupled with a specific orchestration structure. Interestingly, the optimal topology is highly task-dependent. On HotpotQA and GAIA, decentralized peer coordination achieves the strongest performance. These tasks benefit from diverse exploration, independent tool or retrieval trajectories. In contrast, centralized coordination performs best on LoCoMo, particularly on multi-hop memory retrieval. Unlike retrieval-centric tasks, LoCoMo requires maintaining globally consistent long-context memory representations, resolving temporal dependencies, and integrating information across multiple conversational sessions. Centralized coordination provides a shared global state that reduces memory fragmentation and inconsistency across agents, leading to more coherent long-horizon reasoning and generation quality. Hierarchical coordination generally yields intermediate performance, balancing structured information aggregation with partial decentralization. 
+
+Backbone Generalization. We further evaluate MASkills across multiple LLM backbones, including both proprietary and open-source models. Figure 4 shows that MASkills maintains competitive performance across different model families on HotpotQA, LoCoMo, and GAIA. While the relative strengths of the backbones vary across tasks, the overall trends remain consistent: stronger reasoning-oriented models perform better on long-context and agentic tasks, whereas open-weight models still achieve solid performance under the MASkills framework.                                 
+
+> 10 MASkills: Continual Skills Optimization for Multi-Agent LLM Systems
+> Topology HotpotQA F1 LoCoMo-SH F1 LoCoMo-SH BLEU LoCoMo-MH F1 LoCoMo-MH BLEU GAIA-L1 GAIA-L2 GAIA-Avg Centralized 72.46 27.68 20.76 22.27 17.70 17.65 11.54 11.76 Hierarchical 71.86 27.55 20.85 22.03 17.62 20.59 11.54 12.75 Decentralized Peer 76.30 27.61 21.30 17.22 12.87 35.30 22.60 23.30
+
+Table 3: Performance under different coordination topologies. 
+
+5.6 Ablation Study 
+
+To understand the contribution of different components in MASkills, we conduct ablation studies over skill-conditioned credit assignment, momentum smoothing, validation rollback, and consolidation/pruning. Table 2 shows that removing any component leads to performance degradation, indicating that all modules contribute to stable continual skill optimization. Among them, validation rollback has the largest impact, suggesting that reverting unstable updates is critical for preventing performance collapse during iterative optimization. Skill-conditioned credit assignment also plays an important role by improving the attribution of successful behaviors to specific skills. In addition, momentum smoothing and consolidation/pruning provide consistent gains by stabilizing optimization and reducing redundant or low-quality skills. 
+
+6. Conclusion 
+
+We presented MASkills, a continual learning framework that optimizes multi-agent LLM systems in skill space. Through skill-conditioned credit assignment and evolution, MASkills enables agents to continually refine and reuse skills from interaction experience. Experiments on various benchmarks show that MASkills consistently improves memory and agentic tasks, highlighting the potential of continual skill optimization for scalable and adaptive multi-agent systems. 
+
+Acknowledgement 
+
+The work was partially supported by Cisco Faculty Award, Amazon Research Award, and NSF awards #2442477, #2550203, #2616632, #2623317, #2536297, and #2613637. The views and conclusions in this paper should not be interpreted as representing any funding agencies. 
+
+Limitations 
+
+Although MASkills demonstrates strong performance across multiple benchmarks, several limitations remain. First, our current experiments mainly focus on cooperative settings with relatively fixed agent roles and communication topologies, leaving more dynamic, adversarial, and open-world environments underexplored. Future work could extend MASkills to adaptive organizational structures, competitive multi-agent games, and large-scale decentralized coordination scenarios. Second, as the skill library continually expands during optimization, scalability challenges may emerge in skill retrieval, consolidation, and coordination efficiency. Future research may investigate hierarchical skill organization, retrieval compression, and lifelong learning mechanisms to support efficient long-term continual skill evolution at scale. 
+
+> 11 MASkills: Continual Skills Optimization for Multi-Agent LLM Systems
+
+Ethical Considerations 
+
+MASkills aims to improve multi-agent LLM systems by continually refining reusable skill artifacts from interaction experience. While this can enhance agent performance and adaptability, it also introduces several ethical considerations. First, automatically evolved skills may amplify undesirable behaviors inherited from the underlying LLMs, including factual errors, social biases, unsafe tool-use patterns, or overconfident reasoning. To mitigate this risk, MASkills incorporates held-out validation, rollback, consolidation, and pruning mechanisms before committing skill updates; however, these mechanisms should not be viewed as a substitute for human oversight in high-stakes applications. Second, because the framework learns from interaction trajectories, deployments involving user data should follow strict privacy practices, including data minimization, anonymization, access control, and compliance with the licenses and usage terms of the underlying datasets and tools. Third, improved multi-agent coordination and tool-use ability could be misused for harmful automation if applied without appropriate safeguards. We therefore recommend restricting MASkills to benign use cases, monitoring evolved skills for unsafe or deceptive behavior, and maintaining transparent audit logs of skill modifications. Our experiments are conducted on established research benchmarks, and we do not intend the framework to be used for decision-making in sensitive domains without additional safety evaluation, domain-specific validation, and human accountability. 
+
+AI usage 
+
+During the preparation of this work, the authors employed LLMs to assist with code implementation and to refine the manuscript’s grammatical clarity and stylistic flow. All final content, technical contributions, and experimental analyses were rigorously reviewed and verified by the authors. 
+
+References 
+
+[1] Xiaoou Liu, Longchao Da, Hanyang Chen, Yuan Ling, and Hua Wei. Androidreality: How far are mobile agents from the real world? arXiv preprint arXiv:2608.07775 , 2026. [2] Huaiyuan Yao, Longchao Da, Vishnu Nandam, Justin Turnau, Zhiwei Liu, Linsey Pang, and Hua Wei. Comal: Collaborative multi-agent large language models for mixed-autonomy traffic. In Proceedings of the 2025 SIAM International Conference on Data Mining (SDM) , pages 409–418. SIAM, 2025. [3] Lina Zhao, Zihao Bian, Qingyue Chen, Yafang Li, Zhiyi Luo, Jiaxing Bai, Guangbo Li, Min He, Kezhi Li, Huaiyuan Yao, et al. Fuas-agents: Autonomous multi-modal llm agents for treatment planning in focused ultrasound ablation surgery. arXiv preprint arXiv:2505.21418 , 2025. [4] Ken Tsui. Self-correction bench: Revealing the self-correction blind spot in LLMs. In NeurIPS 2025 Workshop on Evaluating the Evolving LLM Lifecycle: Benchmarks, Emergent Abilities, and Scaling , 2025. URL https://openreview.net/forum?id=dLz0bnmL2r .[5] Huaiyuan Yao, Pengfei Li, Bu Jin, Yupeng Zheng, An Liu, Lisen Mu, Qing Su, Qian Zhang, Yilun Chen, and Peng Li. Lilodriver: A lifelong learning framework for closed-loop motion planning in long-tail autonomous driving scenarios. arXiv preprint arXiv:2505.17209 , 2025. [6] Zeyu Zhang, Xiaohe Bo, Chen Ma, Rui Li, Xu Chen, Quanyu Dai, Jieming Zhu, Zhenhua Dong, and Ji-Rong Wen. A survey on the memory mechanism of large language model based agents, 2024. URL 
+
+https://arxiv.org/abs/2404.13501 .
+
+> 12 MASkills: Continual Skills Optimization for Multi-Agent LLM Systems
+
+[7] Anthropic. The complete guide to building skills for claude, 2025. [8] Haozhen Zhang, Quanyu Long, Jianzhu Bao, Tao Feng, Weizhi Zhang, Haodong Yue, and Wenya Wang. Memskill: Learning and evolving memory skills for self-evolving agents, 2026. URL https: //arxiv.org/abs/2602.02474 .[9] Salaheddin Alzubi, Noah Provenzano, Jaydon Bingham, Weiyuan Chen, and Tu Vu. EvoSkill: Automated skill discovery for multi-agent systems. arXiv preprint arXiv:2603.02766 , 2026. [10] Simon Yu, Gang Li, Weiyan Shi, and Peng Qi. Polyskill: Learning generalizable skills through polymor-phic abstraction for continual learning. In International Conference on Learning Representations , volume 2026, pages 140298–140326, 2026. [11] Mert Yuksekgonul, Federico Bianchi, Joseph Boen, Sheng Liu, Pan Lu, Zhi Huang, Carlos Guestrin, and James Zou. Optimizing generative ai by backpropagating language model feedback. Nature , 639: 609–616, 2025. [12] Huaiyuan Yao, Longchao Da, Xiaoou Liu, Charles Fleming, Tianlong Chen, and Hua Wei. Langmarl: Natural language multi-agent reinforcement learning, 2026. URL https://arxiv.org/abs/2604. 00722 .[13] Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and Anima Anandkumar. Voyager: An open-ended embodied agent with large language models. arXiv preprint arXiv:2305.16291 , 2023. [14] Qingyun Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu, Beibin Li, Erkang Zhu, Li Jiang, Xiaoyun Zhang, Shaokun Zhang, Jiale Liu, et al. Autogen: Enabling next-gen llm applications via multi-agent conversa-tion. In ICLR 2024 Workshop on Large Language Model (LLM) Agents .[15] Sirui Hong, Mingchen Zhuge, Jonathan Chen, Xiawu Zheng, Yuheng Cheng, Jinlin Wang, Ceyao Zhang, Steven Yau, Zijuan Lin, Liyang Zhou, et al. Metagpt: Meta programming for a multi-agent collaborative framework. In International Conference on Learning Representations , volume 2024, pages 23247–23275, 2024. [16] Xiaowen Ma, Yunpu Ma, Chenyang Lin, Sikuan Yan, Jinhe Bi, Zixuan Cao, Yijun Tian, Volker Tresp, and Hinrich Schuetze. Self-evolving multi-agent systems via textual backpropagation, 2026. URL 
+
+https://arxiv.org/abs/2506.09046 .[17] Wangchunshu Zhou, Yixin Ou, Shengwei Ding, Long Li, Jialong Wu, Tiannan Wang, Jiamin Chen, Shuai Wang, Xiaohua Xu, Ningyu Zhang, Huajun Chen, and Yuchen Eleanor Jiang. Symbolic learning enables self-evolving agents, 2024. URL https://arxiv.org/abs/2406.18532 .[18] Huaiyuan Yao, Wanpeng Xu, Justin Turnau, Nadia Kellam, and Hua Wei. Instructional agents: Reducing teaching faculty workload through multi-agent instructional design. In Proceedings of the 19th Conference of the European Chapter of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 4087–4109, 2026. [19] Tiejin Chen, Huaiyuan Yao, Jia Chen, Evangelos E Papalexakis, and Hua Wei. Every response counts: Quantifying uncertainty of llm-based multi-agent systems through tensor decomposition. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,pages 16204–16218, 2026. 
+
+> 13 MASkills: Continual Skills Optimization for Multi-Agent LLM Systems
+
+[20] Xu Hu, Yifan Zhang, Songtao Wei, Chen Zhao, Qiannan Li, Bingzhe Li, and Feng Chen. Small updates, big doubts: Does parameter-efficient fine-tuning enhance hallucination detection? arXiv preprint arXiv:2602.11166 , 2026. [21] Omar Khattab, Arnav Singhvi, Paridhi Maheshwari, Zhiyuan Zhang, Keshav Santhanam, Sri Vard-hamanan, Saiful Haq, Ashutosh Sharma, Thomas T. Joshi, Hanna Moazam, Heather Miller, Matei Zaharia, and Christopher Potts. Dspy: Compiling declarative language model calls into self-improving pipelines, 2023. URL https://arxiv.org/abs/2310.03714 .[22] Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. Reflexion: Language agents with verbal reinforcement learning. Advances in neural information processing systems ,36:8634–8652, 2023. [23] Prateek Chhikara, Dev Khant, Saket Aryan, Taranjeet Singh, and Deshraj Yadav. Mem0: Building production-ready ai agents with scalable long-term memory. arXiv preprint arXiv:2504.19413 , 2025. [24] Jiayi Zhang, Jinyu Xiang, Zhaoyang Yu, Fengwei Teng, Xionghui Chen, Jiaqi Chen, Mingchen Zhuge, Xin Cheng, Sirui Hong, Jinlin Wang, et al. Aflow: Automating agentic workflow generation. In International Conference on Learning Representations , volume 2025, pages 34040–34077, 2025. [25] Jialong Wu, Baixuan Li, Runnan Fang, Wenbiao Yin, Liwen Zhang, Zhenglin Wang, Zheng-wei Tao, Ding-Chu Zhang, Zekun Xi, Robert Tang, Yong Jiang, Pengjun Xie, Fei Huang, and Jingren Zhou. Webdancer: Towards autonomous information seeking agency. In D. Bel-grave, C. Zhang, H. Lin, R. Pascanu, P. Koniusz, M. Ghassemi, and N. Chen, editors, Ad-vances in Neural Information Processing Systems , volume 38, pages 120957–120985. Curran Asso-ciates, Inc., 2025. URL https://proceedings.neurips.cc/paper_files/paper/2025/file/ af043aee9cb137785d93195c6cf4cd96-Paper-Conference.pdf .[26] Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William Cohen, Ruslan Salakhutdinov, and Christopher D. Manning. HotpotQA: A dataset for diverse, explainable multi-hop question answering. In Ellen Riloff, David Chiang, Julia Hockenmaier, and Jun’ichi Tsujii, editors, Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing , pages 2369–2380, Brussels, Belgium, October-November 2018. Association for Computational Linguistics. doi: 10.18653/v1/D18-1259. URL https://aclanthology.org/D18-1259/ .[27] Adyasha Maharana, Dong-Ho Lee, Sergey Tulyakov, Mohit Bansal, Francesco Barbieri, and Yuwei Fang. Evaluating very long-term conversational memory of llm agents. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 13851–13870, 2024. [28] Grégoire Mialon, Clémentine Fourrier, Thomas Wolf, Yann LeCun, and Thomas Scialom. Gaia: a benchmark for general ai assistants. In International Conference on Learning Representations , volume 2024, pages 9025–9049, 2024.

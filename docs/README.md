@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-02</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-03</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 14 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-02 22:59:59 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-03 22:38:48 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026年9月2日完成14篇智能体领域论文筛选，精读6篇、速读8篇。</p>
-<p>最值得关注的两个满分研究方向是大模型驱动智能体自我改进与基于参考轨迹的可靠智能体自进化。</p>
-<p>普通读者若关注智能体自我进化领域，可优先精读这两篇满分论文。</p>
+<p>9月3日更新17篇AI新论文，含6篇精读、11篇速读。</p>
+<p>满分推荐大语言模型自我提升方向，高分关注复杂真实工作流的自主智能体评估。</p>
+<p>感兴趣的普通读者可优先从两篇高分精读内容入手了解。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -76,9 +76,9 @@
     <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="S3Gym: Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement?">S3Gym: Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement?</span></li><li><span class="dpr-home-dashboard-paper-title" title="HarnessEvolve: Learning from Reference Trajectories for Reliable Agent Self-Evolution">HarnessEvolve: Learning from Reference Trajectories for Reliable Agent Self-Evolution</span></li><li><span class="dpr-home-dashboard-paper-title" title="ARISE-RL: Agentic Rubric-Grounded Iterative Self-Evolution with Reinforcement Learning">ARISE-RL: Agentic Rubric-Grounded Iterative Self-Evolution with Reinforcement Learning</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="S3Gym: Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement?">S3Gym: Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement?</span></li><li><span class="dpr-home-dashboard-paper-title" title="DuMateBench: Evaluating Autonomous Agents in Complex Real-World Workflows">DuMateBench: Evaluating Autonomous Agents in Complex Real-World Workflows</span></li><li><span class="dpr-home-dashboard-paper-title" title="EvoSkill Injection: Red-Teaming Autonomous Skill Generation and Evolution in Self-Evolving Agents">EvoSkill Injection: Red-Teaming Autonomous Skill Generation and Evolution in Self-Evolving Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>4</strong></span><span class="dpr-home-dashboard-tag">seb <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seb <strong>5</strong></span><span class="dpr-home-dashboard-tag">ase <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -86,12 +86,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">8 篇</strong>
+    <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Auditing Harness Tampering in Self-Improving Agents">Auditing Harness Tampering in Self-Improving Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Online Self-Weighted Fine-Tuning">Online Self-Weighted Fine-Tuning</span></li><li><span class="dpr-home-dashboard-paper-title" title="EvoSkill Injection: Red-Teaming Autonomous Skill Generation and Evolution in Self-Evolving Agents">EvoSkill Injection: Red-Teaming Autonomous Skill Generation and Evolution in Self-Evolving Agents</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SwarmBench: Can Large Language Models Act as Agent Swarm Orchestrators?">SwarmBench: Can Large Language Models Act as Agent Swarm Orchestrators?</span></li><li><span class="dpr-home-dashboard-paper-title" title="MNIST-PRO: MNIST is Back as a Partially Observable World for AI Agents">MNIST-PRO: MNIST is Back as a Partially Observable World for AI Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="CHIME: Credit-Aware Hierarchical Memory Evolution for Long-Horizon Agentic Planning">CHIME: Credit-Aware Hierarchical Memory Evolution for Long-Horizon Agentic Planning</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span><span class="dpr-home-dashboard-tag">seb <strong>3</strong></span><span class="dpr-home-dashboard-tag">llm-trends <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>8</strong></span><span class="dpr-home-dashboard-tag">seb <strong>3</strong></span></div>
 </section>
 </div>
 
