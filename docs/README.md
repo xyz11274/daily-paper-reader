@@ -41,17 +41,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-03</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-04</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 14 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>3</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-03 22:38:48 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-04 22:45:16 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -62,9 +62,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>9月3日更新17篇AI新论文，含6篇精读、11篇速读。</p>
-<p>满分推荐大语言模型自我提升方向，高分关注复杂真实工作流的自主智能体评估。</p>
-<p>感兴趣的普通读者可优先从两篇高分精读内容入手了解。</p>
+<p>2026年9月4日AI论文研读：共14篇，含3篇精读11篇速读。</p>
+<p>最值得关注满分的终身学习交通仿真AI智能体、高分的大模型自我改进研究。</p>
+<p>对AI智能体方向感兴趣的读者，可优先精读本次满分文献。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -73,12 +73,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">3 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="S3Gym: Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement?">S3Gym: Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement?</span></li><li><span class="dpr-home-dashboard-paper-title" title="DuMateBench: Evaluating Autonomous Agents in Complex Real-World Workflows">DuMateBench: Evaluating Autonomous Agents in Complex Real-World Workflows</span></li><li><span class="dpr-home-dashboard-paper-title" title="EvoSkill Injection: Red-Teaming Autonomous Skill Generation and Evolution in Self-Evolving Agents">EvoSkill Injection: Red-Teaming Autonomous Skill Generation and Evolution in Self-Evolving Agents</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SimSkill: A Lifelong Learning AI Agent for Autonomous Mastery of Traffic Simulation">SimSkill: A Lifelong Learning AI Agent for Autonomous Mastery of Traffic Simulation</span></li><li><span class="dpr-home-dashboard-paper-title" title="S3Gym: Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement?">S3Gym: Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement?</span></li><li><span class="dpr-home-dashboard-paper-title" title="HarnessDev: Can LLMs Create and Evolve Their Own Agent Harness?">HarnessDev: Can LLMs Create and Evolve Their Own Agent Harness?</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">seb <strong>5</strong></span><span class="dpr-home-dashboard-tag">ase <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>3</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -89,9 +89,9 @@
     <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SwarmBench: Can Large Language Models Act as Agent Swarm Orchestrators?">SwarmBench: Can Large Language Models Act as Agent Swarm Orchestrators?</span></li><li><span class="dpr-home-dashboard-paper-title" title="MNIST-PRO: MNIST is Back as a Partially Observable World for AI Agents">MNIST-PRO: MNIST is Back as a Partially Observable World for AI Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="CHIME: Credit-Aware Hierarchical Memory Evolution for Long-Horizon Agentic Planning">CHIME: Credit-Aware Hierarchical Memory Evolution for Long-Horizon Agentic Planning</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Autonomously Acquiring Robot Manipulation Skills with Language-Driven Quality-Diversity">Autonomously Acquiring Robot Manipulation Skills with Language-Driven Quality-Diversity</span></li><li><span class="dpr-home-dashboard-paper-title" title="APEx: Distillation of Agent Procedural Experience for Adaptive Deep Research Question Answering">APEx: Distillation of Agent Procedural Experience for Adaptive Deep Research Question Answering</span></li><li><span class="dpr-home-dashboard-paper-title" title="CORAL: An LLM-Native Harness for Production Recommender Systems">CORAL: An LLM-Native Harness for Production Recommender Systems</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>8</strong></span><span class="dpr-home-dashboard-tag">seb <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ase <strong>11</strong></span></div>
 </section>
 </div>
 
