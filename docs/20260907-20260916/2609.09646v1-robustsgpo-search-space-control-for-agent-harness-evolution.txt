@@ -1,0 +1,671 @@
+RobustSGPO: Search-Space Control for Agent Harness Evolution
+Zibo Zhao1,2,†, Jijun Shi2, Mo Zhou2, Zhongyuan Wang2, Shifu Bie2, Yunfei Zhang2,
+Xuanting Zhou2, Xiangyu Wu2, Bin Liu2, Ruiming Tang2, Wenwu Ou2, Kun Gai2
+1Wuhan University, Wuhan, China
+2Kuaishou Technology, Beijing, China
+whubear@whu.edu.cn; {shijijun, zhoumo, wangzhongyuan03, bieshifu03, zhangyunfei05, zhouxuanting05, wuxiangyu06}@kuaishou.com
+Abstract
+Semantic-gradient-based
+prompt
+optimization
+(SGPO) improves agent harnesses using execution
+feedback, but its local update rule leaves the choice
+of edit scope and operation unresolved. We introduce
+ROBUSTSGPO, which specifies the requested edit, con-
+structs and checks the patch, and continues search from
+either the incumbent or retained snapshots. We eval-
+uate permission scheduling, cumulative controls, and
+task-family transfer in the AgentX brainstorming work-
+flow using 120 tasks, 95 runs, and 7,350 candidate at-
+tempts. Periodic 1 →2 →3 scheduling exceeds fixed
+maximum permission by 0.28 test-score points. Ro-
+bustSGPO increases completion on 30 held-out tasks
+from 60.0% to 80.0% and improves test quality from
+3.77 to 4.14 under a 20-million-token budget. Cate-
+gory retention reduces source-task degradation after a
+shift, whereas random retention reaches a higher desti-
+nation endpoint. Search-space control benefits quality
+through executable edits and alternative starting points,
+with measurable retention overhead.
+1 Introduction
+This paper builds on the published AgentX work [4], which
+established an industrial recommendation workflow and a
+semantic-gradient-based prompt optimization (SGPO) loop
+for harness evolution. SGPO diagnoses trace failures, edits
+an agent specification, and admits candidates through paired
+replay.
+RobustSGPO extends this foundation with explicit
+search-space control.
+Multi-agent behavior is distributed across instructions, in-
+put/output contracts, and agent connections. Restricting edits
+to one agent limits direct repair of cross-agent failures. Open-
+ing the whole permitted space does not ensure that the model
+explores it: generation can still concentrate on familiar instruc-
+tion rewrites. We study how to select edits, make them ex-
+ecutable, and retain alternative starting points under a fixed
+budget.
+Our contributions are an analysis of the gap between per-
+mitted and valid realized edits; RobustSGPO’s explicit control
+of edit selection, execution, and retention; and experiments
+connecting these controls to held-out quality, transfer, and to-
+ken cost.
+2 Related Work
+Harness evolution. Meta-Harness searches code using prior
+candidates, scores, and traces [5]; AHE exposes editable com-
+ponents and links changes to predicted outcomes [6]. Self-
+Harness couples failure mining with minimal proposals and
+regression validation [15]. These works establish harness evo-
+lution beyond prompt rewriting. RobustSGPO studies a nar-
+rower question: selecting scope, operation, and targets before
+generation, then enforcing targets and constructing prescribed
+add/remove edits.
+Structured search and adaptation. AgentFlow searches
+roles, topology, and protocols through a typed graph DSL
+with pre-execution checks [7]. HARBOR searches bounded
+harness configurations with cost-aware Bayesian optimiza-
+tion [11].
+HELIX provides typed, source-traceable com-
+position and verified trajectories for model–harness co-
+evolution [2]; HASE jointly evolves solutions, harnesses,
+and model weights [9]. Adaptive Auto-Harness routes tasks
+through a harness tree [8], while Evo-Harness compiles ex-
+perience into reusable skills [12]. Our model and evaluator
+stay fixed; archived snapshots seed further mutations and must
+pass incumbent-based admission, rather than serving as task-
+time routes.
+Prompt evolution and retention. OPRO, Promptbreeder,
+and TextGrad optimize textual variables [3, 13, 14]; GEPA
+retains complementary candidates on a Pareto frontier [1].
+Our MAP-Elites-inspired archive [10] instead groups com-
+plete snapshots by edit scope and operation. The experiments
+isolate these cumulative controls within AgentX; they do not
+rank RobustSGPO against the above systems on shared bench-
+marks. Evaluation covers one brainstorming workflow; fixed
+tables and code reproduce its curves.
+1
+arXiv:2609.09646v1  [cs.AI]  9 Sep 2026
+
+
+3 System Context and Baseline SGPO
+3.1 AgentX and the Evaluation Workflow
+In the AgentX workflow (Figure 1), the Brainstorm Agent gen-
+erates experimental ideas; its Developing Agent changes code;
+its Evaluation Agent analyzes experiments; harness evolution
+improves these agents [4].
+We evaluate the brainstorming
+workflow, in which proposal orchestration coordinates ques-
+tion, idea, and validation agents. Transfer stays within this
+workflow.
+Figure 1: AgentX changes industrial recommendation iteration from a manually handed-off pipeline into an agent-driven closed loop. Brain-
+storming, development, and evaluation agents consume online feedback and trajectory data, while harness evolution improves each agent over
+time. Prior-work foundation, reproduced from the AgentX technical report [4].
+3.2 Trace-to-Update Loop
+The report’s SGPO-I updates one target agent 𝑖, keeping the
+model, tools, orchestration, and other agents fixed [4]. It sam-
+ples traces T, derives rubrics R and standalone replay tasks,
+and computes a natural-language loss and semantic gradient:
+ℓ𝑡,𝑖, 𝑔𝑡,𝑖= 𝐸agent(ℎ𝑡,𝑖; T, R).
+(1)
+The gradient identifies missing requirements, sequencing er-
+rors, or broken contracts. The refinement agent generates a
+candidate:
+ℎ′
+𝑡,𝑖= 𝑅agent(ℎ𝑡,𝑖, 𝑔𝑡,𝑖).
+(2)
+The experiment agent replays identical tasks on both versions.
+With Δ𝐽𝑖= ReplayScore(ℎ′
+𝑡,𝑖) −ReplayScore(ℎ𝑡,𝑖),
+ℎ𝑡+1,𝑖:= ℎ′
+𝑡,𝑖
+if Δ𝐽𝑖> 𝜖∧Safe(Δℎ𝑖).
+(3)
+Otherwise the update is rolled back and its patch, score, and di-
+agnosis enter refinement experience. Rubrics, verifiers, traces,
+and model paths are protected. Figure 2 reproduces this loop.
+Figure 2: Prior-work SGPO-I loop: trace sampling and task construction, semantic-gradient refinement, and paired replay with accept/rollback.
+Reproduced from the AgentX technical report [4].
+4 The Search-Space Problem
+The nominal space Snom contains permitted edits; the realized
+space Sreal contains actually generated edits. Validity checks
+select the effective space:
+Seﬀ= {Δ𝐻∈Sreal : 𝐶path ∧𝐶semantic ∧𝐶budget ∧𝐶safe}. (4)
+Effective means valid, not admitted by replay. Broader per-
+missions need not yield more valid edits or higher quality. We
+use three levels: 𝛼1 edits one designated agent; 𝛼2 edits any
+existing brainstorming agents but preserves their set; 𝛼3 addi-
+tionally permits agent addition/removal and routing changes.
+E1 compares permission schedules; E2 measures valid-
+category coverage and structural validity, not all three space
+sizes. E3 tests retained starting points after a task shift.
+2
+
+
+5 Robust SGPO
+RobustSGPO extends AgentX’s SGPO while retaining its di-
+agnosis, proposal, replay, and accept/rollback loop. It makes
+three decisions explicit: what edit to attempt, how to construct
+and check it, and which version to continue from. A running
+AgentX example explains these decisions below; Figure 3 lo-
+cates them within the original loop.
+Figure 3: RobustSGPO extends Figure 2 with edit selection, patch construction/checking, and retained search starting points (Sections 5.1–
+5.3). All candidates still undergo incumbent-based replay admission.
+5.1 Choose What to Change This Round
+Consider an illustrative AgentX failure: single-idea sup-
+plies only a vague evidence claim, but single-validate
+needs its source and finding. A freely generated repair may
+merely tell idea to provide more evidence.
+RobustSGPO
+instead specifies: change both agents’ output/input require-
+ments to use matching fields. The model then writes the con-
+crete instructions.
+This request selects scope 𝑠(a pair), operation 𝑜(field
+alignment), and targets 𝑇(idea and validate). The controller
+chooses feasible categories 𝑐= (𝑠, 𝑜) and eligible targets be-
+fore content generation. Given feedback 𝑔,
+𝑞(Δℎ| ℎ, 𝑔) =
+∑
+𝑠,𝑜,𝑇
+𝑝(𝑠, 𝑜| ℎ) 𝑝(𝑇| 𝑠, 𝑜, ℎ) 𝑞LLM(Δℎ| ℎ, 𝑔, 𝑠, 𝑜,𝑇).
+(5)
+Only feasible combinations are included; scope and op-
+eration need not be independent. Permissions bound allowed
+changes; factorization directs realized edits within that bound-
+ary.
+5.2 Construct and Check the Requested Patch
+The exact-target check compares requested and changed ob-
+ject sets. If the request names both idea and validate, chang-
+ing only idea or also changing propose is rejected. This filters
+realized edits for object compliance; it does not establish se-
+mantic correctness or task quality.
+For additions/removals, predefined code constructs the
+patch. Given new-agent content, it writes the prescribed file
+and normalizes an existing name field; removal deletes the
+designated file. A free-form model could write code to do
+the same, but a checker would only accept or reject its output.
+The predefined operation performs the repeated editing work
+itself, helping requested structural edits pass validity checks.
+Ordinary instruction edits remain model-generated. This is
+the Typed Compiler in Figure 3.
+The current program does not automatically update caller
+instructions: creating an evidence agent does not itself insert
+it between idea generation and review. Loading, references,
+invocation on trigger tasks, and task quality are checked sepa-
+rately. Candidate admission retains Equation 3; failures also
+consume budget.
+5.3 Continue from Retained Versions
+Suppose an incumbent scores 4.2. A local rewrite A scores 4.3
+and is accepted; a pair edit B scores 4.1 after fixing the hand-
+off but making review too strict. These numbers illustrate the
+selection rule. RobustSGPO can retain B as its category’s best
+valid snapshot and later refine its review rule. Any descendant
+must beat the current incumbent, not merely B.
+The archive 𝐴[𝑐] stores the highest-validation complete
+harness snapshot for each retained scope–operation category.
+Membership follows the requested and verified edit. A seeded
+reservoir selects at most ten category slots; within retained
+categories, better candidates replace earlier entries. Search
+alternates incumbent and archive parents, selecting occupied
+categories uniformly and falling back to the incumbent when
+needed. Task shifts trigger rescoring before reuse, charged
+to search cost. This borrows category retention from quality-
+diversity search [10], but categorizes edit actions rather than
+behavioral niches. Retention changes future search parents,
+not edit permissions.
+3
+
+
+6 Experimental Results
+6.1 Tasks, Protocol, and Runs
+We use 120 tasks in two equally sized families: local in-
+struction failures and cross-agent handoff/structure failures.
+Grouping by source conversation and underlying requirement
+precedes a 30/15/15 optimization/validation/test split per fam-
+ily, yielding 60/30/30 tasks. Candidate generation receives op-
+timization traces and static edit errors; validation scores guide
+selection and retention, while test feedback is excluded from
+search.
+Table 1 summarizes runs; all conditions share the initial
+harness, model, rubric, and proposal budget. We use five
+paired seeds and three proposals per round, capped at 120
+changed lines and 6,000 added characters per proposal. In-
+valid proposals and retries consume budget. Three paired re-
+plays compare candidates and incumbents on identical tasks
+and execution seeds. Admission requires a mean validation
+gain above 𝜖= 0.05 and passing safety checks; at most one
+best valid candidate is accepted per round, with ties retaining
+the incumbent. Token costs include generation, failures, re-
+play, judging, and archive operations. Fixed test evaluation is
+separate from search cost.
+Table 1: Runs and candidate attempts. All conditions use five seeds; E3 includes two transfer directions and random retention.
+Study
+Conditions
+Runs
+Rounds
+Attempts
+E1: Scheduling
+6
+30
+30
+2,700
+E2: Ablations
+5
+25
+30
+2,250
+E3: Transfer
+4 × 2
+40
+20
+2,400
+Total
+95
+7,350
+6.2 E1: Periodic Scheduling Improves Final Quality
+We compare fixed permissions, two periodic schedules, and a
+shuffle with ten rounds per permission. All use greedy admis-
+sion without an archive. In Figure 4, final scores for periodic
+1 →2 →3, periodic 3 →2 →1, and random scheduling
+are 4.34, 4.24, and 4.17; fixed 𝛼1, 𝛼2, 𝛼3 attain 3.85, 4.07, and
+4.06. Fixed 𝛼3 leads early, but periodic 1 →2 →3 finishes
+0.28 points higher.
+0
+5
+10
+15
+20
+25
+30
+SGPO round
+2.5
+3.0
+3.5
+4.0
+4.5
+5.0
+Test score (0-5)
+Fixed α1
+Fixed α2
+Fixed α3
+Periodic 1 →2 →3
+Periodic 3 →2 →1
+Random-matched
+Figure 4: E1 test-score trajectories on a 0–5 scale. Periodic 1 →2 →3 has the highest final score; early and final rankings differ.
+6.3 E2: Cumulative Search-Space Controls
+Table 2 adds a requested edit, exact-target rejection, prede-
+fined agent additions/removals, and category retention. All
+configurations use 𝛼3 permission and shared safety/replay
+checks. Controllers uniformly sample feasible categories and
+eligible targets. Intermediate controls use matched requests.
+RobustSGPO alternates incumbent and retained parents; ev-
+ery candidate must beat the current incumbent for admission.
+Table 2: Cumulative configurations: each row retains all preceding controls. Dashes denote absent additional controls; safety and paired
+replay apply to every row.
+Configuration
+Edit plan
+Target enforcement
+Fixed structural editing
+Category archive
+SGPO
+—
+—
+—
+—
+Planned Search
+
+—
+—
+—
+Constrained Search
+
+
+—
+—
+Structured Search
+
+
+
+—
+RobustSGPO
+
+
+
+
+4
+
+
+Quality and coverage.
+Figure 5(a) reports round-30
+scores of 3.82, 3.94, 4.04, 4.20, and 4.30 in table order: Ro-
+bustSGPO improves on SGPO by 0.48 points. Final effective-
+category coverage in Figure 5(b) is 48%, 46%, 48%, 54%,
+and 68%, respectively. Providing a request alone does not in-
+crease final effective coverage; prescribed edits and retained
+starting points expand it further. Coverage is the fraction of
+the fixed scope–operation vocabulary reached by at least one
+valid edit; repeats add no coverage. It measures category cov-
+erage, not full space size or task quality, and does not separate
+ungenerated from invalid-only categories.
+Structural proposals and reuse. Valid/attempted counts
+in Figure 5(c) are 9/14, 23/50, 22/45, 28/36, and 26/34. Struc-
+tured Search achieves 77.8% validity versus 48.9% for Con-
+strained Search, reducing unsuccessful structural proposals.
+Rates are undefined before any structural attempt. Figure 5(d)
+shows ten occupied categories and 17 cumulative archive-
+origin updates that pass incumbent admission. These retained
+versions supply used starting points; Section 6.5 accounts for
+their overhead.
+0
+5
+10
+15
+20
+25
+30
+Evolution round
+2.5
+3.0
+3.5
+4.0
+4.5
+5.0
+Test score (0-5)
+(a) Held-out task quality
+SGPO
+Planned Search
+Constrained Search
+Structured Search
+RobustSGPO
+0
+5
+10
+15
+20
+25
+30
+Evolution round
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Coverage
+(b) Cumulative effective coverage
+SGPO
+Planned Search
+Constrained Search
+Structured Search
+RobustSGPO
+0
+5
+10
+15
+20
+25
+30
+Evolution round
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+Valid fraction
+(c) Structural validity (valid/attempts)
+SGPO (9/14)
+Planned Search (23/50)
+Constrained Search (22/45)
+Structured Search (28/36)
+RobustSGPO (26/34)
+0
+5
+10
+15
+20
+25
+30
+Evolution round
+0
+5
+10
+15
+20
+25
+Count
+(d) Archive occupancy and reuse
+Occupied categories
+Admitted reuse
+Figure 5: E2 search behavior: (a) held-out quality, (b) cumulative effective-category coverage, (c) cumulative structural validity with
+valid/attempted counts, and (d) occupied archive categories and cumulative admitted archive-origin updates.
+6.4 E3: Adaptation and Retention After a Task Shift
+We evaluate local-to-cross-agent failures and the reverse.
+Each run spends ten rounds on source tasks and ten on des-
+tination tasks, using the respective optimization and valida-
+tion splits. Retained snapshots are rescored on the destination
+validation set before reuse. We compare SGPO, Structured
+Search, RobustSGPO, and RobustSGPO (Random Archive).
+Random retention uses the same capacity, parent-use fre-
+quency, rescore budget, and admission rule, but stores valid
+snapshots by reservoir sampling rather than category-wise
+quality.
+0.0
+2.5
+5.0
+7.5
+10.0
+12.5
+15.0
+17.5
+20.0
+Evolution round
+2.5
+3.0
+3.5
+4.0
+4.5
+5.0
+Test score (0-5)
+Task shift
+(a) Adaptation on destination tasks
+SGPO
+Structured Search
+RobustSGPO
+RobustSGPO (Random Archive)
+0.0
+2.5
+5.0
+7.5
+10.0
+12.5
+15.0
+17.5
+20.0
+Evolution round
+2.5
+3.0
+3.5
+4.0
+4.5
+5.0
+Test score (0-5)
+Task shift
+(b) Retention on source tasks
+SGPO
+Structured Search
+RobustSGPO
+RobustSGPO (Random Archive)
+Figure 6: E3 adaptation and retention after the round-ten task shift. Dashed curves use random retention; category retention reduces source-
+task loss, while random retention reaches a higher destination endpoint.
+5
+
+
+Figure 6 tracks destination tasks on the left and source
+tasks on the right throughout the run. Mean destination scores
+over rounds 11–20 are 3.72, 3.67, 3.74, and 3.75; final scores
+are 4.06, 3.96, 3.98, and 4.18. RobustSGPO improves mean
+adaptation quality over Structured Search, while random re-
+tention obtains the highest destination endpoint.
+Final source scores decline by 0.33, 0.31, 0.15, and 0.31
+points relative to round ten. Category retention has the small-
+est source-task loss. Random retention improves destination
+quality further but loses more source capability. The archive
+policy therefore changes the adaptation–retention tradeoff:
+category elites benefit retention rather than maximizing the
+destination endpoint.
+Table 3: Held-out task results and equal-token comparison. Local and cross-agent sets contain 15 tasks each. Round-30 scores correspond to
+Figure 5(a); the budget column uses the last affordable checkpoint within 20 million tokens. Bold marks column bests, including ties.
+Configuration
+Round 30
+Local
+Cross-agent
+Success
+20M tokens
+SGPO
+3.82
+11/15
+7/15
+60.0%
+3.77
+Planned Search
+3.94
+11/15
+8/15
+63.3%
+3.84
+Constrained Search
+4.04
+12/15
+8/15
+66.7%
+3.99
+Structured Search
+4.20
+12/15
+11/15
+76.7%
+4.10
+RobustSGPO
+4.30
+13/15
+11/15
+80.0%
+4.14
+6.5 Behavioral Outcomes at Equal Token Cost
+Table 3 evaluates actual task completion, required artifacts,
+protected operations, and cross-agent handoffs. RobustSGPO
+completes 24/30 tasks versus SGPO’s 18/30: local comple-
+tion rises from 11/15 to 13/15, and cross-agent completion
+from 7/15 to 11/15.
+0
+5
+10
+15
+20
+Charged tokens (million)
+3.2
+3.4
+3.6
+3.8
+4.0
+4.2
+4.4
+Test score (0-5)
+SGPO
+Planned Search
+Constrained Search
+Structured Search
+RobustSGPO
+Figure 7: Test quality versus cumulative charged tokens, including
+all search-side model calls. Dots mark the last affordable checkpoints
+within 20 million tokens.
+Per-round costs in Figure 7 are 0.80, 0.83, 0.78, 0.82, and
+0.95 million in table order. Within 20 million tokens, the final
+affordable rounds are 25, 24, 25, 24, and 21, yielding scores of
+3.77, 3.84, 3.99, 4.10, and 4.14. RobustSGPO exceeds SGPO
+by 0.37 points at equal cost. Its margin over Structured Search
+shrinks from 0.10 at equal rounds to 0.04 at equal token cost,
+reflecting archive overhead. Checkpoints are selected by bud-
+get, not by test score.
+7 Conclusion
+RobustSGPO decomposes free-form SGPO updates into re-
+quested edits, patch construction and checking, and retained
+search starting points.
+Periodic permissions improve final
+quality, predefined add/remove operations improve structural
+validity, and the full method outperforms free search at equal
+token cost. Category retention reduces source-task degrada-
+tion after transfer while adding search overhead. These re-
+sults support explicit control of edit choices and search start-
+ing points in multi-agent harness evolution.
+References
+[1] Lakshya A Agrawal, Shangyin Tan, Dilara Soylu,
+Noah Ziems, Rishi Khare, Krista Opsahl-Ong, Arnav
+Singhvi, Herumb Shandilya, Michael J Ryan, Meng
+Jiang, Christopher Potts, Koushik Sen, Alexandros G.
+Dimakis, Ion Stoica, Dan Klein, Matei Zaharia, and
+Omar Khattab. GEPA: Reflective Prompt Evolution Can
+Outperform Reinforcement Learning, 2025.
+[2] Tianyu Fan and Chao Huang. HELIX: Model-Harness
+Co-evolution for Recursive Self-Improvement, 2026.
+[3] Chrisantha
+Fernando,
+Dylan
+Banarse,
+Henryk
+Michalewski, Simon Osindero, and Tim Rocktäschel.
+Promptbreeder: Self-referential self-improvement via
+prompt evolution, 2023.
+[4] Changxin Lao, Fei Pan, Guozhuang Ma, Han Li, Hui-
+huang Lin, Jijun Shi, et al.
+AgentX: Towards agent-
+driven self-iteration of industrial recommender systems,
+2026.
+[5] Yoonho Lee, Roshen Nair, Qizheng Zhang, Kangwook
+Lee, Omar Khattab, and Chelsea Finn. Meta-Harness:
+End-to-End Optimization of Model Harnesses, 2026.
+[6] Jiahang Lin, Shichun Liu, Chengjun Pan, Lizhi Lin, Shi-
+han Dou, Zhiheng Xi, Xuanjing Huang, Hang Yan, Zhen-
+hua Han, Tao Gui, and Yu-Gang Jiang. Agentic Har-
+ness Engineering: Observability-Driven Automatic Evo-
+lution of Coding-Agent Harnesses, 2026.
+[7] Hanzhi Liu, Chaofan Shou, Xiaonan Liu, Hongbo Wen,
+Yanju Chen, Ryan Jingyang Fang, and Yu Feng. Synthe-
+6
+
+
+sizing Multi-Agent Harnesses for Vulnerability Discov-
+ery, 2026.
+[8] Zewen Liu, Zhan Shi, Yisi Sang, Bing He, Minhua Lin,
+Tianxin Wei, Dakuo Wang, Benoit Dumoulin, Wei Jin,
+and Hanqing Lu.
+Adaptive Auto-Harness: Sustained
+Self-Improvement for Agentic System Deployment on
+Open-Ended Task Streams, 2026.
+[9] Haochen Luo, Yi Huang, Sichun Luo, Fengyuan Liu, Lei
+Li, Zefa Hu, Junlan Feng, and Qi Liu. Harness-Aware
+Self-Evolving: Co-Evolving Model Weights, Harness,
+and Task Solutions, 2026.
+[10] Jean-Baptiste Mouret and Jeff Clune.
+Illuminating
+search spaces by mapping elites, 2015.
+[11] Biswa Sengupta and Jinhua Wang.
+HARBOR: Auto-
+mated Harness Optimization, 2026.
+[12] Tianxin Wei, Zhan Shi, Minhua Lin, Bing He, Zewen
+Liu, Yisi Sang, Yuanchen Bei, Xuying Ning, Jiaru Zou,
+Ting-Wei Li, Xiao Lin, Yanjun Zhao, Chi Wang, Benoit
+Dumoulin, Dakuo Wang, Jingrui He, and Hanqing Lu.
+Evo-Harness: Context-to-Harness Skill Compilation for
+Self-Evolving Agents, 2026.
+[13] Chengrun Yang, Xuezhi Wang, Yifeng Lu, Hanxiao Liu,
+Quoc V. Le, Denny Zhou, and Xinyun Chen. Large lan-
+guage models as optimizers, 2023.
+[14] Mert Yuksekgonul, Federico Bianchi, Joseph Boen,
+Sheng Liu, Zhi Huang, Carlos Guestrin, and James Zou.
+Textgrad: Automatic “differentiation” via text, 2024.
+[15] Hangfan Zhang, Shao Zhang, Kangcong Li, Chen
+Zhang, Yang Chen, Yiqun Zhang, Lei Bai, and Shuyue
+Hu. Self-Harness: Harnesses That Improve Themselves,
+2026.
+7

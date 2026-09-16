@@ -1,0 +1,1124 @@
+Closing the Consistency Gap: Self-Evolving Agents That Learn to Stay on Course
+Evelyn Duesterwald1, Benjamin Elder1, Lilian Ngweta1, Shashanka Ubaru2, Malgorzata Zimon2
+1IBM Software Innovation Lab
+2IBM Research
+Abstract
+Large language model (LLM)-powered agents can be ac-
+curate on average yet unreliable in production, a discrep-
+ancy that has been observed but remains largely unaddressed.
+When given the same task five times, a ReAct agent on the
+AppWorld benchmark using GPT-4.1 succeeds in all five runs
+only 53% of the time, even though its per-run pass rate aver-
+ages 77%. We call this 24-point shortfall the consistency gap,
+and we argue that addressing it is a precondition for trustwor-
+thy AI agent deployment. We present a self-evolving agent
+framework that reduces this gap by identifying unstable, low-
+consistency steps in agent trajectories and converting them
+into episodic memory the agent can draw on in future runs.
+At its core is a Consistency Analyzer that pinpoints where
+and why a trajectory is likely to flip across executions, and
+a Guideline Generator that converts the diagnosis into tar-
+geted guidelines, committed to memory and injected into fu-
+ture agent executions on similar tasks. On AppWorld with
+ReAct/GPT-4.1, our framework raises the fraction of tasks
+that succeed in all five runs by +16 points on same-task eval-
+uation and +13 points on similar-task generalization.
+Code: https://github.com/AgentToolkit/altk-evolve
+1
+Introduction
+Large language model (LLM)-powered agents have become
+the technology of choice for automating tasks that span from
+web navigation to API orchestration to interactive coding.
+Published benchmark accuracy numbers miss an underap-
+preciated caveat: agents can be accurate on average but un-
+reliable on repeat, since the same task asked of the same
+agent often produces different outcomes from one run to the
+next. We call this shortfall the consistency gap, and argue
+that reducing it is a precondition for the trust and reliability
+required for production deployment.
+The gap is often large enough to matter in practice. On
+the test normal split of AppWorld (Trivedi et al. 2024), a
+ReAct (Yao et al. 2023) agent backed by GPT-4.1 achieves a
+mean pass rate of 77% across five runs (Mean@5), but con-
+sistently passes all five runs on only 53% of tasks (Passˆ5).
+This 24.4-point shortfall concentrates in a substantial pop-
+ulation of tasks (∼32% of the benchmark) that mix passes
+and failures across runs, the scenarios where mean accuracy
+Copyright © 2026, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.
+Figure 1: Consistency guideline pipeline: Detect (1) and
+Generate (2).
+numbers are least informative about what a user actually ex-
+periences.
+The design of our framework to address this gap rests on
+three observations. First, consistency is not the same as ac-
+curacy: a high mean pass rate can co-exist with a low con-
+sistent pass rate, so treating consistency as a first-class ob-
+jective requires dedicated metrics (Section 2.1), an instru-
+ment that estimates it without re-running every task many
+times (Section 3.1), and a mechanism that targets it specifi-
+cally (Section 3.2). Second, inconsistency has a measurable
+token-level fingerprint: at each inference point the model
+induces a distribution over next tokens, and a flat distri-
+bution with near-tied tokens lets the agent’s decision flip
+from run to run even under temperature-zero decoding; this
+can be estimated without model internals by resampling and
+measuring response variability, the basis of our Consistency
+Analyzer. Third, consistency can be improved by injecting
+consistency guidance at the prompt level: a short natural-
+language consistency guideline replaces an uncertain, previ-
+ously flip-prone decision with a stable one the agent makes
+the same way on every subsequent run - without touching the
+inference loop, agnostic to agent architecture, and confined
+to an offline analysis stage.
+Approach. Our framework is a two-stage pipeline (Fig-
+ure 1) that is triggered when a new trajectory becomes avail-
+able. Both stages run offline. Detect: a black-box Consis-
+tency Analyzer resamples each inference point in the tra-
+jectory, producing a step- and trajectory-level consistency
+scorecard that pinpoints decisions at risk of flipping, with-
+out access to model internals or agent code. Generate: an
+LLM-based Guideline Generator converts each flip-prone
+arXiv:2609.08832v1  [cs.AI]  8 Sep 2026
+
+
+step into one or more candidate consistency guidelines, or-
+ganized (following Fang et al. (2026)) into strategy, recov-
+ery, and optimization categories. Generated guidelines are
+committed to memory, clustered and deduplicated, and re-
+trieved by cosine similarity into the prompt of subsequent
+similar tasks, stabilizing the inference points that are simi-
+lar to those previously flagged. We build on the trajectory-
+informed memory framework of Fang et al. (2026) for stor-
+age, clustering, consolidation, and retrieval; the principal
+cost of this cross-execution learning is a delay before use-
+ful guidelines accumulate, bounded by a feedback dynamic
+in which each guideline shrinks the inconsistent-task popu-
+lation that future guidelines are drawn from.
+Contributions. (1) A formalization and empirical charac-
+terization of the consistency gap (Section 2). (2) A black-box
+Consistency Analyzer (Section 3.1) that estimates step- and
+trajectory-level consistency from response variability via
+configurable resampling; aggregate trajectory consistency
+also correlates with trajectory pass/fail (AUROC 0.69), let-
+ting it support the generator’s own judgment of trajec-
+tory outcome where no ground-truth rating is available.
+(3) Consistency-targeted guideline generation (Section 3.2)
+driven by step-level inconsistency. (4) Empirical results
+(Section 4) on AppWorld with ReAct/GPT-4.1 and GPT-
+OSS-120B showing +16 pp Passˆ5 same-task and +13 pp
+similar-task generalization (168 tasks), plus a sample-budget
+sensitivity study.
+2
+Consistency Gap
+A common issue with current AI agents is: the same task,
+asked of the same agent backed by the same model, can pro-
+duce different outcomes from one run to the next. In this
+section we make this discrepancy explicit, empirically char-
+acterize its magnitude, and sketch its underlying causes.
+2.1
+Pass@k, Mean@k, and Passˆk
+Let T be a benchmark of agent tasks. For each task t ∈T ,
+run the agent k independent times and let Xt ∈{0, 1}k
+record outcome of a run of t. Three task-level aggregation
+metrics of Xt are commonly reported in the agentic litera-
+ture:
+Pass@k(t) ≜1
+h
+( Pk
+j=1 X(j)
+t
+) ≥1
+i
+,
+(1)
+Mean@k(t) ≜
+1
+k
+Pk
+j=1 X(j)
+t
+,
+(2)
+Passˆk(t) ≜1
+h
+( Pk
+j=1 X(j)
+t
+) = k
+i
+.
+(3)
+Pass@k asks whether the agent succeeds at least once in k
+tries, isolating capability from sampling noise. Mean@k is
+the per-task mean pass rate, the standard reported accuracy.
+Passˆk, by contrast, asks whether the agent succeeds on all
+k tries, isolating consistency from capability. For k indepen-
+dent Bernoulli trials with success probability p, the three sat-
+isfy E[Passˆk] = pk ≤E[Mean@k] = p ≤E[Pass@k] =
+1 −(1 −p)k, with equality only at p ∈{0, 1}. Aggregated
+over a benchmark, Pass@k, Mean@k and Passˆk refer to
+averages of the per-task quantities over T .
+Consistency gap.
+We define the consistency gap as
+Gap@k(T ) ≜Mean@k(T ) −Passˆk(T )1, measured in
+percentage points (pp): it quantifies how much apparent ac-
+curacy is unreliable, i.e., may evaporate under repeated de-
+ployment. Figure 2 illustrates this for a ReAct agent on Ap-
+pWorld (k = 5), plotting Mean@5, Passˆ5, and the gap be-
+tween them, per difficulty level and model.
+Normalized consistency.
+The raw gap confounds capa-
+bility with consistency, since it is mechanically bounded
+above by Mean@k: a low-accuracy model can exhibit at
+most a small absolute gap regardless of how variable its be-
+havior is. We therefore also define normalized consistency
+Consistency@k(T ) ≜Passˆk(T )/Mean@k(T ) ∈[0, 1],
+which rescales Passˆk by the model’s own mean accuracy:
+1 means the agent passes every run on every task it can
+ever solve, near 0 means successes are almost entirely non-
+reproducible. Substituting gives Gap@k = Mean@k · (1 −
+Consistency@k), so two agents with identical absolute gaps
+can have different Consistency@k whenever their mean ac-
+curacy differs.
+2.2
+Empirical Characterization of the
+Consistency Gap
+We measure the consistency metrics for a ReAct (Yao et al.
+2023) agent backed by two LLMs of different capabilities,
+GPT-4.1 and GPT-OSS-120B, evaluated on the 168-task
+test normal split of the AppWorld benchmark (Trivedi
+et al. 2024) with k = 5 runs per task and the standard App-
+World grader (Figure 2).
+Absolute gap.
+The absolute gap is large for both mod-
+els (24.4 pp for GPT-4.1 and 23.8 pp for GPT-OSS-120B),
+despite the wide capability difference but distributes differ-
+ently across difficulty. With GPT-4.1 it grows monotonically
+(17.5/25.0/30.2 pp for easy/medium/hard): harder tasks are
+both less likely to succeed and disproportionately likely to
+flip. With GPT-OSS-120B the pattern inverts, peaking on
+easy (38.6 pp) and shrinking on hard (9.5 pp) because the
+hard-task Mean@5 itself collapses to 9.5%, mechanically
+capping the gap. In both cases the consistent fraction of the
+benchmark falls far below mean accuracy, 53% vs. Mean@5
+of 77% for GPT-4.1, only 10% vs. 34% for GPT-OSS-120B,
+so standard accuracy numbers are substantially uninforma-
+tive about what a deployed-agent user actually experiences.
+Normalized consistency.
+Normalizing by each model’s
+own mean accuracy removes the capability ceiling. GPT-
+4.1’s aggregate consistency is 0.69, declining to 0.51 on hard
+tasks: even where it can occasionally solve a task, it reliably
+delivers all-five-pass only about half the time. GPT-OSS-
+120B is more severe: aggregate consistency is only 0.30,
+collapsing to 0.00 on hard tasks - it never passes all five
+runs on a hard task it can occasionally solve. The 2× dif-
+ference (0.69 vs. 0.30) shows GPT-OSS-120B’s successes
+1Jha et al. (Jha et al. 2026) independently introduce relia-
+bility gap for the analogous discrepancy between Pass@k and
+Majority@k in ReAct agents; see Section 5.
+
+
+0%
+20%
+40%
+60%
+80%
+100%
+pass rate (%)
+77.4
+53.0
+24.4
+94.7
+77.2
+17.5
+77.1
+52.1
+25.0
+61.9
+31.7
+30.2
+Aggregate
+(168)
+Easy
+(57)
+Medium
+(48)
+Hard
+(63)
+Mean@5
+Passˆ5
+gap (pp)
+(a) ReAct / GPT-4.1
+0%
+20%
+40%
+60%
+80%
+100%
+pass rate (%)
+33.9
+10.1
+23.8
+66.7
+28.1
+38.6
+27.1
+2.1
+25.0
+9.5
+0.0
+9.5
+Aggregate
+(168)
+Easy
+(57)
+Medium
+(48)
+Hard
+(63)
+Mean@5
+Passˆ5
+gap (pp)
+(b) ReAct / GPT-OSS-120B
+Figure 2: The consistency gap on AppWorld for a ReAct agent backed by (a) GPT-4.1 and (b) GPT-OSS-120B.
+are almost entirely non-reproducible, while GPT-4.1 retains
+meaningful consistency across difficulty levels.
+The gap is unlikely to be idiosyncratic to a single agent or
+model: in informal testing we have also observed similar pat-
+terns with other agent architectures (e.g., CUGA (Marreed
+et al. 2025)) and other models, though we have not quanti-
+fied the magnitude of the gap in these settings.
+These sources of inconsistency trace back to the shape of
+the model’s token-probability distribution at each inference
+point (Section 3.1), motivating our approach: identify the in-
+ference points with flat response distributions and generate
+prompt-level guidance to sharpen them in future executions.
+3
+Consistency Guideline Generation
+We build on the trajectory-informed agentic memory frame-
+work of Fang et al. (2026)2, which treats episodic memory as
+a primary mechanism for agent self-improvement: an LLM
+extracts structured tips (guidelines) from a raw trajectory
+in three categories - strategy, recovery, optimization - clus-
+ters them into a dual-indexed memory (embedding plus cat-
+egory/priority/context/provenance metadata), and retrieves
+them at runtime by cosine-similarity or LLM-guided query.
+We inherit this machinery unchanged; our contribution is a
+new upstream stage: the pipeline of Figure 1 that decides
+what guidelines to extract, targeted at consistency rather
+than outcome alone.
+The approach operates as two coupled loops. The oper-
+ational loop executes user tasks: the agent runs, optionally
+augmented with guidelines retrieved from memory, and an
+observability layer captures the full trajectory. The offline
+analysis loop transforms each captured trajectory into new
+guidelines via the Detect and Generate stages of Figure 1,
+which enter this dual-indexed episodic memory and are re-
+trieved as described above. Unlike the prior framework, gen-
+eration here is grounded in the consistency scorecard rather
+than solely left to the generating LLM’s judgment: a step
+that succeeded but exhibited high response variability is just
+as eligible for guideline generation as one that observably
+2The Detect-and-Generate pipeline has been contributed as a
+feature of the open-source ALTK-EVOLVE repository (AgentToolkit
+2026).
+failed. The two loops form a self-evolving cycle: as trajec-
+tory experience accumulates, the analyzer surfaces increas-
+ingly fine-grained sources of inconsistency and subsequent
+runs become measurably more consistent.
+3.1
+Consistency Analyzer
+The Consistency Analyzer takes a single recorded agent tra-
+jectory T = ⟨s1, s2, . . . , sn⟩and produces a consistency
+scorecard: a per-step consistency score C(si) ∈[0, 1] to-
+gether with an aggregate trajectory score C(T) ∈[0, 1], plus
+diagnostic metadata identifying which steps are most likely
+to flip on a future run. The analyzer is black-box in the sense
+that it only re-invokes the underlying LLM with the agent’s
+recorded prompts, with no access to model logits, internal
+activations, or agent source code, making it applicable to any
+agent built on a hosted LLM endpoint.
+Why Greedy Decoding Is Not Enough
+Inconsistency can
+arise at LLM inference points and is governed by the shape
+of the token-probability distribution there. Sharp distribu-
+tions place most mass on a single token and are resilient
+to noise: minor perturbations from GPU floating-point arith-
+metic, request batching, or tokenizer state are not enough to
+reorder the top token. Flat distributions, by contrast, place
+comparable mass on several near-tied tokens and are vulner-
+able to that same noise: a small perturbation is enough to
+change which token comes out on top. This is why the prob-
+lem cannot be fixed by decoding strategy alone: switching
+to greedy decoding, or to sampling with a fixed seed, only
+fixes how a given probability distribution is turned into a to-
+ken choice, it does nothing about the fact that, on a hosted
+endpoint, the probabilities themselves shift slightly from run
+to run due to platform noise. So the same prompt to the
+same model can still yield different token choices on dif-
+ferent runs, even under temperature-zero (greedy) decoding.
+Critically, the confidence of a single response (e.g., the per-
+token log-probability of the chosen path) reveals only how
+confident the model was in the path it took, not how close
+the runners-up were, that is, how resilient the decision actu-
+ally is to this noise. Predicting whether a step will flip on a
+future run therefore requires estimating the shape of the dis-
+tribution over agent-meaningful outcomes, not just the depth
+of the one path taken, an estimate we obtain via resampling.
+
+
+Step Consistency via Resampling
+For each inference
+step si, the analyzer reissues the recorded prompt to the
+same LLM endpoint N times (typically temperature ≤0.5),
+yielding a response set Di = {r(1)
+i
+, . . . , r(N)
+i
+} that consti-
+tutes the empirical estimate of the response distribution. The
+step consistency score C(si) ∈[0, 1] measures how concen-
+trated Di is around its mode, using one of three primitive
+measures or a structured combination, selected by the de-
+tected response type.
+Free-text and code responses.
+For free natural-language
+text (e.g., a reasoning trace) or program code, we esti-
+mate step consistency as mean pairwise cosine similarity of
+SBERT (Reimers and Gurevych 2019) sentence (or code)
+embeddings:
+C(si) =
+2
+N(N−1)
+X
+j<k
+cos
+ e(r(j)
+i ), e(r(k)
+i
+)
+
+,
+(4)
+where e(r) is the (code) embedding of response r.
+Embedding-space similarity rewards semantic equivalence
+despite differing syntax, so paraphrases and functionally-
+equivalent code are correctly treated as consistent.
+Categorical responses.
+For categorical values such as a
+tool name, enum argument, or structured identifier, step con-
+sistency is the mean pairwise Jaccard similarity over tok-
+enized values,
+C(si) =
+2
+N(N −1)
+X
+j<k
+J(r(j)
+i , r(k)
+i
+),
+(5)
+where J(a, b) = |V (a) ∩V (b)| / |V (a) ∪V (b)| over token
+sets V (·). Unlike embedding-based measures, Jaccard pe-
+nalizes any token-level mismatch, appropriate where exact
+match is semantically required: a different argument key or
+enum value can produce a different downstream outcome.
+Structured
+combination
+responses.
+Semi-structured
+responses (e.g., a JSON object with a free-text thoughts
+field
+alongside
+categorical
+action/action input
+fields) are decomposed into fields Fi, each mapped to one
+of the primitive types above, and combined as a weighted
+sum:
+C(si) =
+X
+f∈Fi
+δf · simf(Df
+i ),
+X
+f
+δf = 1,
+(6)
+where Df
+i projects the N samples onto field f, δf is a config-
+urable importance weight (zero to suppress irrelevant fields),
+and simf is the primitive measure for that field’s type. This
+lets the analyzer tolerate paraphrastic and code-level noise
+while still flagging meaningful divergence in fields whose
+exact value determines the agent’s next action.
+Trajectory Consistency Aggregation
+Step-level scores
+alone do not predict whether the trajectory as a whole is at
+risk, so we aggregate them into a trajectory-level score by
+mean aggregation: Cmean(T) = 1
+n
+Pn
+i=1 C(si). Mean con-
+sistency is fast to compute and, as we show in Section 4, pro-
+vides a useful predictor of trajectory outcome. Its limitation
+is that it treats steps as independent: a high-consistency step
+that nonetheless propagates an upstream low-consistency
+decision is not penalized for its dependence on that decision.
+3.2
+Guideline Generation
+The Consistency Analyzer surfaces where an agent is at
+risk of flipping; the Guideline Generator turns that diagnosis
+into a short, agent-readable instruction targeted at reducing
+the uncertainty that caused it in the first place. To integrate
+with the memory framework of Fang et al. (2026), guide-
+lines follow the same strategy/recovery/optimization taxon-
+omy, adapted for consistency: a strategy guideline enforces
+a pattern that was correct despite high variability (the agent
+guessed right); a recovery guideline steers around a step
+whose variability correlates with failure; and an optimiza-
+tion guideline instructs the agent to skip or simplify a highly
+variable step that is not strictly necessary for task comple-
+tion.
+Given a trajectory T and its consistency scorecard, a step
+is flagged as inconsistent if its step consistency C(si) falls
+below a threshold θC (we use θC = 0.85) and it lies on
+the agent’s decision path. The trajectory, with its flagged
+steps marked, is passed to an LLM-based generator, which
+is instructed to generate guidelines that specifically target
+the flagged inconsistent steps. Appendix A shows example
+guidelines generated using GPT-4.1 from the trajectory and
+scorecard of an AppWorld task.
+Generated guidelines enter the dual-indexed episodic
+memory with metadata for category, priority, application
+context, task category and provenance. At runtime, guide-
+lines are retrieved by either cosine similarity against the in-
+coming task description or by an LLM-guided selector that
+constructs a metadata-filtered query from the task. We refer
+to Fang et al. (2026) for the full details of storage manage-
+ment and retrieval, including deduplication, semantic clus-
+tering, and LLM-based merging of overlapping guidelines.
+4
+Evaluation
+We evaluate our framework along three dimensions relevant
+to production deployment: whether consistency guidelines
+improve repeat-run reliability on the same task; whether they
+generalize to similar tasks without per-task tuning, the com-
+mon case once a system has accumulated experience across
+many related tasks; and whether the analyzer’s aggregate tra-
+jectory consistency is a reliable enough proxy for trajectory
+outcome to support the guideline generator’s own judgment
+when no ground-truth rating is available.
+4.1
+Experimental Setup
+We evaluate on AppWorld (Trivedi et al. 2024), an interac-
+tive coding-agent benchmark in which an agent operates a
+controlled simulation of personal apps via Python tool calls,
+graded by the AppWorld harness, on the test normal split
+(168 tasks). AppWorld groups tasks into scenarios of three
+variants each, which we exploit below to test generalization
+to similar tasks. We evaluate a ReAct (Yao et al. 2023) agent
+backed by GPT-4.1 and GPT-OSS-120B, running each task
+five times and reporting Passˆ5, Mean@5, and (where rel-
+evant) Pass@5 as defined in Section 2.1. All experiments
+were run against cloud-hosted model endpoints: GPT-4.1 on
+Microsoft Azure and GPT-OSS-120B on Amazon Web Ser-
+vices (AWS).
+
+
+The consistency analyzer parses the ReAct agent re-
+sponse at each step to extract actions as categorical pairs:
+(API name, API params). Each extracted pair is scored
+by average pairwise Jaccard similarity, with a default re-
+sampling budget of N = 30 at temperature 0.5. For the
+same-task and similar-task evaluations, guidelines are gener-
+ated from a single baseline trajectory per task by prompting
+the same model that produced it (acting as judge on its own
+scorecard), and retrieved at runtime by cosine similarity.
+4.2
+Same-Task Consistency Improvement
+We first evaluate whether guidelines generated from one
+baseline trajectory of a task improve consistency on repeat
+runs of that same task; results for these experiments are il-
+lustrated in Figure 3.
+GPT-4.1.
+Consistency guidelines lift aggregate Passˆ5 by
++16.0 pp (53.0% →69.0%, a 30% relative gain), largest in
+absolute terms on Medium tasks (+22.9 pp) and in relative
+terms on Hard tasks (+14.3 pp on a 31.7% baseline, a 45%
+relative lift). Mean@5 is never degraded, rising by +3.6 pp
+aggregate (+1.6 to +6.2 pp per difficulty level), support-
+ing the design hypothesis that consistency-targeted mem-
+ory improves Passˆk without sacrificing Mean@k. Normal-
+ized consistency rises by +0.17 aggregate, most on Medium
+(+0.22) and Hard (+0.21), where the baseline was most
+volatile. Full per-difficulty numbers, including similar-task
+columns, are in Table 1 (Appendix B).
+GPT-OSS-120B.
+Starting from a substantially lower base-
+line (Passˆ5=
+10.1%, Mean@5=
+33.9%), consistency
+guidelines improve aggregate Passˆ5 by +6.0 pp and
+Mean@5 by +4.8 pp. The relative Passˆ5 gain (59%) is
+nearly twice that of GPT-4.1 (30%), indicating the frame-
+work extracts more of the available headroom when the
+baseline is lower. Gains concentrate where the model al-
+ready has meaningful pass rates: Easy improves by +8.7 pp
+Passˆ5, while Hard, starting from 0%, gains only +1.6 pp.
+Normalized consistency rises from 0.30 to 0.42 aggregate,
+most on Medium (+0.28). Full per-difficulty numbers are in
+Table 2 (Appendix B).
+Consistency Gap.
+Figure 3 visualizes gap-reduction un-
+der same-task guidelines versus baseline. For GPT-4.1 (a),
+the aggregate gap to perfect consistency narrows from 0.32
+to 0.15 (53% reduction) across every difficulty level. For
+GPT-OSS-120B (b), baseline gaps are far larger (0.70 ag-
+gregate, 1.00 on Hard) and guidelines make meaningful but
+partial inroads (to 0.58 aggregate): the model’s low raw ca-
+pability caps how much guidelines alone can recover.
+4.3
+Generalization to Similar Tasks
+A more demanding test is whether guidelines extracted from
+one task improve consistency on a different but similar task.
+Each AppWorld scenario consists of three similar task vari-
+ants v1, v2, v3 that differ in parameter values and other de-
+tails; we derive guidelines from v1 and inject them into runs
+of v2 and v3 so each of the 168 tasks is evaluated twice,
+against guidelines from each of its scenario’s other two vari-
+ants (336 evaluations total)
+GPT-4.1.
+Sibling-task guidelines lift aggregate Passˆ5 by
++13.0 pp (Table 1), only 3 pp below same-task; Hard shows
+a small Mean@5 regression (−0.8 pp), likely because some
+sibling guidelines target API patterns that differ subtly in the
+sibling variant. That transfer occurs at all suggests the an-
+alyzer surfaces recurring patterns (e.g., paginated retrieval,
+credential management) rather than task-idiosyncratic ones.
+GPT-OSS-120B.
+Sibling-task guidelines lift aggregate
+Passˆ5 by +8.7 pp (Table 2), exceeding the +6.0 pp same-
+task gain, with all four difficulty levels improving and no
+regressions; Hard tasks move from 0.00 to 0.29 normalized
+consistency, the largest single-cell gain across both tables.
+Consistency Gap.
+Figure 3’s dark teal bars show similar-
+task gap reduction tracking same-task closely for GPT-4.1
+(aggregate gap 0.17 vs. 0.15), and substantially outperform-
+ing same-task on GPT-OSS-120B’s Hard tasks (0.29 vs.
+0.13 closure from zero). Overall, guidelines reliably push
+normalized consistency upward across difficulty levels, with
+similar-task transfer matching or exceeding same-task clo-
+sure in most cases.
+4.4
+Trajectory Consistency as an Outcome
+Predictor
+Section 3.1 noted that aggregate trajectory consistency cor-
+relates with grader outcome; we quantify this using AUROC
+of aggregate consistency as a binary classifier of trajectory
+pass/fail. On 50 AppWorld test challenge tasks with a single
+ReAct/GPT-4.1 trajectory each, mean aggregate consistency
+reaches AUROC 0.699, an acceptable predictor. This makes
+aggregate consistency a useful signal for the Guideline Gen-
+erator: rather than relying solely on the LLM’s own unaided
+judgment of whether a trajectory succeeded or failed, the
+generator can draw on this empirical stability measure to
+support that judgment, which is otherwise unavailable in
+production settings that lack a ground-truth outcome rating.
+5
+Related Work
+Self-consistency,
+inference
+scaling,
+and
+uncertainty
+quantification. Self-consistency (Wang et al. 2023) sam-
+ples multiple chains of thought and selects the majority an-
+swer; inference-scaling work (Snell et al. 2024) and reason-
+ing models such as OpenAI’s o1 family generalize the same
+intuition, and agent variants use tests or an LLM judge to
+select among rolled-out solutions. We differ on two axes:
+resampling happens offline rather than at runtime, and the
+objective is consistency, not accuracy - variability is a di-
+agnostic signal for where the prompt should be hardened,
+not a voting mechanism. Predictive entropy (Malinin and
+Gales 2021) overstates uncertainty when responses vary in
+wording but agree in meaning, since it measures spread
+over surface forms rather than over meaning; semantic en-
+tropy (Kuhn, Gal, and Farquhar 2023; Farquhar et al. 2024)
+addresses this via clustering; our decomposed structured-
+response score (Section 3.1) targets the partially-structured
+nature of agent responses similarly.
+Agentic memory. Recent surveys (Zhang et al. 2025b;
+Du et al. 2025) chart this growing space. MEM0 (Chhikara
+
+
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+consistency (Passˆ5/Mean@5)
+0.32
+0.18
+0.32
+0.49
+Aggregate
+(168)
+Easy
+(57)
+Medium
+(48)
+Hard
+(63)
+Baseline
+Same Task
+Similar Task gap
+(a) ReAct / GPT-4.1
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+consistency (Passˆ5/Mean@5)
+0.70
+0.58
+0.92
+1.00
+Aggregate
+(168)
+Easy
+(57)
+Medium
+(48)
+Hard
+(63)
+Baseline
+Same Task
+Similar Task gap
+(b) ReAct / GPT-OSS-120B
+Figure 3: Consistency gap: normalized consistency (Passˆ5/Mean@5) with and without consistency guidelines, by task diffi-
+culty.
+et al. 2025), A-Mem (Xu et al. 2025), and MemGPT (Packer
+et al. 2023) store and retrieve conversational facts; Agent
+Workflow Memory (Wang et al. 2024), AgentRR (Feng et al.
+2025), MemP (Fang et al. 2025), ReasoningBank (Ouyang
+et al. 2025), ACE (Zhang et al. 2025a), and Memento (Zhou
+et al. 2025) extract reusable workflows from traces, though
+naive accumulation can propagate errors (Xiong et al. 2025).
+We build on Fang et al. (2026), adding a consistency-
+targeted extraction signal atop its storage and retrieval ma-
+chinery.
+Reliability, reproducibility, and observability. App-
+World (Trivedi et al. 2024) is one of several benchmarks
+reporting multi-run statistics, and Ye et al. (Ye et al. 2026)
+show that such run-to-run variance is itself an underspecified
+property of self-improving, memory-based agents, sensitive
+to task order and evaluation protocol; our guideline-injection
+loop targets exactly this source of fragility. Our Passˆk vs.
+Mean@k formulation generalizes pass@k from code gen-
+eration (Chen et al. 2021) to per-difficulty granularity, and
+lands within the broader reliability taxonomy of Rabanser et
+al. (Rabanser et al. 2026), whose twelve metrics span con-
+sistency, robustness, predictability, and safety; our gap is a
+targeted probe of their consistency axis. CUGA (Marreed
+et al. 2025) adopts a related notion through policy memory
+and can consume our guidelines directly. Closest in spirit is
+concurrent work by Jha et al. (Jha et al. 2026), who iden-
+tify a reliability gap between Pass@k and Majority@k ad-
+dressed via a graph-guided architecture; we target the same
+variability at the prompt level. Our analyzer also functions
+as an observability tool, complementary to work on runtime
+logs (Moshkovich et al. 2025), process discovery (Fournier,
+Limonad, and David 2025), process supervision (Liu et al.
+2026), and interactive debugging (Hutter and Pradel 2026),
+but with a focus on surfacing flip-prone points for targeted
+guideline generation rather than runtime intervention.
+6
+Discussion and Limitations
+Guideline validation. The pipeline described above admits
+every generated guideline directly into memory. A natural
+extension, which we leave to future work, is a validation
+stage between generation and memory admission: before a
+guideline is stored, re-run the analyzer’s resampling proce-
+dure at its source step with the guideline injected into the
+prompt, and admit it only if step consistency measurably
+improves and does not regress on a held-out set of related
+trajectories. This would guard against guidelines that are
+vague, conflict with existing instructions, or overfit to in-
+cidental details of the trajectory they were derived from, a
+known risk in agentic memory more broadly (Xiong et al.
+2025).
+Generality and future directions. We evaluated a Re-
+Act agent with GPT-4.1 and GPT-OSS-120B; the framework
+is agent-agnostic by design. A cross-stack study, including
+models from other model families and agents with existing
+policy memory such as CUGA (Marreed et al. 2025), is our
+next step.
+Limitations. Our Passˆ5 comparisons assume compa-
+rable platform-side non-determinism between baseline and
+guideline-injected runs, which we cannot directly measure
+or control. We do not claim the framework eliminates in-
+consistency (a substantial gap remains, especially on Hard
+tasks) or that the analyzer is a verifier: it scores stability, not
+correctness, and a confidently-wrong decision looks consis-
+tent to it. Our default resampling budget (N = 30 per infer-
+ence step) multiplies token cost roughly 30× per trajectory;
+reducing this cost without degrading guideline quality, e.g.,
+via adaptive resampling that concentrates samples on candi-
+date flat steps, is an important direction for future work.
+7
+Conclusion
+Current LLM agents pass tasks “on average” in a way that
+masks how often they fail to pass the same task on repeat.
+We presented a framework that reduces this consistency
+gap through consistency-targeted episodic memory guide-
+lines: a black-box Consistency Analyzer resamples each in-
+ference point to surface decisions at risk of flipping, and a
+Guideline Generator converts them into consistency guide-
+lines. On AppWorld with ReAct and GPT-4.1, the pipeline
+lifts Passˆ5 by 16 points same-task and 13 points similar-
+task with no accuracy degradation; aggregate trajectory con-
+sistency alone correlates with trajectory pass/fail (AUROC
+≈0.69), letting the analyzer support the generator’s own
+judgment of trajectory outcome where no ground-truth rat-
+ing exists.
+
+
+Appendix
+A
+Example Consistency Guidelines
+Section 3.2 references the example guidelines below, generated by GPT-4.1 from the consistency scorecard for AppWorld task 0a9d82a 2
+(“What is my longest limited-screen-time-to-1-hr habit streak, in number of days, as per my Simple Note habit tracking logs?”).
+[strategy] Always verify API parameter requirements and expected input/output formats by
+consulting the API documentation before making calls, especially for search and data
+retrieval APIs.
+[strategy] When retrieving paginated data, implement a robust loop that continues fetching
+pages until all results are retrieved, checking for pagination end conditions as
+specified in the API documentation.
+[recovery] Explicitly handle authentication and token management by retrieving fresh
+credentials as needed and verifying token validity before making authenticated API
+calls.
+[optimization] After retrieving and parsing data, implement validation checks before
+performing calculations or returning results.
+B
+Full Per-Difficulty Results
+Tables 1 and 2 report the complete per-difficulty breakdown (baseline, same-task guidelines, and similar-task guidelines) underlying the
+aggregate numbers discussed in Section 4.
+Table 1: Consistency results on AppWorld test normal, ReAct / GPT-4.1.
+Baseline
++ Guidelines: Same Task
++ Guidelines: Similar Task
+Difficulty
+Passˆ5
+Mean@5
+Consistency
+Passˆ5
+Mean@5
+Consistency
+Passˆ5
+Mean@5
+Consistency
+Aggregate
+53.0%
+77.4%
+0.68
+69.0%
+81.0%
+0.85
+66.0%
+79.5%
+0.83
+∆
++16.0 pp
++3.6 pp
++0.17
++13.0 pp
++2.1 pp
++0.15
+Easy
+77.2%
+94.7%
+0.82
+89.4%
+98.2%
+0.91
+90.3%
+97.3%
+0.93
+∆
++12.2 pp
++3.5 pp
++0.10
++13.1 pp
++2.6 pp
++0.11
+Medium
+52.1%
+77.1%
+0.68
+75.0%
+83.3%
+0.90
+66.6%
+83.3%
+0.80
+∆
++22.9 pp
++6.2 pp
++0.22
++14.5 pp
++6.2 pp
++0.12
+Hard
+31.7%
+61.9%
+0.51
+46.0%
+63.4%
+0.73
+43.6%
+61.1%
+0.71
+∆
++14.3 pp
++1.6 pp
++0.21
++11.9 pp
+−0.8 pp
++0.20
+Table 2: Consistency results on AppWorld test normal, ReAct / GPT-OSS-120B.
+Baseline
++ Guidelines: Same Task
++ Guidelines: Similar Task
+Difficulty
+Passˆ5
+Mean@5
+Consistency
+Passˆ5
+Mean@5
+Consistency
+Passˆ5
+Mean@5
+Consistency
+Aggregate
+10.1%
+33.9%
+0.30
+16.1%
+38.7%
+0.42
+18.8%
+40.5%
+0.46
+∆
++6.0 pp
++4.8 pp
++0.12
++8.7 pp
++6.6 pp
++0.17
+Easy
+28.1%
+66.7%
+0.42
+36.8%
+75.4%
+0.49
+43.0%
+74.6%
+0.58
+∆
++8.7 pp
++8.7 pp
++0.07
++14.9 pp
++7.9 pp
++0.16
+Medium
+2.1%
+27.1%
+0.08
+10.4%
+29.2%
+0.36
+8.3%
+31.2%
+0.27
+∆
++8.3 pp
++2.1 pp
++0.28
++6.2 pp
++4.1 pp
++0.19
+Hard
+0.0%
+9.5%
+0.00
+1.6%
+12.7%
+0.13
+4.8%
+16.7%
+0.29
+∆
++1.6 pp
++3.2 pp
++0.13
++4.8 pp
++7.2 pp
++0.29
+
+
+References
+AgentToolkit. 2026.
+altk-evolve: On-the-job learning for
+AI agents.
+https://github.com/AgentToolkit/altk-evolve.
+GitHub repository.
+Chen, M.; Tworek, J.; Jun, H.; Yuan, Q.; et al. 2021. Eval-
+uating Large Language Models Trained on Code.
+arXiv
+preprint arXiv:2107.03374.
+Chhikara, P.; Khant, D.; Aryan, S.; Singh, T.; and Ya-
+dav, D. 2025.
+Mem0: Building Production-Ready AI
+Agents with Scalable Long-Term Memory. arXiv preprint
+arXiv:2504.19413.
+Du, Y.; Huang, W.; Zheng, D.; Wang, Z.; Montella, S.; Lap-
+ata, M.; Wong, K.-F.; and Pan, J. Z. 2025. Rethinking Mem-
+ory in AI: Taxonomy, Operations, Topics, and Future Direc-
+tions. arXiv preprint arXiv:2505.00675.
+Fang, G.; Isahagian, V.; Jayaram, K. R.; Kumar, R.;
+Muthusamy, V.; Oum, P.; and Thomas, G. 2026. Trajectory-
+Informed Memory Generation for Self-Improving Agent
+Systems. arXiv preprint arXiv:2603.10600.
+Fang, R.; Liang, Y.; Wang, X.; Wu, J.; Qiao, S.; Xie,
+P.; Huang, F.; Chen, H.; and Zhang, N. 2025.
+Memp:
+Exploring Agent Procedural Memory.
+arXiv preprint
+arXiv:2508.06433.
+Farquhar, S.; Kossen, J.; Kuhn, L.; and Gal, Y. 2024. De-
+tecting Hallucinations in Large Language Models Using Se-
+mantic Entropy. Nature, 630: 625–630.
+Feng, E.; Zhou, W.; Liu, Z.; Chen, L.; Dong, Y.; Zhang, C.;
+Zhao, Y.; Du, D.; Hua, Z.; Xia, Y.; and Chen, H. 2025. Get
+Experience from Practice: LLM Agents with Record & Re-
+play. arXiv preprint arXiv:2505.17716.
+Fournier, F.; Limonad, L.; and David, Y. 2025. Agentic AI
+Process Observability: Discovering Behavioral Variability.
+arXiv preprint arXiv:2505.20127.
+Hutter, R.; and Pradel, M. 2026. AgentStepper: Interactive
+Debugging of Software Development Agents. arXiv preprint
+arXiv:2602.06593.
+Jha, S.; Arora, R.; Bhavya; Zheutlin, N.; Toro Isaza, P.;
+Shwartz, L.; Deng, Y.; Sow, D.; Mahindru, R.; and Puri, R.
+2026. Think Locally, Explain Globally: Graph-Guided LLM
+Investigations via Local Reasoning and Belief Propagation.
+arXiv preprint arXiv:2601.17915.
+Kuhn, L.; Gal, Y.; and Farquhar, S. 2023.
+Semantic Un-
+certainty: Linguistic Invariances for Uncertainty Estimation
+in Natural Language Generation.
+In Proceedings of the
+11th International Conference on Learning Representations
+(ICLR).
+Liu, Y.; Zhang, C.; Han, Z.; Liu, H.; Wang, Y.; Yu, Y.;
+Wang, X.; and Yin, Y. 2026. TrajAD: Trajectory Anomaly
+Detection for Trustworthy LLM Agents.
+arXiv preprint
+arXiv:2602.06443.
+Malinin, A.; and Gales, M. 2021. Uncertainty Estimation
+in Autoregressive Structured Prediction.
+Proceedings of
+the International Conference on Learning Representations
+(ICLR).
+Marreed, S.; Oved, A.; Yaeli, A.; Shlomov, S.; Levy, I.;
+Akrabi, O.; Sela, A.; Adi, A.; and Mashkif, N. 2025. To-
+wards Enterprise-Ready Computer Using Generalist Agent.
+arXiv preprint arXiv:2503.01861.
+Moshkovich, D.; Mulian, H.; Zeltyn, S.; Eder, N.; Skar-
+bovsky, I.; and Abitbol, R. 2025.
+Beyond Black-Box
+Benchmarking: Observability, Analytics, and Optimization
+of Agentic Systems. arXiv preprint arXiv:2503.06745.
+Ouyang, S.; Yan, J.; Hsu, I.-H.; Chen, Y.; Jiang, K.;
+Wang, Z.; Han, R.; Le, L. T.; Daruki, S.; Tang, X.; Tiru-
+malashetty, V.; Lee, G.; Rofouei, M.; Lin, H.; Han, J.; Lee,
+C.-Y.; and Pfister, T. 2025. ReasoningBank: Scaling Agent
+Self-Evolving with Reasoning Memory.
+arXiv preprint
+arXiv:2509.25140.
+Packer, C.; Wooders, S.; Lin, K.; Fang, V.; Patil, S. G.; Sto-
+ica, I.; and Gonzalez, J. E. 2023. MemGPT: Towards LLMs
+as Operating Systems. arXiv preprint arXiv:2310.08560.
+Rabanser, S.; Kapoor, S.; Kirgis, P.; Liu, K.; Utpala, S.; and
+Narayanan, A. 2026. Towards a Science of AI Agent Relia-
+bility. arXiv preprint arXiv:2602.16666.
+Reimers, N.; and Gurevych, I. 2019. Sentence-BERT: Sen-
+tence Embeddings using Siamese BERT-Networks. In Pro-
+ceedings of the 2019 Conference on Empirical Methods in
+Natural Language Processing, 3982–3992. Association for
+Computational Linguistics.
+Snell, C.; Lee, J.; Xu, K.; and Kumar, A. 2024.
+Scal-
+ing LLM Test-Time Compute Optimally Can Be More Ef-
+fective than Scaling Model Parameters.
+arXiv preprint
+arXiv:2408.03314.
+Trivedi, H.; Khot, T.; Hartmann, M.; Manku, R.; Dong, V.;
+Li, E.; Gupta, S.; Sabharwal, A.; and Balasubramanian, N.
+2024. AppWorld: A Controllable World of Apps and Peo-
+ple for Benchmarking Interactive Coding Agents. In Pro-
+ceedings of the 62nd Annual Meeting of the Association for
+Computational Linguistics.
+Wang, X.; Wei, J.; Schuurmans, D.; Le, Q.; Chi, E.; Narang,
+S.; Chowdhery, A.; and Zhou, D. 2023. Self-Consistency
+Improves Chain of Thought Reasoning in Language Mod-
+els. In Proceedings of the 11th International Conference on
+Learning Representations (ICLR).
+Wang, Z. Z.; Mao, J.; Fried, D.; and Neubig, G. 2024. Agent
+Workflow Memory. arXiv preprint arXiv:2409.07429.
+Xiong, Z.; Lin, Y.; Xie, W.; He, P.; Tang, J.; Lakkaraju, H.;
+and Xiang, Z. 2025. How Memory Management Impacts
+LLM Agents: An Empirical Study of Experience-Following
+Behavior. arXiv preprint arXiv:2505.16067.
+Xu, W.; Liang, Z.; Mei, K.; Gao, H.; Tan, J.; and Zhang, Y.
+2025. A-MEM: Agentic Memory for LLM Agents. arXiv
+preprint arXiv:2502.12110.
+Yao, S.; Zhao, J.; Yu, D.; Du, N.; Shafran, I.; Narasimhan,
+K.; and Cao, Y. 2023.
+ReAct: Synergizing Reasoning
+and Acting in Language Models.
+In Proceedings of the
+11th International Conference on Learning Representations
+(ICLR).
+
+
+Ye, Q.; Li, Y.; Pruksachatkun, Y.; Zhang, J.; and Wu, C.-
+S. 2026. On the Fragility of Self-Improving Agents: Vari-
+ance, Task Order, and Underspecification.
+arXiv preprint
+arXiv:2608.18066.
+Zhang, Q.; Hu, C.; Upasani, S.; Ma, B.; Hong, F.; Kama-
+nuru, V.; Rainton, J.; Wu, C.; Ji, M.; Li, H.; Thakker, U.;
+Zou, J.; and Olukotun, K. 2025a. Agentic Context Engineer-
+ing: Evolving Contexts for Self-Improving Language Mod-
+els. arXiv preprint arXiv:2510.04618.
+Zhang, Z.; Bo, X.; Ma, C.; Li, R.; Chen, X.; Dai, Q.;
+Zhu, J.; Dong, Z.; and Wen, J.-R. 2025b.
+A Survey on
+the Memory Mechanism of Large Language Model based
+Agents. ACM Transactions on Information Systems (TOIS).
+ArXiv:2404.13501.
+Zhou, H.; Chen, Y.; Guo, S.; Yan, X.; Lee, K. H.; Wang,
+Z.; Lee, K. Y.; Zhang, G.; Shao, K.; Yang, L.; and Wang,
+J. 2025. Memento: Fine-tuning LLM Agents without Fine-
+tuning LLMs. arXiv preprint arXiv:2508.16153.

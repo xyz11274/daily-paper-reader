@@ -1,0 +1,1097 @@
+LIMBO: Lifelong Inference-Time Memory and
+Budget Optimization for LLM Agents
+Siddharth Sharma1, Nilesh Prasad Pandey1, Onat Gungor2, Tajana Rosing1
+1University of California, San Diego, CA, USA
+2West Virginia University, Morgantown, WV, USA
+{sis004, nppandey, tajana}@ucsd.edu, onat.gungor@wvu.edu
+Abstract—As LLM agents become integrated into increas-
+ingly complex workflows, they must continually acquire new
+capabilities while retaining competence on previously learned
+tasks. Lifelong agents address this through experience replay,
+injecting past interactions into the prompt to leverage prior
+experience during inference. However, replay is not free: every
+replayed trajectory competes with retrieval, reasoning, tool use,
+and verification for the same limited prompt and compute
+budget, making effective resource allocation essential. Existing
+approaches allocate these resources using fixed replay policies,
+regardless of whether replay is beneficial for the current task.
+We identify this as inference-time memory allocation, a distinct
+problem class for lifelong agents, and introduce LIMBO: the first
+online framework to our knowledge that treats memory as a con-
+trollable inference-time resource and jointly optimizes memory
+strategy and inference budget for each incoming task. Unlike
+prior approaches that fix the replay policy or require model
+weights, teacher supervision, or offline retraining, LIMBO learns
+this allocation online in a single pass, explicitly balancing task
+performance and inference cost without modifying the underlying
+agent. Across three LLM backbones on LifelongAgentBench,
+LIMBO achieves better cost-accuracy tradeoffs than state-of-
+the-art memory-augmented baselines, and nearly matches all
+strongest such baselines at up to ∼83% lower inference cost
+(∼53% on average). LIMBO adapts its policy across models and
+environments without retraining, demonstrating that effective
+allocation can be learned online rather than manually specified.
+Index Terms—lifelong learning, LLM agents, contextual ban-
+dit, inference-time compute, experience replay, cost-aware control
+I. INTRODUCTION
+LLM agents are increasingly deployed in environments
+where they must solve a continuous stream of evolving tasks
+while accumulating experience over time [1]–[3]. Unlike con-
+ventional single-task settings, these agents can leverage ac-
+cumulated experiences from previous interactions to improve
+future performance through mechanisms such as memory,
+retrieval, and tool use [4]–[8]. However, these mechanisms
+compete for limited inference-time resources, including con-
+text length, computational budget, and latency, creating a
+fundamental tradeoff between leveraging accumulated expe-
+rience and maintaining inference efficiency [9]. As lifelong
+agents encounter diverse tasks and environments, effectively
+allocating these resources becomes critical for preserving prior
+knowledge while adapting to new challenges [10].
+Memory represents one of the most critical components
+in this resource-allocation problem, as lifelong agents must
+0
+5 · 10−2
+0.1
+0.15
+0.2
+0.25
+0.3
+70
+72
+74
+76
+No replay
+LIMBO
+1.10× cost
++1.4 pts
+k = 8
+k = 16
+3.6× cost
++1.5 pts
+1.7× cost
++0.35 pts
+Cost per task ($)
+Accuracy (%)
+Fig. 1.
+Replay cost–accuracy tradeoff on DBBench. Relative to no replay,
+LIMBO improves accuracy by 1.4 points while increasing cost by only 1.10×
+(9.8%). In contrast, increasing the replay budget from no replay to k = 8
+raises cost by 3.6× for a 1.5-point gain, while increasing it further from k = 8
+to k = 16 incurs another 1.7× cost increase for only 0.35 additional points.
+decide which past experiences to retain and retrieve under
+limited inference-time budgets. Among existing approaches,
+experience replay has become a widely adopted mechanism
+for leveraging historical interactions [10]. Experience replay
+injects past trajectories into the current task prompt, en-
+abling agents to reuse previously acquired tool-use patterns,
+command templates, and action-format conventions without
+requiring parameter updates. However, despite its effectiveness
+in improving agent performance, replay introduces significant
+scalability challenges as agents accumulate more experience.
+As the task count t increases, the replay buffer grows propor-
+tionally, resulting in an O(t) increase in the number of injected
+tokens and corresponding inference-time overhead. Moreover,
+the utility of individual trajectories can vary substantially
+depending on the current task, model, and environment. Con-
+sequently, uniform replay strategies may incur considerable
+context and computation costs by allocating resources to
+trajectories that provide limited benefit for the current task.
+This cost-value mismatch is not merely a theoretical con-
+cern; it appears empirically across environments and replay
+strategies. Figure 1 illustrates that increasing fixed replay
+buffers provides diminishing performance improvements while
+incurring rapidly growing inference costs. Scaling fixed replay
+from no-replay to k=16 on DBBench [10] with Qwen2.5
+7B raises inference cost by more than 5× but improves
+arXiv:2609.14138v1  [cs.LG]  12 Sep 2026
+
+
+accuracy by only 2 points, with the k=8 →k=16 step
+being effectively flat. Compression-based approaches [4], [11]
+reduce token overhead but tend to disrupt the structured action
+traces required by interactive environments. Retrieval-based
+strategies [12] improve memory relevance but still introduce
+additional selection costs and consume limited context capac-
+ity. These limitations reveal a fundamental challenge: effective
+lifelong agents must determine not only which experiences to
+replay, but also when replay provides sufficient value to justify
+its inference-time cost. More broadly, agents must dynamically
+allocate limited resources across memory, retrieval, reasoning,
+tool use, and verification, which all compete for the same
+context and computation budgets.
+We address this challenge with LIMBO, a lifelong con-
+troller that adaptively allocates inference-time memory and
+compute resources. For each incoming task, LIMBO selects
+a memory strategy and compute budget using a lightweight
+contextual bandit based on prompt and runtime features. This
+formulation provides a unified online allocation framework
+over existing memory mechanisms, including fixed replay,
+prompt compression, selective replay [12], [13], and memory-
+augmented agents [14], [15]. Across three LLM backbones
+evaluated on LifelongAgentBench, LIMBO achieves compa-
+rable or superior performance to the strongest fixed replay
+baseline while reducing inference cost by up to ∼83%. Fur-
+thermore, LIMBO learns different memory allocation policies
+across model and environment configurations, highlighting the
+importance of adaptive inference-time resource management.
+II. RELATED WORK
+Lifelong Learning and LLM Agent Benchmarks. Life-
+long learning aims to retain knowledge across sequential tasks
+without forgetting [16], with classical approaches based on
+regularization [17] and experience replay [12]. These methods
+target static supervised settings; extending them to LLM agents
+that act and adapt across interactive environments remains
+largely unexplored [10], and prior replay methods carry no
+mechanism for adaptive inference time budget allocation.
+Existing agent benchmarks such as WebArena [2], Agent-
+Bench [1], and VisualWebArena [3] evaluate isolated tasks
+in static environments, with no protocol for sequential skill
+transfer. LifelongAgentBench (LAB) [10] addresses this gap
+with three interactive environments, explicit skill labels, a skill
+dependency graph, and automatic label verification, providing
+a clean setting in which fixed, compressed, retrieved, and gated
+replay can be compared under one protocol.
+Agent Efficiency. Recent work on adaptive reasoning and
+budget-aware inference studies how much computation an
+LLM should spend at test time [5]–[8], [18], and cascade
+methods learn budget constrained routing across models or
+inference paths [19]. Empirical analysis of agent cost confirms
+that efficiency is task dependent and poorly addressed by
+static design choices [9]. In the lifelong setting specifically,
+LAB’s group self consistency [10] stabilizes performance
+under large replay buffers but at higher token cost than na¨ıve
+replay, moving against the efficiency objective. LIMBO brings
+inference time compute control to the lifelong setting and
+treats memory use itself as a controllable action.
+Replay Representation and Selection. Recent work has
+explored replay from several perspectives, including prompt
+compression, memory selection, and structured memory rep-
+resentations. LongLLMLingua [4], [11] compresses prompts
+to reduce token usage, but replay trajectories are sequential
+action demonstrations rather than static documents, making
+compression alone insufficient. Isele and Cosgun [12] pro-
+posed principled replay selection criteria, while SuRe [13]
+prioritizes replay using surprise scores computed from dual
+LoRA adapters, requiring access to model weights and limiting
+applicability to black-box LLMs. MemRL [14], ATLAS [15],
+CER [20], and JitRL [21] improve memory representation
+or retrieval, but do not explicitly optimize the inference-time
+cost of replay under a unified lifelong learning framework. In
+contrast, LIMBO formulates replay as a cost-aware inference-
+time decision problem, selecting replay actions on a per-
+sample basis to balance performance and computational cost.
+III. LIMBO FRAMEWORK
+A. Overview
+Figure 2 presents our LIMBO instantiation of lifelong
+inference allocation, which includes: (i) a stream of interactive
+tasks, (ii) a memory bank of successful interaction trajectories,
+(iii) online feature extraction from the current prompt, the
+retrieval state, and recent runtime statistics, (iv) a two head
+contextual bandit that predicts correctness and cost for each
+candidate action, and (v) prompt construction and agent execu-
+tion under the selected replay mode and compute budget. After
+each task completes, the observed outcome and measured cost
+update both the memory bank and the bandit statistics.
+LIMBO turns replay from a fixed preprocessing step into an
+online compute allocation decision. The memory bank stores
+only completed trajectories with measured outcomes and cost.
+For a new task, the controller compares memory modes and
+compute budgets using features that are available before the
+agent acts. The chosen action determines how much history
+enters the prompt and how much execution budget the agent
+receives. After the agent runs once, observed correctness and
+cost update both the memory bank and the controller.
+B. Problem Setup
+Let T
+= (T1, T2, . . . , TN) be a sequential task stream.
+At step i, the agent receives task Ti, executes an interactive
+session, and produces a final answer. After completion, the
+benchmark returns a binary correctness signal yi ∈{0, 1} and
+a measured cost ci ≥0. We write the completed session as
+σi = (Ti, yi, ci, τi), where τi is the full interaction trajectory:
+the task prompt, the agent’s actions at each round, the environ-
+ment observations and tool outputs they produced, and the final
+answer. The agent maintains a memory buffer of previously
+successful sessions,
+Mi = {σj : j < i, yj = 1} ,
+
+
+Task stream
+T1,
+. . . ,
+Ti,
+. . . ,
+TN
+Feature extraction
+prompt size, skill count, retrieval scores,
+recent cost, recent task limit rate
+Two head LinUCB controller
+predict expected correctness and expected
+cost for each candidate action
+Replay and budget action
+none, full, compressed, or retrieved memory
+paired with token, round, and tool budgets
+Prompt construction and agent execution
+Outcome, cost, and successful trace
+update memory bank and bandit statistics
+Fig. 2.
+LIMBO: Online memory allocation loop. The controller selects a
+replay action and compute budget before each task, then updates the memory
+bank and bandit statistics using the observed reward and cost after execution.
+which can be injected into the prompt for future tasks. Whether
+injection helps depends on relevance: a past trajectory transfers
+value primarily when it shares operations, schema, or action
+format with the current task. For example, a past DBBench
+session executing a JOIN with GROUP BY is informative for
+a new task requiring the same SQL primitives, but adds only
+prompt overhead for an unrelated single-table SELECT.
+The measured cost ci is the total token count of the
+completed session (prompt plus generation) multiplied by the
+provider’s per-token schedule, or the standardized schedule
+described in Section IV-A for local backbones. Because ab-
+solute cost magnitudes vary by orders of magnitude across
+backbones and environments, the controller operates on a
+normalized cost ˆci ∈[0, 1]: we maintain a running maximum
+Cmax
+i
+= maxj≤i cj and set ˆci = ci/Cmax
+i
+. A cost weight
+λ ≥0, introduced in Eq. (5), controls how strongly the
+controller trades accuracy against cost: λ=0 recovers pure
+accuracy maximization, while large λ biases selection toward
+the cheapest arm. We use λ=0.5 in all reported experiments.
+Even when memory is relevant, injection comes at a cost:
+it lengthens the prompt, raises API spend, and can destabilize
+the agent’s action formatting. Our goal is therefore not merely
+to store memory, but to allocate it adaptively.
+C. Memory Actions
+Before solving task Ti, the controller chooses an action ai ∈
+A specifying both a compute budget and a memory mode:
+mi ∈{none, full, compressed, retrieved}.
+(1)
+No replay (none): the task is solved without injecting past
+trajectories.
+Full replay (full): the prompt receives a fixed number of
+recent successful trajectories verbatim [22], corresponding to
+the standard replay baseline in LifelongAgentBench.
+Compressed replay (compressed): past trajectories are
+compressed using a LongLLMLingua style question aware
+wrapper before injection. The current task instruction serves as
+the compression query and each replay trajectory is a separate
+context block.
+Retrieved replay (retrieved): the controller retrieves the
+most relevant trajectories from a larger memory bank, similar
+in spirit to retrieval-augmented generation [23] but applied to
+prior interaction traces rather than external documents. In the
+DBBench implementation, sessions are scored by
+r(σj, Ti) = wℓJac(qi, qj)+ws Jac(Si, Sj)+wb 1[bi=bj]+ϵ,
+(2)
+where qi is the tokenized instruction, Si is the skill set,
+bi is the table identifier, and ϵ is a recency tie break-
+ing bonus. The weights (wℓ, ws, wb) were selected through
+a small hyperparameter-tuning pass on a held-out devel-
+opment subset, separate from all reported test runs, and
+held fixed across all retrieval-based variants (retrieved re-
+play, retrieval+LongLLMLingua, and failure-aware retrieval)
+so differences between methods are not attributable to per-
+method retrieval retuning. The top k retrieved trajectories are
+then injected.
+a) Trajectory rendering: Trajectories from Mi can be
+injected verbatim (raw) or in a deterministic trimmed-trace
+rendering that compresses verbose tool outputs while preserv-
+ing the agent’s action format. Trimmed traces truncate long
+environment responses (e.g., stdout blocks in OS Interaction
+or table dumps in DBBench) and collapse repeated outputs,
+but keep all agent-issued commands intact. This contrasts
+with token-level compression (e.g., LongLLMLingua), which
+can damage the structured action syntax that interactive envi-
+ronments require. Both raw and trimmed-trace rendering are
+evaluated as baselines in Section IV.
+D. LIMBO Controller
+Before specifying the controller, we state four properties
+that an inference-time memory allocator for lifelong agents
+must satisfy. D1: Black-box compatibility. The controller
+cannot require model weights, gradients, or internal activa-
+tions, so the same mechanism can allocate memory for both
+open-weight and commercial API backbones. D2: Single-
+pass online learning. The controller must adapt during the
+task stream itself, without a separate offline training phase
+or a warm-start dataset. D3: Bounded per-task overhead.
+Controller decision cost must be small compared to the LLM
+call it schedules; overhead that grows with the task count is
+not viable at 500-task horizons. D4: Explicit cost objective.
+Memory injection consumes a shared inference budget with
+retrieval, reasoning, and tool use, so accuracy and cost must
+be traded as first-class objectives. The remainder of this section
+instantiates a controller that satisfies all four.
+We frame allocation as a contextual bandit rather than full
+reinforcement learning both to satisfy D1 and D2 (weight-
+
+
+TABLE I
+RETRIEVAL GATED BUDGET PRIMITIVES USED IN DBBENCH
+EXPERIMENTS.
+Primitive
+Replay
+Tokens
+Rounds
+Tools
+no-replay-256
+none
+256
+2
+4
+no-replay-512
+none
+512
+3
+6
+full-512
+full
+512
+3
+6
+retrieved-256
+retrieved
+256
+2
+4
+retrieved-512
+retrieved
+512
+3
+6
+retrieved-768
+retrieved
+768
+3
+6
+free updates driven by per-task outcomes), and because per-
+task action selection has no long-horizon credit assignment
+(the reward signal is observed before the next task arrives),
+and rather than supervised learning because no ground-truth
+optimal action is available for any task. Contextual ban-
+dits [24], [25] are the matching abstraction: they explore
+actions, observe outcomes, and update online from a single
+scalar reward signal per decision. LIMBO is a gradient-free
+contextual bandit for inference-time allocation, extending the
+LinUCB formulation [24] with a two-head parameterization
+for joint accuracy and cost prediction. It selects a budget
+primitive ai ∈A before each task. Each primitive specifies
+a replay mode, token budget, maximum round count, and tool
+call budget. The retrieval gated action set used in our DB
+experiments is shown in Table I.
+Compression gated experiments use analogous primitives with
+compressed in place of retrieved.
+a) Feature Vector: Before each task Ti, the controller
+builds a feature vector xi ∈Rd from lightweight online
+signals:
+xi =
+
+1, ˜pi, ˜ui, ˜si, ˜fi, ui/pi, ˜ℓi,
+¯ci, ¯ri, ˆci−1, 1[yi−1=1], 1[erri−1]
+⊤,
+(3)
+The 12 features fall into three groups. Prompt-shape features
+(˜pi, ˜ui, ˜si, ˜fi, ui/pi, ˜ℓi) are log-normalized token counts for
+the full prompt, last user turn, system prompt, and scaffold,
+together with the last-user share and the normalized skill
+count. These capture the size and composition of the incoming
+task, distinguishing retrieval-heavy prompts from tool-heavy
+ones and flagging tasks that would exceed context if replay
+were added. Runtime-state features (¯ci, ¯ri, ˆci−1) are the EMA
+of normalized cost, the running accuracy, and the previous
+sample’s normalized cost. These let the controller condition
+on drift, shifting allocation when recent tasks have been
+unusually expensive or unusually successful without waiting
+for per-arm statistics to converge. Previous-outcome features
+(1[yi−1=1], 1[erri−1]) are binary indicators for whether the
+last task succeeded and whether it terminated in an error state;
+recent errors typically indicate a budget or format failure the
+controller can respond to by increasing the compute-budget
+tier. All features are computed before the LLM call for task
+Ti and require no weight access, satisfying D1; extraction is
+O(|Ti|) in the prompt length, dominated by tokenization that
+is required anyway.
+Algorithm 1 LIMBO: Two Head LinUCB Memory and
+Budget Allocation
+Require: task stream T = (T1, . . . , TN), action set A, dim
+d, exploration α, cost weight λ
+Ensure: action sequence (a∗
+1, . . . , a∗
+N)
+1: for a ∈A do
+2:
+Aa ←Id; bacc
+a
+←0; bcost
+a
+←0
+3: end for
+4: ¯c ←0; ¯r ←0
+5: for i = 1 to N do
+6:
+Build xi from Ti and runtime state
+7:
+for a ∈A do
+8:
+ˆpa ←σ(A−1
+a bacc
+a
+·xi); ˆca ←max(A−1
+a bcost
+a
+·xi, 0)
+9:
+score(a) ←ˆpa −λˆca + α
+q
+x⊤
+i A−1
+a xi
+10:
+end for
+11:
+a∗
+i ←arg maxa score(a)
+12:
+Set replay mode from a∗
+i ; construct prompt accordingly
+13:
+Execute Ti; observe yi ∈{0, 1} and cost ci
+14:
+Sherman Morrison update A−1
+a∗
+i (Eq. 8)
+15:
+bacc
+a∗
+i += yixi; bcost
+a∗
+i
++= ˆcixi
+16:
+Update EMA ¯c and running accuracy ¯r
+17: end for
+b) Two Head LinUCB: LIMBO maintains one precision
+matrix Aa ∈Rd×d per action and two parameter vectors bacc
+a ,
+bcost
+a
+∈Rd:
+ˆθacc
+a
+= A−1
+a bacc
+a ,
+ˆθcost
+a
+= A−1
+a bcost
+a
+.
+(4)
+Head 1 estimates the correctness probability,
+ˆpa(x)
+=
+σ(ˆθacc⊤
+a
+x), and Head 2 estimates normalized expected cost,
+ˆca(x) = max(ˆθcost⊤
+a
+x, 0).
+c) Action Selection: Given a cost weight λ > 0 and an
+exploration coefficient α > 0, the controller selects
+a∗
+i = arg max
+a∈A
+
+ˆpa(xi) −λˆca(xi)
+
++ α
+q
+x⊤
+i A−1
+a xi.
+(5)
+Selection is performed before replay injection so that the cho-
+sen mode determines how the prompt is constructed, making
+memory use a primary decision variable rather than a fixed
+preprocessing step.
+d) Online Update: After task Ti completes, the bandit
+state is updated:
+Aai ←Aai + xix⊤
+i ,
+(6)
+bacc
+ai ←bacc
+ai + yixi,
+bcost
+ai
+←bcost
+ai
++ ˆcixi.
+(7)
+The inverse A−1
+ai is maintained via the Sherman Morrison rank
+one update in O(d2):
+A−1
+ai ←A−1
+ai −(A−1
+ai xi)(A−1
+ai xi)⊤
+1 + x⊤
+i A−1
+ai xi
+.
+(8)
+No gradients are computed; no model weights are modified.
+
+
+TABLE II
+OVERALL COST–ACCURACY SUMMARY ACROSS THREE LLM BACKBONES AND TWO ENVIRONMENTS ON LIFELONGAGENTBENCH (500 TASKS EACH).
+THE STRONGEST FIXED-MEMORY BASELINE IS THE HIGHEST-ACCURACY FIXED-MEMORY METHOD AVAILABLE IN EACH SETTING. COST REDUCTION IS
+LIMBO’S COST RELATIVE TO THAT BASELINE. ALL LIMBO POINTS USE THE CONFIGURATION DESCRIBED IN SECTION IV-A; PER-CELL METHOD
+POINTS APPEAR IN FIGURE 3. ALL VALUES ARE THREE-SEED MEANS (SEEDS 42, 43, 44).
+Model
+Env
+No replay
+Strongest baseline
+LIMBO
+Cost
+(Acc./Cost)
+(Acc./Cost)
+(Acc./Cost)
+reduction
+Qwen 2.5 7B
+DB
+73.0 / $0.046
+Fixed k=16: 74.85 / $0.290
+74.4 / $0.050
+−82.8%
+Qwen 2.5 7B
+OS
+46.4 / $0.104
+Fixed trim k=1: 51.5 / $0.343
+51.4 / $0.226
+−34.1%
+Llama 3.1 8B
+DB
+20.8 / $0.071
+Fixed k=16: 70.0 / $0.316
+66.2 / $0.144
+−54.4%
+Llama 3.1 8B
+OS
+40.6 / $0.234
+Fixed k=1: 44.4 / $0.304
+43.0 / $0.224
+−26.3%
+GPT-4o mini
+DB
+66.4 / $0.283
+LongLLMLingua: 69.0 / $1.654
+67.4 / $0.292
+−82.3%
+GPT-4o mini
+OS
+59.0 / $0.783
+LongLLMLingua: 61.8 / $1.400
+62.4 / $0.833
+−40.5%
+e) Complexity:
+Per
+task,
+LIMBO
+performs
+one
+Sherman–Morrison update (Eq. 8) at O(d2) per action and
+|A| dot products to score arms, for O(|A| d2) total, with
+d = 12 and |A| ≤12 in our experiments. Controller overhead
+is under 0.5 ms per task on a single CPU core, negligible
+next to the seconds of LLM inference it schedules. Memory
+footprint per action is O(d2), dominated by the precision
+matrix Aa: 12 × 12 × 8 bytes ≈1.2 KB per arm. LIMBO
+therefore satisfies D3 with substantial headroom, and scales
+linearly in |A| if the action space is later enlarged.
+f) Full Algorithm and Online Adaptation: Algorithm 1
+summarizes the complete online loop. On each task, LIMBO
+interleaves action selection (lines 7–12) with the post-task
+bandit update (lines 15–17). Since there is no separate offline
+training phase, the controller continuously adapts throughout
+deployment.
+E. Instantiation in This Work
+We study LIMBO through three action space designs:
+1) Compression gated: arms choose among no replay, full
+recent replay, and LongLLMLingua compressed replay.
+2) Retrieval gated: arms choose among no replay, full
+recent replay, and relevance retrieved replay (top k from
+a 64 session memory bank, with k ∈{4, 8, 16} tested
+as separate configs).
+3) Retrieval gated plus rescue: the retrieval gated bandit is
+augmented with a confidence triggered second pass that
+reruns low confidence samples with maximum retrieved
+context.
+This progression separates which memories are worth keeping
+from when any memory is worth spending tokens on. LIMBO
+addresses the second question directly while remaining com-
+patible with multiple answers to the first.
+IV. EXPERIMENTAL ANALYSIS
+A. Setup
+a) Benchmark and tasks: We evaluate on LifelongAgent-
+Bench (LAB) [10] using DB (SQL) and OS (bash) environ-
+ments, each with the 500-task sequential slice released with
+LAB. Three backbones—Qwen2.5 7B Instruct, Llama 3.1 8B
+Instruct, and GPT-4o mini—are evaluated on both environ-
+ments, yielding six (model, environment) settings. All reported
+LIMBO and baseline points are averaged over three matched
+seeds (42, 43, 44); within-cell comparisons use matched seeds
+throughout.
+b) Baselines: Throughout, k denotes the number of past
+successful trajectories injected per task. We compare against:
+No replay (zero-shot per task); Fixed replay (k=N), the
+N most recent successful trajectories injected verbatim in
+a deterministic trimmed-trace rendering that preserves exe-
+cutable action structure (this consistently beats token-level
+compression at matched budget, e.g., 51.5% vs. 49.4% on
+Qwen OS at k=1); LongLLMLingua [4], question-aware
+token-level compression applied to the same recent-replay
+buffer; and Group Self-Consistency (GSC) at usc=1, LAB’s
+native voting-based stabilizer [10].
+c) The LIMBO configuration used across cells: All six
+reported LIMBO points use the same controller formulation,
+the same feature vector (Eq. (3)), the same online update,
+and the same 4-way memory action space (none, full,
+compressed, retrieved) paired with three generation-
+budget tiers (low ≤512, medium 768, high ≥1024). Re-
+trieval scoring weights in Eq. (2) are wℓ=0.35, ws=0.50,
+wb=0.15 and are held fixed across every retrieval-based
+method. The memory-bank size is 64 in every cell. The
+environment-specific choice is the retrieved-k selected inside
+the retrieved action: DB cells expose top-8, OS cells
+expose top-1, matching the strongest fixed-replay setting for
+each environment.
+d) Metrics
+and
+infrastructure:
+We
+report
+accuracy
+and total token cost (USD-equivalent per 500-task run).
+Open-weight backbones run locally through Hugging Face
+transformers in bfloat16 on NVIDIA RTX PRO 6000
+GPUs; GPT-4o mini via the OpenAI API. Decoding is greedy
+with a 512-token per-response cap. Costs use provider API
+rates for GPT-4o mini and a standardized $0.04/$0.10 per mil-
+lion input/output tokens for local 7B/8B models; local-model
+dollar values are standardized proxies rather than measured
+serving expense.
+B. Overall Cost–Accuracy Tradeoff
+Table II and Figure 3 summarize LIMBO’s performance
+across all six (model, environment) settings.
+
+
+0
+0.2
+0.4
+60
+70
+80
+Total inference cost ($)
+Accuracy (%)
+Qwen 2.5 7B / DB
+0
+0.1
+0.2
+0.3
+0.4
+20
+40
+60
+Total inference cost ($)
+Accuracy (%)
+Llama 3.1 8B / DB
+0
+0.5
+1
+1.5
+60
+65
+70
+75
+Total inference cost ($)
+Accuracy (%)
+GPT-4o mini / DB
+0
+0.2
+0.4
+0.6
+40
+45
+50
+55
+60
+Total inference cost ($)
+Accuracy (%)
+Qwen 2.5 7B / OS
+0
+0.2
+0.4
+0.6
+40
+45
+50
+Total inference cost ($)
+Accuracy (%)
+Llama 3.1 8B / OS
+0
+0.5
+1
+1.5
+56
+58
+60
+62
+64
+Total inference cost ($)
+Accuracy (%)
+GPT-4o mini / OS
+No replay
+Fixed replay
+Retrieval
+LongLLMLingua
+GSC
+LIMBO
+Fig. 3. Cost–accuracy plots across three LLM backbones (columns) and two environments (rows). Markers denote no replay (circles), fixed replay (squares),
+retrieval (triangles), LongLLMLingua (diamonds), GSC (pentagons), and LIMBO (stars). LIMBO generally occupies a low-cost, competitive-accuracy region,
+while the highest-accuracy fixed-replay configurations often incur substantially greater inference cost.
+Qwen DB
+Llama DB
+GPT DB
+Qwen OS
+Llama OS
+GPT OS
+0
+20
+40
+60
+80
+100
+Action mix (%)
+No replay
+Full replay
+Compressed
+Retrieved
+Fig. 4.
+LIMBO’s learned action mix across the six (model, environment)
+settings, each a three-seed mean (seeds 42, 43, 44). The same controller,
+features, and hyperparameters produce sharply different policies per cell.
+Qwen DB and GPT-4o mini DB stay near no-replay (≈78% of tasks); Llama
+DB shifts 85% of tasks to retrieved replay to recover from a 20.8% no-
+replay collapse; all three OS environments concentrate on retrieved and full
+replay, with mix proportions that vary by backbone. No fixed replay policy is
+uniformly cost-effective, and each cell retains task-level variation rather than
+collapsing to a single arm.
+Two patterns hold across all six settings. First, LIMBO lies
+on the empirical cost–accuracy Pareto frontier in every cell:
+no fixed method is simultaneously cheaper and more accurate.
+Second, across the six cells LIMBO matches or exceeds
+the strongest memory-augmented baseline’s accuracy (within
+−3.8 to +0.6 points) while reducing cost by 26–83%; on GPT-
+4o mini OS it strictly Pareto-dominates the LongLLMLingua
+baseline, exceeding its accuracy by 0.6 points at 40.5% lower
+cost.
+The comparison against voting-based stabilization is clean.
+LAB’s GSC baseline is strictly dominated by LIMBO in
+all four matched settings (Qwen DB, Qwen OS, Llama DB,
+Llama OS): higher accuracy and lower cost. On Llama DB
+the accuracy gap is +26 points at lower cost. Voting cannot
+recover replay value when the underlying replay is applied
+indiscriminately.
+The largest cost reductions (∼83%) occur where the
+strongest baseline commits to a k=16-scale replay budget
+(Qwen DB and GPT-4o mini DB). In these cells the no-
+replay baseline is already strong, so raw accuracy differences
+are modest and the cost saving carries the story. The Llama
+DB cell tells the opposite story: no-replay performs poorly at
+20.8%, and LIMBO reaches 66.2% (+45.4 points over no-
+replay, within 3.8 points of fixed-replay) at less than half the
+fixed-replay cost. This is the clearest memory-essential regime
+in our evaluation. On GPT-4o mini OS, LIMBO strictly
+Pareto-dominates the LongLLMLingua baseline (+0.6 points
+at 40.5% lower cost) and lifts accuracy by +3.4 points over
+no-replay at essentially the same cost.
+C. Policy Across Backbones and Environments
+Figure 4 shows the memory-action mix LIMBO converges
+to across all six settings under the same controller, features,
+action space, and hyperparameters (retrieved-k set as described
+
+
+50
+100
+150
+200
+250
+300
+350
+400
+450
+500
+0
+20
+40
+60
+80
+100
+Tasks completed
+Action mix (%)
+(a) Memory-action mix per 50-task window
+No replay
+Full replay
+Retrieved
+50
+100
+150
+200
+250
+300
+350
+400
+450
+500
+0.1
+0.2
+0.3
+0.4
+First 100: 0.347
+Last 100: 0.115
+−67%
+Tasks completed
+UCB bonus α
+p
+x⊤A−1
+a x
+(b) Mean selected-action UCB bonus ±1σ
+Fig. 5. LIMBO’s online adaptation over the 500-task Qwen OS stream, averaged across three seeds (42, 43, 44) in non-overlapping 50-task windows. (a)
+The memory-action mix shifts from an exploration-heavy early regime (window 1: 17.3% no replay, 34.0% full replay, 48.7% retrieved) toward a stable
+replay-heavy regime (windows 2–10 mean: 3.8% no replay, 23.5% full replay, and 72.7% retrieved replay). Compressed replay is selected on 0% of tasks
+throughout and is omitted from the stack. (b) The α-scaled UCB uncertainty bonus for the selected action decays by 67% from the first 100 tasks to the last
+100 (0.347 →0.115) as per-action precision matrices Aa accumulate observations. Cross-seed SDs (shaded band) stay below 0.017 in every window, so the
+trajectory is a property of the controller rather than of any single run.
+in Section IV-A). The learned policy differs sharply across
+cells.
+a) DB cells (Qwen, GPT-4o mini): low-replay regime:
+No-replay accuracy is already high (73.0% and 66.4% respec-
+tively) and injecting past trajectories yields only 2–3 points of
+accuracy at a 5–6× cost multiplier. LIMBO places ≈78% of
+tasks on no-replay paired with the lowest generation-budget
+tier, spending negligible additional memory or compute.
+b) Qwen OS: moderate-replay regime: Replay meaning-
+fully improves accuracy (+5 points from no-replay to fixed
+k=1) but each additional trajectory adds substantial cost.
+LIMBO adopts a mixed policy: retrieved k=1 on ≈70%
+of tasks, full replay on ≈25%, with the higher generation-
+budget tiers used more than half the time. The result matches
+fixed-replay accuracy at 34% lower cost.
+c) Llama DB: memory-essential regime: Llama performs
+poorly on DB without prior demonstrations (20.8%). LIMBO
+shifts ≈85% of tasks onto retrieved replay while still keeping
+the majority of tasks in the lowest generation-budget tier,
+recovering 66.2% accuracy at less than half the strongest
+baseline’s cost. The controller invests in memory when the
+backbone requires it rather than defaulting to a cheap policy.
+d) GPT-4o mini OS: high-per-token-cost regime: Under
+commercial API pricing, LIMBO selects retrieved k=1 on
+≈88% of tasks and pairs it with the medium generation tier;
+because the retrieved arm carries a small per-task memory
+footprint, aggregate cost remains within ∼6% of no-replay
+while accuracy improves by +3.4 points. We describe this as
+an observed operating point rather than a demonstrated causal
+adaptation to the pricing schedule; a direct cost-structure
+ablation is future work.
+The unifying observation is that the optimal memory-
+and-compute policy is not a global constant. It depends
+on the backbone’s raw capability, the environment’s replay-
+sensitivity, and the deployment’s per-token cost, and LIMBO
+exposes this variation online without any per-cell tuning or
+offline retraining.
+D. Online Adaptation over the Task Stream
+Figure 4 shows the converged policy after the full 500-
+task stream but does not by itself distinguish a bandit that
+learns online from one that quickly settles into a fixed mixture.
+Figure 5 closes this gap on Qwen OS, the setting with
+the most mixed converged policy. Panel (a) shows that the
+memory-action mix in the first 50 tasks is substantially more
+exploratory than the converged mix: no-replay selections drop
+from 17.3% to a windows-2–10 mean of 3.8%, full replay
+from 34.0% to 23.5%, and retrieved replay rises from 48.7% to
+72.7%. Panel (b) provides internal-state evidence for the same
+trajectory: the α-scaled UCB uncertainty bonus α
+p
+x⊤A−1
+a x
+for the selected action decreases by 67% from the first 100
+tasks to the last 100 (0.347 →0.115) because the per-
+action precision matrices Aa accumulate observations across
+the single-pass stream. The decline is monotonic in eight of
+nine window transitions, with one small reversal at window
+7 to 8 that stays within the cross-seed standard deviation.
+Together, the shift in selected action mix and the contraction
+of the associated exploration bonus provide direct evidence
+that the converged policy in Figure 4 is learned during the
+stream rather than fixed in advance.
+E. Discussion
+Across three backbones and two environments, LIMBO
+occupies the cost-efficient region of the Pareto frontier that
+fixed replay and voting-based stabilization do not reach. On
+Qwen OS it matches the fixed-replay baseline within 0.1 points
+at 34% lower cost; on Llama DB it stays within 3.8 points
+of fixed k=16 at 54% lower cost, in a regime where no-
+replay collapses to 20.8%; on Qwen DB and GPT-4o mini
+DB it recognizes that additional memory does not pay off
+
+
+and stays within 2 accuracy points of the strongest baseline
+at roughly one-sixth the cost; on GPT-4o mini OS it strictly
+Pareto-dominates the LongLLMLingua baseline (+0.6 points
+at 40% lower cost) while improving on no-replay accuracy
+by +3.4 points. In every cell the learned action mix differs
+qualitatively across model and environment, and the same
+controller instantiation reaches those different mixes online
+without per-cell tuning or offline retraining.
+DBBench plays the role of a control environment on strong
+backbones, where the controller’s task is largely to recognize
+that additional memory does not pay off and stay cheap.
+LIMBO does this successfully, matching the standard fixed-
+replay baseline at one-sixth its cost. LIMBO’s contribution
+across settings is therefore frontier competitiveness: recovering
+most of the accuracy of the strongest memory-augmented
+baseline while operating close to the no-replay cost floor.
+LIMBO focuses on inference time memory allocation rather
+than memory representation. It acts as a cost aware control
+layer that decides when to use memory and how much
+compute to allocate, complementing methods that improve
+how memories are stored or retrieved. For example, while
+MemRL [14] optimizes memory retrieval utility on strong
+backbones, LIMBO learns whether replay is beneficial for
+the current task and what budget should be allocated to it.
+Improved memory representations can be naturally integrated
+as additional replay actions in LIMBO’s action space.
+V. CONCLUSION
+We introduced LIMBO, the first online inference-time
+memory allocation framework for lifelong LLM agents.
+LIMBO uses a gradient-free contextual bandit to jointly
+select replay strategies and inference budgets without mod-
+ifying the underlying agent. Across three LLM backbones on
+LifelongAgentBench, LIMBO achieves better cost–accuracy
+tradeoffs than state-of-the-art memory-augmented baselines,
+maintaining comparable performance while reducing inference
+cost by up to ∼83% (∼53% on average). The learned policies
+adapt across models and environments, demonstrating that
+effective memory allocation can be discovered online rather
+than manually specified. These results highlight a broader
+opportunity for cost-aware online control of inference-time
+resources in lifelong LLM agents.
+ACKNOWLEDGEMENTS
+This work has been funded in part by NSF, with award num-
+bers #2112665, #2112167, #2003279, #2120019, #2211386,
+#2052809, #1911095 and in part by PRISM and CoCoSys,
+centers in JUMP 2.0, an SRC program sponsored by DARPA.
+REFERENCES
+[1] H. Liu et al., “AgentBench: Benchmarking LLMs as agents,” arXiv
+preprint arXiv:2308.04035, 2023.
+[2] S. Zhou, F. F. Xu, H. Zhu, X. Zhou, R. Lo, A. Sridhar, X. Cheng,
+T. Ou, Y. Bisk, D. Fried, U. Alon, and G. Neubig, “WebArena: A
+realistic web environment for building autonomous agents,” in The
+Twelfth International Conference on Learning Representations (ICLR),
+2024.
+[3] Koh et al., “VisualWebArena: Evaluating multimodal agents on realistic
+visual web tasks,” in Proceedings of the 62nd Annual Meeting of the
+Association for Computational Linguistics (ACL), 2024.
+[4] H. Jiang, Q. Wu, X. Luo, D. Li, C.-Y. Lin, Y. Yang, and L. Qiu,
+“LongLLMLingua: Accelerating and enhancing LLMs in long context
+scenarios via prompt compression,” in Proceedings of the 62nd Annual
+Meeting of the Association for Computational Linguistics (ACL), 2024.
+[5] Z. Yu, T. Xu, D. Jin, K. A. Sankararaman, Y. He, W. Zhou, Z. Zeng,
+E. Helenowski, C. Zhu, S. Wang, H. Ma, and H. Fang, “Think smarter
+not harder: Adaptive reasoning with inference-aware optimization,”
+arXiv preprint arXiv:2501.17974, 2025.
+[6] S. Lyu, L. Wu, Y. Yan, X. Wu, H. Li, Y. Shen, P. Jiang, W. Lu, J. Xiao,
+and Y. Zhuang, “Hierarchical budget policy optimization for adaptive
+reasoning,” arXiv preprint arXiv:2507.15844, 2025.
+[7] H. Wen, X. Wu, Y. Sun, F. Zhang, L. Chen, J. Wang, Y. Liu, Y.-Q. Zhang,
+and Y. Li, “BudgetThinker: Empowering budget-aware LLM reasoning
+with control tokens,” arXiv preprint arXiv:2508.17196, 2025.
+[8] Z. Li, C. Chen, T. Yang, T. Ding, R. Sun, G. Zhang, W. Huang, and Z.-
+Q. Luo, “Knapsack RL: Unlocking exploration of LLMs via optimizing
+budget allocation,” arXiv preprint arXiv:2509.25849, 2025.
+[9] N. Wang, X. Hu, P. Liu, H. Zhu, Y. Hou, H. Huang, S. Zhang, J. Yang,
+J. Liu, G. Zhang, C. Zhang, J. Wang, Y. E. Jiang, and W. Zhou, “Efficient
+agents: Building effective agents while reducing cost,” arXiv preprint
+arXiv:2508.02694, 2025, introduces cost-of-pass metric; experiments on
+GAIA benchmark.
+[10] J. Zheng, X. Cai, Q. Li, D. Zhang, Z.-Z. Li, Y. Zhang, L. Song,
+and Q. Ma, “LifelongAgentBench: Evaluating LLM agents as lifelong
+learners,” arXiv preprint arXiv:2505.11942, 2025. [Online]. Available:
+https://arxiv.org/abs/2505.11942
+[11] H. Jiang, Q. Wu, C.-Y. Lin, Y. Yang, and L. Qiu, “LLMLingua: Com-
+pressing prompts for accelerated inference of large language models,” in
+Proceedings of the 2023 Conference on Empirical Methods in Natural
+Language Processing (EMNLP), 2023, pp. 13 358–13 376.
+[12] D. Isele and A. Cosgun, “Selective experience replay for lifelong
+learning,” in Proceedings of the Thirty-Second AAAI Conference on
+Artificial Intelligence, 2018.
+[13] T. Hazard et al., “SuRe: Surprise-driven prioritised replay for continual
+LLM learning,” arXiv preprint arXiv:2511.22367, 2025.
+[14] Zhang et al., “MemRL: Self-evolving agents via runtime reinforcement
+learning on episodic memory,” arXiv preprint arXiv:2601.03192, 2026.
+[15] Jaglan and Barnes, “Continual learning, not training: Online adaptation
+for agents,” arXiv preprint arXiv:2511.01093, 2025.
+[16] R. M. French, “Catastrophic forgetting in connectionist networks,”
+Trends in Cognitive Sciences, vol. 3, no. 4, pp. 128–135, 1999.
+[17] J. Kirkpatrick, R. Pascanu, N. Rabinowitz, J. Veness, G. Desjardins,
+A. A. Rusu, K. Milan, J. Quan, T. Ramalho, A. Grabska-Barwinska,
+D. Hassabis, C. Clopath, D. Kumaran, and R. Hadsell, “Overcoming
+catastrophic forgetting in neural networks,” vol. 114, no. 13, 2017, pp.
+3521–3526.
+[18] J. Wei, X. Wang, D. Schuurmans et al., “Chain-of-thought prompting
+elicits reasoning in large language models,” in Advances in Neural
+Information Processing Systems (NeurIPS), 2022.
+[19] X. Zhang, Z. Huang, E. O. Taga, C. Joe-Wong, S. Oymak, and
+J. Chen, “Efficient contextual LLM cascades through budget-constrained
+policy learning,” in Advances in Neural Information Processing Systems
+(NeurIPS), 2024.
+[20] Liu et al., “Contextual experience replay for self-improvement of
+language agents,” arXiv preprint arXiv:2506.06698, 2025.
+[21] Li
+et
+al.,
+“Just-in-time
+reinforcement
+learning:
+Continual
+learn-
+ing
+in
+LLM
+agents
+without
+gradient
+updates,”
+arXiv
+preprint
+arXiv:2601.18510, 2026.
+[22] T. B. Brown, B. Mann, N. Ryder et al., “Language models are few-
+shot learners,” in Advances in Neural Information Processing Systems
+(NeurIPS), 2020.
+[23] P. Lewis, E. Perez, A. Piktus et al., “Retrieval-augmented generation
+for knowledge-intensive NLP tasks,” in Advances in Neural Information
+Processing Systems (NeurIPS), 2020.
+[24] L. Li, W. Chu, J. Langford, and R. E. Schapire, “A contextual-bandit
+approach to personalized news article recommendation,” in Proceedings
+of the 19th International Conference on World Wide Web (WWW), 2010,
+pp. 661–670.
+[25] P. Auer, N. Cesa-Bianchi, and P. Fischer, “Finite-time analysis of the
+multiarmed bandit problem,” Machine Learning, vol. 47, no. 2–3, pp.
+235–256, 2002.
