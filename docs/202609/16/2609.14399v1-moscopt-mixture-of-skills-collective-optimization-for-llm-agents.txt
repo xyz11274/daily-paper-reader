@@ -1,0 +1,430 @@
+Title: MOSCOPT: Mixture-of-Skills Collective Optimization for LLM Agents
+
+URL Source: https://arxiv.org/pdf/2609.14399v1
+
+Published Time: Tue, 15 Sep 2026 01:15:21 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# MOSCOPT: Mixture-of-Skills Collective Optimization for LLM Agents 
+
+Zhenyu Zhang 1B and Jiudong Yang 2 
+
+> 1
+
+ML Center, Coupang, Shanghai, China 
+
+zhangzhenyu13@outlook.com  
+
+> 2
+
+AI Center, Futu AI, Shenzhen, China 
+
+Abstract. Natural language prompts and skills serve as the strategic backbone of LLM-based agents. Recent advances in prompt and skill op-timization have achieved notable gains, yet all existing methods optimize a single text template—missing the synergy among multiple complemen-tary strategies. We propose MOSCOPT, a text-native, parameter-free algorithm that jointly optimizes a pool of N skills and a gating skill G
+
+that dynamically selects K skills per step. To effectively optimize the skills, we build the EditAdam with internally maintained dual states. Through the three-phase interleaved updates with EditAdam, the sys-tem monotonically improves without gradient or parameter tuning. Ex-tensive experiments and detailed ablations across 5 benchmarks and 3 target LLMs demonstrate that MOSCOPT consistently outperforms all baselines, and confirm that both the mixture-of-skills architecture with selective activation and the collective evolution with three-phase inter-leaving are essential to its superior performance. Code is released 3.
+
+Keywords: LLM agent, skill optimization, collective evolution 
+
+# 1 Introduction 
+
+Textual skills—natural language strategy documents injected into an agent’s context—have emerged as a critical paradigm for deploying LLM-based agents [8]. They encode reusable procedural knowledge such as planning heuristics, tool-use policies, and domain-specific rules, enabling agents to perform complex tasks without modifying model weights [17]. However, real-world tasks often demand 
+
+multiple complementary strategies : a calculation sub-task may require a math skill, a search sub-task a retrieval skill, and a verification sub-task a checking skill—all within a single trajectory. A single monolithic skill cannot simultane-ously excel at these diverse roles, and the agent has no mechanism to dynamically invoke the right strategy at the right time. Existing approaches to agent skill/prompts optimization fall into three cate-gories, each with fundamental limitations. Manual or one-shot skills are labor-intensive and cannot adapt from execution feedback. Self-improvement meth-ods [16] refine outputs through verbal self-reflection but operate on individual  
+
+> 3
+
+https://github.com/zhangzhenyu13/SummerClaw/tree/master/summerclaw/ agent_trainer/algorithms/moscopt arXiv:2609.14399v1 [cs.AI] 13 Sep 2026 2 Z. Zhang and J. Yang 
+
+instances without producing persistent reusable skills. Single-skill optimization ,exemplified by SkillOpt [20], treats a skill as a trainable text-space object with disciplined bounded editing and strict-improvement validation—yet optimizes only a single skill, making it impossible to model strategy interactions or dy-namic skill combination. Beyond these three categories, population-level meth-ods [10] and evolutionary coordination [3] evolve multiple prompts or agents, but target independent instances rather than co-existing strategies within a single agent’s context. Meanwhile, mixture-of-experts (MoE) routing [21] demonstrates the power of dynamic expert selection, but relies on parameterized neural routers that are neither interpretable nor editable as text. To bridge these gaps, we propose MOSCOPT , the first fully text-native, parameter-free framework for joint optimization of a skill pool and a gating scheduler . MOSCOPT addresses the three core challenges as follows: Mixture-of-Skills. Rather than a single skill, MOSCOPT maintains a pool of N comple-mentary skills and a gating skill G that dynamically activates exactly K skills per task or execution step via progressive disclosure of skill summaries, while non-activated skills remain invisible to prevent context overload. EditAdam based Collective Evolution. We build EditAdam to optimize the skill pool with three-phase interleaved update scheme including skill editing, gating editing, and collective evolution. Text-Native Routing with Multi-Mode Deploy-ment. Unlike neural MoE routers, the gating skill is a text document optimized through the same bounded-edit pipeline as the skills it schedules. The system supports flexible deployment via full mixture gating, distilled single skill, or static routing table extraction. Our evaluation further confirms the effectiveness of the proposed method. 
+
+# 2 Related Work 
+
+Agent Skill Optimization : Recent surveys [8] characterize agent skills as reusable procedural knowledge that goes beyond tool use, encompassing plan-ning heuristics, domain rules, and interaction protocols. Complementary work on agent memory—including procedural memory extraction [11] and agentic memory systems [18]—shows that persistent, structured knowledge improves agent performance across tasks. OPRO [19] uses LLMs themselves to search over prompt space, while self-improvement approaches such as Reflexion [16] enable agents to learn from failures through verbal self-reflection. SkillOpt [20] advances this line by treating a skill as a trainable external state with disciplined text-space optimization,. However, all these methods optimize a single skill or prompt, which we identify as a fundamental limitation for tasks requiring diverse, complementary strategies. Collective Evolution : EvoSkill [1] discovers skills through evolutionary optimization. At the population level, PromptBreeder [5] evolves a population of task-prompts via self-referential mutation.Multi-agent systems have adopted evolutionary coordination, evolving orchestration [3] dy-namically adapts collaboration strategies across agents. However, these methods evolve individual components without modeling the interaction among multiple 3. METHOD: MOSCOPT 3                 
+
+> Fig. 1. MOSCOPT maintains three core components: a skill pool S={s1, . . . , s N}, a
+> gating skill G, and a summary table Σ(S). Given a task input, Gselects Kskills via
+> Σt(S), outputting ACTIVATE IDs (with top-K-by-Q-score fallback). The Kactivated skills are loaded into agent context while non-activated skills remain invisible.
+
+co-existing strategies within a single agent’s skill pool. Routing and Mixture Paradigms : The mixture-of-experts (MoE) paradigm [7] addresses specializa-tion through learned routing among expert networks. However, MoE routing remains parameterized within neural architectures, lacking the interpretability and editability of text-based strategies. 
+
+Positioning. MOSCOPT differs from the above works in three key dimensions: (1) it maintains and optimizes a population of skills, unlike single-skill optimiza-tion; (2) collective optimization operates on a single agent’s skill pool with syn-ergistic credit assignment, unlike multi-agent evolutionary coordination; (3) the gating skill G is a textual router optimized through the same bounded-edit pipeline as the skills it schedules—parameter-free, interpretable, and protected by progressive disclosure—unlike neural MoE routing. 
+
+# 3 Method: MOSCOPT 
+
+The core insight of MOSCOPT is that the gating mechanism is itself treated as a natural language skill—a text document optimized through trajectory feedback rather than gradient descent—unifying routing and skill optimization into a single parameter-free framework. 
+
+3.1 Mixture-of-Skills Architecture 
+
+As illustrated in Figure 1, given a task distribution T and a frozen base LLM agent M , MOSCOPT maintains three core components: skill pool S = {s1, . . . , s N },where each si is a natural language strategy document. gating text skill G,a natural language scheduler that selects exactly K skills per task or execution 4 Z. Zhang and J. Yang 
+
+Algorithm 1 MOSCOPT: Mixture-of-Skills Collective Optimization 
+
+Require: Task distribution T , base LLM M , pool size N , activation count K, evolu-tion interval E
+
+Ensure: Optimized skill pool S, gating skill G
+
+1: Initialize: S ← { s1, . . . , s N }, G ← GenerateGating (), Σ ← Summarize (S), 
+
+Q[si] ← 0 ∀si
+
+2: opt ← EditAdam (M )3: for epoch = 1 to Emax do 
+
+4: ▷ Rollout with gating 
+
+5: D ← Rollout (S, G, Σ, K, Ttrain , M )6: Update Q[si] via Eq. 1; update co-occurrence C(i, j )7: ▷ Phase 1: Skill editing via EditAdam (G fixed) 8: for each si ∈ RankByFailure (S, D) do 
+
+9: S[si] ← opt .step (si, D, Tval , G ) ▷ Alg. 2 10: end for 
+
+11: ▷ Phase 2: Gating editing via EditAdam (S fixed) 12: G ← opt .step (G, D, Tval , S) ▷ Alg. 2 13: ▷ Phase 3: Collective evolution (every E epochs) 14: if epoch mod E = 0 then 
+
+15: Eliminate (S, Q); Reproduce (S, Q)16: CoBreed (S, C); Σ ← RefreshSummary (S)17: end if 
+
+18: opt .memUpdate () ▷ 2nd-order reflection inside EditAdam 19: end for 
+
+20: return S, G 
+
+step. summary table Σ(S) providing lightweight skill descriptions to G, follow-ing a progressive schedule: early epochs expose only skill IDs and descriptions; later epochs additionally reveal Q-scores and activation counts for score-informed selection. The objective is to jointly optimize S and G to maximize task success rate ET [R(τ )], where R(τ ) is task reward function. 
+
+Execution with Gating. The gating skill G serves as the system prompt of a dedicated LLM call. The user prompt concatenates the summary table 
+
+Σt(S), the current task state, and recent execution history. The LLM outputs exactly K skill IDs in the format ACTIVATE: id1, id2, ... , parsed by a regular expression. On parse failure, the system falls back to top-K selection by Q-score and records the failure as a future editing signal for G. Once the activation set 
+
+At (|A t| = K) is determined, the full text of the K activated skills is loaded into the agent’s context. Gating can operate at task level (select once per task) or step level (re-select at every execution step for long-horizon tasks). 
+
+3.2 Collective Skill Evolution Credit Assignment. After each rollout batch, trajectory rewards are attributed to individual skills and the gating. For K > 1 co-activated skills, the binary re-ward R(τ ) ∈ { 0, 1} is equally shared. For each skill si, the Q-score is updated 3. METHOD: MOSCOPT 5
+
+via exponential moving average: 
+
+Qnew (si) = (1 − β) · Qold (si) + β ·
+
+P 
+
+> τ
+
+ci(τ ) · R(τ )
+
+P 
+
+> τ
+
+ci(τ ) (1) where ci(τ ) ∈ { 0, 1} indicates whether si was activated during rollout τ , and 
+
+β = 0 .3. Additionally, when two skills si, s j are co-activated in a successful 
+
+trajectory ( R(τ ) = 1), their co-occurrence count C(i, j ) is incremented. High-synergy pairs ( C(i, j ) above threshold) are protected from elimination during collective evolution. 
+
+Three-Phase Interleaved Update. To prevent oscillation from simulta-neous changes, MOSCOPT employs a three-phase update scheme over Emax 
+
+epochs (Algorithm 1). Each epoch runs on a training split Ttrain ; candidates are accepted only if they improve performance on a held-out validation split 
+
+Tval . The full optimization loop is given in Algorithm 1; each skill and gating edit is delegated to the EditAdam optimizer (Algorithm 2): 1 (Skill Edit-ing): Each epoch begins with a Rollout that collects execution traces D over the training split Ttrain . Skills are ranked by failure frequency via RankByFail-ure (S, D). For each skill si, the optimizer invokes opt .step (si, D, Tval , G ), which internally performs bounded-edit proposal generation. 2 (Gating Editing): Af-ter skills are updated, the gating skill G is edited through the same interface: 
+
+opt .step (G, D, Tval , S). The optimizer uses selection error patterns (missed ac-tivations, poor combinations) from D to propose and validate edits, maintaining a separate step buffer for G. 3 (Collective Evolution): Triggered every E
+
+epochs at the pool level: eliminate removes the lowest-Q-score skills (protecting insufficiently sampled and high-synergy pairs); reproduce mutates top perform-ers into new skills using their stable rules as genetic material; co-breed merges pairs ( si, s j ) with exceptionally high synergy C(i, j ) into a unified skill; Re-freshSummary then updates Σ(S) to reflect the new pool composition. 
+
+EditAdam memory update. At the end of each epoch, opt .memUpdate () is called. Inside EditAdam, the current epoch buffer Bcurr (accumulated during 
+
+step calls) is reflected against Bprev to update the long-term memory M, then 
+
+Bprev ← B curr and Bcurr is cleared for the next epoch. 
+
+3.3 EditAdam: Dual-State Text Optimizer 
+
+A distinguishing feature of MOSCOPT is that every update decision—to skills and to the gating skill—is produced by a text-native optimizer we call Ed-itAdam (Algorithm 2). Unlike gradient-based optimizers that maintain nu-merical moments over parameters, EditAdam maintains two orders of textual state over candidate edits, enabling stable, monotonic improvement without any learning rate or parameter tuning. The concurrent work SkillOpt leverages step + epoch feedbacks for bounded edits of single skill with distinguished differ-ent operations. However, EditAdam treats skill pool and gating skill as ”unified optimizable parameters” in a unified framework. 
+
+Edit operations. Each edit proposal ek produced by EditProposal spec-ifies one of two atomic text operations applied at a given position in u: add 6 Z. Zhang and J. Yang 
+
+Algorithm 2 EditAdam: Dual-State Text Optimizer 
+
+Require: Base LLM M ; per call: text unit u (skill si or gating G), execution traces 
+
+D, validation split Tval , frozen context C (either G or S)
+
+Ensure: Updated text unit u′
+
+Internal state: base LLM M ; 1st-order : step buffer Brej [u]; 2nd-order : long-term memory M, epoch buffers Bcurr ← ∅ , Bprev ← ∅ 
+
+procedure step (u, D, Tval , C ): 1: {e1, . . . , e m} ← EditProposal (u, D, Brej [u], M) ▷ dual-state: 1st-order Brej +2nd-order M guide candidate edit proposal 2: for k = 1 to m do 
+
+3: u′ 
+
+> k
+
+← BoundedEdit (u, e k , Brej [u], M)4: if Score (u′ 
+
+> k
+
+, C, Tval ) > Score (u, C, Tval ) then 
+
+5: Brej [u] ← ∅ ▷ accept: clear step buffer 6: Bcurr .add( u, accept , ek , ∆score) ▷ accumulate into current epoch buffer 7: return u′
+
+> k
+
+8: else 
+
+9: Brej [u].add( ek , ∆score) ▷ record failure as 1st-order state 10: Bcurr .add( u, reject , ek , ∆score) 11: end if 
+
+12: end for 
+
+13: return u ▷ no edit accepted 
+
+procedure memUpdate (): 14: M ← Reflect (M, Bcurr , Bprev ) ▷ 2nd-order: reflect on epoch-buffer change to update M
+
+15: Bprev ← B curr ; Bcurr ← ∅ 
+
+(insert a text span at a specified location) or delete (remove a contiguous span). 
+
+BoundedEdit executes the proposed operation under the constraints of Brej 
+
+and M, ensuring edits remain local and do not re-propose previously rejected directions. 
+
+Dual-state hierarchy. EditAdam maintains two orders of textual state that jointly guide every step call. The first-order state is the step buffer Brej , distilled by reflecting on execution trajectories: it records which edits were rejected and why, injected into the next step prompt to prevent re-proposing failed direc-tions (text-space momentum). The second-order state is the long-term memory 
+
+M, obtained by reflecting on the change of epoch buffers across epochs—since each epoch buffer Bepoch is itself a summary of the first-order state, tracking how it evolves reveals durable optimization patterns (e.g., which edit strategies con-sistently improve scores). Both Brej and M flow into BoundedEdit : the step buffer provides local, within-epoch guidance; M provides cross-epoch strategic priors, closing the loop from epoch-level reflection to step-level action. 4. EXPERIMENTAL RESULTS 7
+
+3.4 Implementation Designs Deployment modes. The system supports three deployment modes: (i) full mixture ({S , G, K }) with dynamic gating; (ii) static routing table , extracting gating Q score for fixed routing; (iii) distilled single skill , merging top skills into one prompt. We compare these modes in §5. Preventing skill pool collapse. 
+
+Repeated elimination/reproduction cycles and shared editing signals across tasks both risk driving skills toward homogeneous texts. Phase 3 mitigates this via: 
+
+synergy protection (high-C(i, j ) pairs survive elimination), mutation-based re-production (offspring explore distinct strategy regions), and forced diversity in-jection when pairwise similarity exceeds 0 .85. This ensures the gating can make non-trivial selection decisions throughout training. 
+
+# 4 Experimental Results 
+
+4.1 Setup Benchmarks and Evaluations. We evaluate on five benchmarks: SearchQA [4], GPQA-Diamond [15], HLE [14], AIME [12], and LiveMathematician [6]. For AIME, we pool problems from the 2024-2026 and split them into 50/10/30 for train/val/test with seed=42. We sample 100/20/50 for the rest. To ensure stable and efficient estimation, we adopt adaptive stopping rule with a minimum of 3 and maximum of 50 independent runs, stopping early when the sample stan-dard deviation across completed runs falls below setting thresholds and report means. LLMs are invoked with temperature 0.8 and top-p 0.6. Agent Harness. 
+
+We equips every agent with 3 tools: (i) Shell ; (ii) Python ; and (iii) Browser Search . Baselines. We compare 9 baselines: (i) Basic : No Skill and 5-shot LLM Skill; (ii) Agent algorithm : Reflexion [16], DSPy [9], and SE-Agent [11]; (iii) Skill algorithm : OPRO [19], Trace2Skill [13], EvoSkill [1], and SkillOpt [20]. 
+
+4.2 Overall Performance 
+
+Table 1 presents the main results with Qwen3.6-Plus. MOSCOPT achieves the best average performance on all five benchmarks, yielding consistent improve-ments over the no-skill baseline and the strongest single-skill baseline (SkillOpt). The results confirm the value of disciplined text-space optimization, demonstrat-ing that the effectiveness of skill optimization is guided by the joint optimization rather than the agent routing orchestration. Specifically,the gains are most pro-nounced on search and mathematical reasoning tasks, supporting the hypothesis that diverse skill combinations benefit hard, multi-stage tasks where different sub-problems demand different strategies. We also observed benefits when applying MOSCOPT across 3 different mod-els with substantial improvements: Qwen3.6-Plus gains an average of +12.1 points across five benchmarks, StepFun 3.5 Flash achieves the largest absolute improvement (+15.8 on average), and DeepSeek-V3.2 improves by +11.8 on av-erage. Notably, the relative gain is inversely correlated with baseline strength— StepFun 3.5 Flash, the comparatively weakest model, benefits proportionally 8 Z. Zhang and J. Yang                                                                                         
+
+> Method SearchQA GPQA-D HLE AIME LiveMath avg.
+> No Skill 48.8 90.7 46.3 94.5 29.9 62.0 5-shot LLM Skill 41.0 88.3 46.5 93.1 29.4 59.7 Reflexion 76.1 90.4 48.7 98.3 37.1 70.1 DSPy 62.2 90.7 46.1 93.8 31.5 64.9 SE-Agent 79.9 89.4 47.0 94.1 46.3 71.3 OPRO 53.2 90.9 46.5 95.7 41.6 65.6 Trace2Skill 67.5 90.5 48.2 97.1 32.9 67.2 EvoSkill 77.4 91.5 48.1 96.5 46.8 72.1 SkillOpt 76.8 90.1 46.6 98.7 45.2 71.5
+> MOSCOPT 81.3 92.6 48.5 98.9 49.2 74.1
+> StepFun 3.5 Flash 39.6 73.2 31.8 95.2 16.8 51.3 +MOSCOPT 67.5 84.1 40.3 96.2 47.4 67.1
+> DeepSeek-V3.2 51.7 83.6 29.5 94.0 32.6 58.3 +MOSCOPT 79.6 83.9 45.5 98.1 43.3 70.1 Table 1. Main results with Qwen3.6-Plus and cross models evaluation for MOSCOPT.
+
+most from the diverse skill pool and dynamic gating, as the skills compensate for its inherent capability limitations. This trend suggests that skill diversity is particularly valuable for resource-constrained models, offering a practical path to narrow the performance gap with stronger base models. 
+
+# 5 Discussion 
+
+All experiments are finished with Qwen3.6-Plus as backend. 
+
+5.1 Ablation Study Component analysis. The three-phase interleaving is the most critical design choice: replacing it with simultaneous updates causes the largest degradation, as concurrent skill and gating changes create confounded attribution and op-timization oscillation. Gating optimization is also crucial to the performance of MOSCOPT: disabling it causes significant performance drop, as the initial 
+
+G cannot effectively adapt task-specific selection patterns through trajectory-based refinement. We also observe that the step-wise gating is superior than the task-wise gating, because the agent can select proper skills at each step based on feedback and status. Progressive disclosure prevents early noisy statistics from misleading gating, while collective co-breeding contributes additional gains. 
+
+EditAdam effectiveness. Replacing EditAdam with a simple reflect-edit baseline—which reflects on failures and applies edits without dual-state guidance— causes a notable performance drop. The dual-state design is the key differen-tiator: the step buffer Brej prevents re-proposing failed edit directions within 5. DISCUSSION 9                       
+
+> Ablation Configuration Avg. Score
+> MOSCOPT (full) 74.1 w/o EditAdam (simple reflect edit) 68.5 w/o Gating Optimization ( Gfixed) 70.9 Task level Gating 73.1 w/o Collective co-breeding 73.7 w/o Progressive Disclosure 73.9 w/o Three-phase Interleaving 67.3 Random Gating (instead of G)68.1
+> K= 1 (single activation) 71.2
+> K=N(No-Routing (All Skills)) 73.6
+> Table 2. Ablation study on Qwen3.6-Plus. Removing any component degrades perfor-mance, confirming the necessity of each design choice.
+> Deployment Mode Avg. Score
+> Full Mixture ( {S , G, K })74.1 Static Routing Table (top Q scores) 70.6 Distilled Single Skill (merged top skills) 71.2
+> Table 3. Comparison of three deployment modes on Qwen3.6-Plus. Full mixture with dynamic gating outperforms both static routing and skill distillation.
+
+an epoch (text-space momentum), while the long-term memory M, distilled from epoch-buffer changes across training, provides cross-epoch strategic pri-ors that guide BoundedEdit toward historically effective transformations. To-gether with strict-improvement validation, this ensures monotonic progress. 
+
+Activation and gating. K=1 reduces performance notably (skill combi-nation matters), while K=N also degrades due to context overload—validating selective activation. Random gating drops substantially below the full model, confirming that intelligent routing is essential. 
+
+5.2 Deployment Mode Comparison 
+
+Table 3 compares the three deployment modes supported by MOSCOPT. The full mixture mode ( {S , G, K }) achieves the best average score, where the gat-ing skill G dynamically selects K skills per query based on trajectory feedback. Extracting the gating logic as a static routing table—simply based on top Q scores—yields a noticeable degradation. This indicates that while the gating skill captures useful routing heuristics, its true strength lies in context-sensitive adaptation that rigid rules cannot replicate. The distilled single skill, obtained by merging the top-performing skills into one unified prompt, performs only marginally above the Static Routing. This confirms that skill diversity, rather 10 Z. Zhang and J. Yang 
+
+than skill consolidation, is the key driver of MOSCOPT’s gains: merging comple-mentary skills into a single prompt dilutes their specialized strengths and loses the ability to route different sub-tasks to different strategies. 
+
+5.3 Synergy Analysis of MOSCOPT 
+
+We analyze how MOSCOPT’s components interact and produce emergent syn-ergistic behaviors. 
+
+Gating specialization. Analysis of gating decisions reveals that G learns meaningful role assignment over training: planning-type skills are preferentially activated for initial steps, computation skills for mid-trajectory sub-tasks, and verification skills for final checking. This emergent specialization demonstrates that the gating skill effectively discovers and exploits skill complementarity with-out explicit supervision. 
+
+Multi-skill synergy. Pairwise co-occurrence analysis shows that MOSCOPT identifies and reinforces complementary skill combinations. High-synergy pairs (C(i, j ) > 3) are co-activated in over 78% of successful trajectories. The collective co-breeding mechanism further exploits these synergies by merging high-C(i, j )pairs into unified skills, yielding an additional 0.4-point gain in ablation. 
+
+Skill elimination dynamics. The elimination mechanism efficiently prunes redundant or underperforming skills: on average, 2–3 skills are replaced during the full training run. Eliminated skills typically exhibit low activation frequency (< 5% of rollouts) and high text similarity ( > 0.9 measured via BGE [2]) to exist-ing pool members, indicating redundancy of those skills. This selective pressure maintains pool diversity while removing strategies that fail to find a complemen-tary niche. 
+
+# 6 Conclusion 
+
+We have presented MOSCOPT, a text-native, parameter-free framework that ex-tends skill optimization from a single skill to a jointly optimized skill pool with a gating scheduler. Three core contributions distinguish MOSCOPT: (1) Mixture-of-Skills Architecture ; (2) EditAdam based Collective Optimization and (3) Text-Native Routing . Experiments across five benchmarks and three LLMs demon-strate consistent gains over all baselines. 
+
+# References       
+
+> 1. Alzubi, S., Provenzano, N., Bingham, J., Chen, W., Vu, T.: EvoSkill: Automated skill discovery for multi-agent systems. arXiv preprint arXiv:2603.02766 (2026) 2. Chen, J., Xiao, S., Zhang, P., Luo, K., Lian, D., Liu, Z.: M3-Embedding: Multi-linguality, multi-functionality, multi-granularity text embeddings through self-knowledge distillation. In: Findings of the Association for Computational Linguis-tics: ACL 2024 (2024)
+
+6. CONCLUSION 11 3. Dang, Y., Qian, C., Luo, X., Fan, J., Huang, G., et al.: Multi-agent collaboration via evolving orchestration. In: Advances in Neural Information Processing Systems (2025) 4. Dunn, M., Sagun, L., Higgins, M., Guney, V.U., Cirik, V., Cho, K.: SearchQA: A new Q&A dataset augmented with context from a search engine. arXiv preprint arXiv:1704.05179 (2017) 5. Fernando, C., Banarse, D., Michalewski, H., Osindero, S., Rockt¨ aschel, T.: Prompt-breeder: Self-referential self-improvement via prompt evolution. arXiv preprint arXiv:2309.16797 (2023) 6. He, L., Yu, Q., Dong, H., Liao, B., Xu, X., Goldblum, M., Bian, J., Mesgarani, N.: LiveMathematicianBench: A live benchmark for mathematician-level reasoning with proof sketches. arXiv preprint arXiv:2604.01754 (2026) 7. He, X.O.: Mixture of a million experts. arXiv preprint arXiv:2407.04153 (2024) 8. Jiang, Y., Li, D., Deng, H., Ma, B., Wang, X., Wang, Q., Yu, G.: SoK: Agentic skills—beyond tool use in LLM agents. arXiv preprint arXiv:2602.20867 (2026) 9. Khattab, O., Singhvi, A., Maheshwari, P., Zhang, Z., Santhanam, K., Vard-hamanan, S., Haq, S., Sharma, A., Joshi, Y., Hanna, H., et al.: DSPy: Compil-ing declarative language model calls into self-improving pipelines. arXiv preprint arXiv:2310.03714 (2023) 10. Lau, G.K.R., Hu, W., Liu, D., Chen, J., Ng, S.K., Low, B.K.H.: DIPPER: Diversity in prompts for producing large language model ensembles in reasoning tasks. In: Proceedings of EMNLP (2025) 11. Lin, J., Guo, Y., Han, Y., Hu, S., Ni, Z., Wang, L., Chen, M., Liu, H., Chen, R., He, Y., Jiang, D., Jiao, B., Hu, C., Wang, H.: SE-Agent: Self-evolution trajectory op-timization in multi-step reasoning with LLM-based agents. In: Advances in Neural Information Processing Systems (2025) 12. Mathematical Association of America: AIME 2025: American invitational mathe-matics examination. https://www.maa.org/math-competitions (2025) 13. Ni, J., Liu, Y., Liu, X., Sun, Y., Zhou, M., Cheng, P., Wang, D., Zhao, E., Jiang, X., Jiang, G.: Trace2Skill: Distill trajectory-local lessons into transferable agent skills. arXiv preprint arXiv:2603.25158 (2026) 14. Phan, L., Gatti, A., Han, Z., Li, N., Hu, J., Zhang, H., Cao, T., Shi, T., He, Y., Wang, X., et al.: Humanity’s last exam. arXiv preprint arXiv:2501.14249 (2025) 15. Rein, D., Hou, B.L., Stickland, A.C., Petty, J., Pang, R.Y., Dirani, J., Michael, J., Bowman, S.R.: GPQA: A graduate-level google-proof q&a benchmark. arXiv preprint arXiv:2311.12022 (2024) 16. Shinn, N., Cassano, F., Gopinath, A., Narasimhan, K., Yao, S.: Reflexion: Lan-guage agents with verbal reinforcement learning. Advances in Neural Information Processing Systems 36 (2023) 17. Sumers, T.R., Yao, S., Narasimhan, K., Griffiths, T.L.: Cognitive architectures for language agents. Transactions on Machine Learning Research (2024) 18. Xu, W., Liang, Z., Mei, K., Gao, H., Tan, J., Zhang, Y.: A-Mem: Agentic memory for LLM agents. In: Advances in Neural Information Processing Systems (2025) 19. Yang, C., Wang, X., Lu, Y., Liu, H., Le, Q.V., Zhou, D., Chen, X.: Large language models as optimizers. In: International Conference on Learning Representations (ICLR) (2024) 20. Yang, Y., Gong, Z., Huang, W., Yang, Q., Zhou, Z., Huang, Z., Li, Y., Gao, X., Dai, Q., Liu, B., Qiu, K., Yang, Y., Chen, D., Yang, X., Luo, C.: Skillopt: Executive strategy for self-evolving agent skills. arXiv preprint arXiv:2605.23904 (2026) 21. Yue, Y., Zhang, G., Liu, B., Wan, G., Wang, K., Cheng, D., Qi, Y.: MasRouter: Learning to route llms for multi-agent systems. In: Proceedings of ACL (2025) 12 Z. Zhang and J. Yang 
+
+# A Technical Details 
+
+This appendix provides detailed technical specifications that supplement the main paper. 
+
+A.1 Structured Patch Editing 
+
+Each edit operation is a structured patch containing one or more atomic opera-tions: 
+
+– append : Insert new text at the end of the skill document. 
+
+– insert after : Insert new text after a specified anchor string. 
+
+– replace : Replace a target text segment with new content. 
+
+– delete : Remove a specified text segment. The LLM outputs edits in a structured JSON format: 
+
+{"reasoning": "Analysis of failure patterns...", "edits": [ {"op": "append", "content": "New rule text"}, {"op": "replace", "target": "Old text", "content": "Revised text"}, {"op": "delete", "target": "Outdated rule"} ]}
+
+Each edit is applied sequentially and independently reports its status ( applied ,
+
+skipped , or error ). 
+
+A.2 Reflect Context Injection 
+
+Each Reflect call receives two types of context injected into the LLM prompt: 
+
+Step Buffer Context ( step buffer context ): Accumulated summaries of all previous Reflect calls within the current epoch. This prevents redundant analysis of the same failure patterns across different minibatches. 
+
+Rejection Buffer Context ( rejected buffer context ): Summaries of previously rejected edits with their score changes, formatted as: 
+
+## Previously Rejected Edits (this epoch) - Step 3: score 72.1 -> 69.8 (-2.3) Edits: "Add retry on timeout" Failure: caused regression on short tasks 
+
+This explicitly instructs the LLM to avoid generating similar edits. A. TECHNICAL DETAILS 13 
+
+A.3 Optimization Strategy Details Step Buffer. Each skill si and the gating G maintain independent step buffers. After each Reflect call, the failure modes and edit suggestions are summarized and appended to the buffer. The buffer is cleared at the start of each epoch (epoch-local). This ensures that within an epoch, the optimizer accumulates knowledge about discovered failure patterns without cross-epoch contamination. 
+
+Rejection Buffer. A circular FIFO buffer with default capacity 10 per skill and per gating. Each record contains: 
+
+– Step number when the edit was rejected. 
+
+– Score before and after the edit ( ∆score). 
+
+– Summary of rejected edits (max 200 characters per edit). 
+
+– Associated failure patterns. The buffer is epoch-local, cleared at epoch start. When the buffer exceeds capacity, the oldest entry is evicted. 
+
+LR Scheduler. Controls the edit budget L (maximum number of edits per opt step) with four modes:             
+
+> Mode Behavior Use Case
+> constant Fixed budget Uniform task difficulty linear Decay from Lmax to Lmin Skills stabilizing cosine Smooth annealing Avoid abrupt changes autonomous LLM decides budget Fluctuating difficulty
+
+In autonomous mode, the LLM considers the current rollout’s hard/soft scores to determine the appropriate number of edits. 
+
+A.4 Gating Skill Details Initial Gating Prompt Template. The gating skill G is initialized with the following structure: 
+
+You are a skill scheduler. Given the current task state and skill summary table, select exactly K most appropriate skills to activate. Rules: - In initial phases, prefer planning skills. - If the task involves computation, activate at least one math-specialized skill. - Output only skill IDs: "ACTIVATE: id1, id2" 14 Z. Zhang and J. Yang 
+
+Summary Table: Phase 1 vs. Phase 2. Before the enrichment epoch ( erich =2), the gating receives a minimal table: 
+
+| ID | Name | Description ||----|------------------|--------------------------------| | 1 | Cautious Planner | Step-by-step, verify assumptions| | 2 | Efficient Executor| Fast, action-oriented || 3 | Math Expert | Rigorous formal reasoning || 4 | Creative Thinker | Unconventional solutions || 5 | Detail Verifier | Edge-case scrutiny |
+
+After enrichment, the table adds Q-score and activation count: 
+
+| ID | Name | Description | Recent Score ||----|------------------|--------------------------------|------------------| | 1 | Cautious Planner | Step-by-step, verify assumptions| 0.72 (act=15) || 2 | Efficient Executor| Fast, action-oriented | 0.85 (act=20) || 3 | Math Expert | Rigorous formal reasoning | 0.91 (act=18) || 4 | Creative Thinker | Unconventional solutions | 0.45 (act=10) || 5 | Detail Verifier | Edge-case scrutiny | 0.68 (act=12) |
+
+Gate I/O Example (End-to-End). Consider a pool with N =5 skills and activation count K=2, operating under task-level gating. 
+
+Gate LLM system prompt: The current gating text G (the initial tem-plate above, possibly refined by prior edits). 
+
+Gate LLM user prompt: 
+
+You are a skill scheduler. Select exactly 2 skills to activate. ## Skill Summary Table | ID | Name | Description | Recent Score ||----|-------------|--------------------------|----------------| | 1 | Caut. Plan. | Step-by-step verification| 0.72 (act=15) || 2 | Eff. Exec. | Fast, action-oriented | 0.85 (act=20) || 3 | Math Expert | Formal reasoning | 0.91 (act=18) || 4 | Creat. Think| Unconventional solutions | 0.45 (act=10) || 5 | Det. Verif. | Edge-case scrutiny | 0.68 (act=12) |## Current Task State What is the sum of all prime numbers less than 100? ## Recent History (no history yet) Output exactly 2 skill IDs in the format: ACTIVATE: id1, id2, ... Do not output anything else. A. TECHNICAL DETAILS 15 
+
+Gate LLM output: 
+
+ACTIVATE: 2, 3 
+
+Parsed result: Activation set A = {2, 3}.
+
+Constructed agent prompt: 
+
+[Activated Skills] Skill 2: --- Efficient Executor skill document (full text) ---Skill 3: --- Math Expert skill document (full text) ---[Current State] What is the sum of all prime numbers less than 100? Please decide the next action using the activated strategies. 
+
+If the LLM instead outputs unparseable text (e.g., “I recommend Skills 2 and 3”), the regex parser fails, and the system falls back to fallback top k :selecting {3, 2} by Q-score (0 .91 > 0.85). The parse failure is recorded for gating reflection. 
+
+Gating Edit Examples. Negative feedback edits (from detected selection er-rors): 
+
+– missed high q : “When math computation is detected, do not activate Skill 4 (creative thinker, Q=0 .45); prefer Skill 3 (math expert, Q=0 .91).” 
+
+– bad combo : “The combination of Skill 1 and Skill 2 repeatedly fails on veri-fication tasks. Consider adding Skill 5 instead.” Positive feedback edits (from successful patterns): 
+
+– good combo : “Skill 2 + Skill 3 combination succeeded on computation tasks (success rate 92%). Solidify this pairing for math-oriented inputs.” 
+
+A.5 Credit Assignment Example 
+
+Consider a batch of 4 rollouts with K=2 activated skills each and initial Q-scores 
+
+Q(si) = 0 .5 for all skills. 
+
+Step 1: Compute per-skill mean reward ˆR(si):– s1: activated in rollout 3 only. ˆR(s1) = 1 /1 = 1 .0
+
+– s2: activated in rollouts 1, 2, 4. ˆR(s2) = (1 + 0 + 1) /3 = 0 .667 
+
+– s3: activated in rollouts 1, 3, 4. ˆR(s3) = (1 + 1 + 1) /3 = 1 .0
+
+– s5: activated in rollout 2 only. ˆR(s5) = 0 /1 = 0 .016 Z. Zhang and J. Yang 
+
+Rollout Activated Hard R(τ ) Co-occur? Notes 
+
+1 {2, 3} 1 (success) C(2 , 3)++ Both credited +1 2 {2, 5} 0 (failure) — Both credited +0 3 {1, 3} 1 (success) C(1 , 3)++ Both credited +1 4 {2, 3} 1 (success) C(2 , 3)++ Both credited +1 
+
+Step 2: EMA update ( β = 0 .3, Qold = 0 .5): 
+
+Qnew (s1) = 0 .7 × 0.5 + 0 .3 × 1.0 = 0 .65 
+
+Qnew (s2) = 0 .7 × 0.5 + 0 .3 × 0.667 = 0 .55 
+
+Qnew (s3) = 0 .7 × 0.5 + 0 .3 × 1.0 = 0 .65 
+
+Qnew (s5) = 0 .7 × 0.5 + 0 .3 × 0.0 = 0 .35 
+
+Step 3: Co-occurrence update (successful rollouts only). C(2 , 3) += 2 (from rollouts 1 and 4), C(1 , 3) += 1 (from rollout 3). Rollout 2 is excluded since R(τ ) = 0. 
+
+Downstream effects: In the next gating call, the Phase-2 summary table will display the updated Q-scores. Skill 3 ( Q=0 .65) and Skill 1 ( Q=0 .65) become more attractive to the gate, while Skill 5 ( Q=0 .35) becomes less likely to be selected. If Skill 5’s Q-score remains low over multiple batches and its activation count exceeds cmin , it will become a candidate for elimination during the next collective evolution cycle. 
+
+A.6 Hyperparameter Summary 
+
+Hyperparameter Symbol Default Description 
+
+Pool size N 10 Total skills in pool Activation count K 3 Skills activated per step Elim/reproduce M 1 Skills replaced per cycle Evolution interval E 1 Epochs between evolution Gating granularity — task task-level or step-level Max edit budget Lmax 8 Max edits per opt step Min edit budget Lmin 2 Minimum edits (decay) Rejection buffer R 10 Capacity per skill/gating Reject summary chars — 200 Max chars per reject entry Minibatch size Mb 4 Reflect grouping size Merge batch size Mg 8 Aggregate merge size Validation fraction pval 1.0 Fraction of val set used EMA coefficient β 0.3 Q-score smoothing Min activations cmin 5 Q-score threshold count A. TECHNICAL DETAILS 17 
+
+A.7 Failure Modes and Mitigations Gating Parse Failures. When G outputs text that cannot be parsed into exactly K valid skill IDs: 
+
+– Immediate fallback: Select top-K skills by Q-score. 
+
+– Editing signal: Record the parse failure as negative feedback for gating optimization. 
+
+– Frequency monitoring: If parse failure rate exceeds 30% over consecutive opt steps, trigger gating rebuild (re-initialization). 
+
+Skill Diversity Collapse. After multiple elimination/reproduction cycles, skills may converge to similar texts: 
+
+– Diversity metric: Compute pairwise text similarity (edit distance or em-bedding cosine) each epoch. If average similarity exceeds 0.85, trigger forced mutation. 
+
+– Forced mutation: Apply larger mutation amplitude (modify 50% of text) during reproduction. 
+
+– Fresh gene injection: Re-sample 1–2 entirely new skills from seed prompts to replace lowest-scoring skills. 
+
+Credit Assignment Noise. Random activation combinations or validation noise may cause erroneous elimination: 
+
+– EMA smoothing: Q-scores use exponential moving average rather than single-epoch scores. 
+
+– Minimum activation threshold: Only skills with ≥ cmin activations par-ticipate in elimination ranking. 
+
+– Synergy protection: Skill pairs with high co-occurrence scores C(i, j ) are protected from elimination even if individual Q-scores are low. 
+
+K = N Degeneration. When K approaches N , gating loses selection mean-ing: 
+
+– Constraint check: Validate K < N at startup. 
+
+– Auto-suggestion: When K/N > 0.8, suggest increasing N or decreasing 
+
+K.
+
+A.8 Comparison with SkillOpt 
+
+When K = 1 and N = 1, MOSCOPT fully degenerates to SkillOpt: the pool contains one skill, gating trivially outputs ACTIVATE: 1 , and collective evolution is disabled. This ensures MOSCOPT serves as a strict superset. 18 Z. Zhang and J. Yang 
+
+Property SkillOpt MOSCOPT 
+
+Optimization target Single skill Skill pool + gating Exploration Single path Multi-skill parallel Long-horizon tasks Fixed strategy Phase-aware switch-ing Synergy exploitation None Explicit modeling Safe editing Bounded + gate Inherited + 3-phase LLM calls/opt step O(B + R) O(BT + N |V | + |V |)Context length 1× skill len K× skill + summary Deployment complexity Low Medium Local optima resistance Low High Backward compatible — K=1 , N =1: SkillOpt

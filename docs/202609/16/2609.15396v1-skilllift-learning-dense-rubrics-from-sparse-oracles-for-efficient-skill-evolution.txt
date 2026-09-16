@@ -1,0 +1,786 @@
+Title: SkillLift: Learning Dense Rubrics from Sparse Oracles for Efficient Skill Evolution
+
+URL Source: https://arxiv.org/pdf/2609.15396v1
+
+Published Time: Tue, 15 Sep 2026 02:54:41 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# SkillLift: Learning Dense Rubrics from Sparse Oracles for Efficient Skill Evolution 
+
+Haoxiang Kang 1, Ming Wen 2∗
+
+> 1
+
+Independent Researcher 
+
+> 2
+
+Fudan University shaonianjingyi@gmail.com, mwen23@m.fudan.edu.cn 
+
+Abstract 
+
+LLM-based agents increasingly rely on persistent skills, i.e., reusable procedural prompts, to adapt without weight updates. Existing skill self-evolution methods directly revise skill text based on execution feedback, but each oracle evaluation re-quires a full agent rollout, creating a supervision bottleneck that confines search to failure-patching updates. Our key in-sight is that ranking is a smoother supervision target than absolute outcome regression: identifying which skill is better requires fewer oracle evaluations than predicting exact scores. Building on this insight, we propose SkillLift, which decou-ples skill search from oracle cost by learning an oracle-aligned rubric as a structured evaluation space. We formalize this as a bilevel optimization problem solved via alternating optimiza-tion: an inner loop uses the frozen rubric as a cheap surro-gate to guide skill revision at no oracle cost, while an outer loop invokes a small number of oracle rollouts to re-align the rubric via rank correlation, amortizing oracle cost and sta-bilizing text-space updates. Experiments on complex agent task benchmarks show that our method outperforms existing auto-skill methods with 40–70% less token cost compared to frontier evolving methods. 
+
+Code — https://github.com/WalteR-MittY-pro/SkillLift 
+
+1 Introduction 
+
+LLM-based agents have advanced rapidly in reasoning, plan-ning, and interaction with complex environments (Yao et al. 2023; Shinn et al. 2023; Schick et al. 2023). A key con-tributor is the use of agent skills: structured, reusable pro-cedural prompts that package task-specific strategies, tool policies, and domain heuristics into portable artifacts (An-thropic 2025; Li et al. 2026). A skill persists as an external adaptation layer—it is loaded before task execution, evalu-ated on agent rollouts, and revised over successive attempts. This persistence decouples capability from model weights, allowing a frozen agent to adapt through external text. Recent works have focused on skill self-evolution, the process of au-tomatically improving skills from execution feedback (Yang et al. 2026; Lin et al. 2026; Ma et al. 2026), as the core mechanism for agents to continuously self-improve. Existing methods attempt to drive skill evolution by di-rectly revising skill text based on execution outcomes. Ap-
+
+> ∗
+
+Corresponding author. 0.0 0.2 0.4 0.6 0.8 1.0          
+
+> Skill Score
+> 0123456789
+> Oracle Run
+> 0510
+> Cumulative Tokens (M)
+> Oracle Framework
+
+Figure 1: Pilot study (10 WildClawBench (Ding et al. 2026) tasks, 10 rounds, 3 seeds). Top: per-round averaged best/mean/worst skill scores. Bottom: averaged cumulative oracle vs. framework tokens. Scores show high variance and poor scaling; oracle cost dominates and grows. proaches range from evolutionary search with surrogate ver-ifiers (Zhang et al. 2026; Alzubi et al. 2026), through text-space optimizers constrained by edit budgets and validation gates (Yang et al. 2026; Khattab et al. 2024; Wang et al. 2026), to lifecycle-based systems that incorporate unit-test feedback (Lin et al. 2026; Liu et al. 2026b). Despite their diversity, these methods converge on a common framework: they treat skill improvement as direct empirical risk mini-mization over the skill document, using limited oracle feed-back to guide each text revision. This approach faces a fundamental supervision bottleneck: each oracle evaluation requires a full agent rollout, limit-ing the number of candidates that can be assessed (Jimenez et al. 2024), while the discontinuous skill text space (Yang et al. 2024) means few oracle signals drive conservative, failure-patching updates. We confirm this empirically with a pilot study (Figure 1): across 10 WildClawBench (Ding et al. 2026) tasks evolved for 10 rounds (3 rollout seeds per skill), skill optimization fails to scale—the best–worst score arXiv:2609.15396v1 [cs.AI] 14 Sep 2026 Table 1: Only SkillLift combines dense feedback with amortized oracle-call complexity. L = evolution steps; T
+
+= evolution epochs.                            
+
+> Method Evolv. Surro. Dense fb. Oracle calls
+> Trace2Skill ×××O(1)
+> MUSE-Autoskill ✓××O(LT )
+> SkillOpt ✓××O(LT )
+> CoEvoSkills ✓✓✓O(LT )
+> SkillLift (ours) ✓✓✓O(L)
+
+gap remains large throughout, indicating high variance—and oracle token consumption far exceeds framework overhead, worsening with each successive run. These findings motivate decoupling skill search from oracle cost via a cheap surrogate that approximates the oracle’s relative preferences, allowing optimization to proceed at scale while oracle evaluations are invoked sparingly for re-alignment. Table 1 contrasts Skill-Lift with representative existing methods along four dimen-sions: whether the method evolves skills, whether it employs a surrogate evaluator, whether it provides dense feedback, and its oracle-call complexity. Our key insight is that skill evolution should not directly chase oracle outcomes; instead, it should first learn a struc-tured evaluation space (a rubric) that captures the oracle’s relative preferences among skills. Ranking is a smoother su-pervision target than absolute outcome regression: it requires only identifying which skill is better, not predicting its exact score, so fewer oracle evaluations suffice to learn a useful rubric (Christiano et al. 2017). Ranking is also robust to noisy or non-comparable oracle values, since relative order is preserved even when absolute scores are unreliable (Wirth, Fürnkranz, and Neumann 2016; Sugiyama, Meguro, and Mi-nami 2012). Once aligned, the learned rubric converts sparse oracle feedback into dense and interpretable signals for skill generation. We formulate skill evolution as a bilevel optimization problem (Colson, Marcotte, and Savard 2007): the lower level optimizes a population of K skills to maximize rubric-assessed quality, while the upper level aligns the rubric with oracle preferences over the resulting skill population. We solve this objective via alternating optimization (Bezdek and Hathaway 2003): in the skill-update step, the rubric is held fixed as the surrogate evaluator, providing dense feedback for improving each skill; in the rubric-update step, skills are held fixed and oracle evaluations are invoked solely to re-align the rubric-induced ranking with the oracle ranking. This de-composition amortizes oracle cost, stabilizes text-space up-dates, and reduces overfitting by directing skill improvements toward general quality criteria rather than instance-specific failure patches. Our main contributions are as follows. 
+
+• We identify the supervision bottleneck in direct skill op-timization and propose learning an oracle-aligned rubric as a structured evaluation space to address it. 
+
+• We formulate skill evolution as a bilevel optimization problem and solve it via alternating updates between skill optimization guided by rubric feedback and rubric align-ment guided by oracle ranking, alleviating expensive eval-uations while stabilizing text-space search. 
+
+• We demonstrate on two complex agent task benchmarks that our method outperforms existing auto-skill self-evolving methods even when baselines are given a 2×
+
+larger token budget, and achieves target performance at 40–70% lower token cost. 
+
+2 Related work 
+
+Context optimization for LLMs. Treating the prompt it-self as an optimization target predates the skill-setting by several years. APE (Zhou et al. 2023) samples instruction candidates via forward LM calls and retains the best through Monte Carlo scoring; OPRO (Yang et al. 2024) works in a similar spirit but keeps a running archive of top-scoring strings inside a meta-prompt that the LLM reads and im-proves at each step. DSPy (Khattab et al. 2024) scales the idea to full LM pipelines: it bootstraps few-shot demon-strations from successful runs and co-optimizes instruction text and example selection under a declarative signature. TextGrad (Yuksekgonul et al. 2024) adds a differentiable structure to the pipeline by defining a computation graph over LM calls and backpropagating verbal critique as a sur-rogate gradient. All of these methods query an evaluator hundreds of times, which is feasible because each query is a single LM call. Scoring a skill candidate, by contrast, means executing the agent end-to-end (Jimenez et al. 2024), and the search landscape is considerably rougher than prompt space, since a few edited words can flip a rollout from success to crash (Yang et al. 2024). 
+
+Skill extraction from trajectories. Several recent sys-tems generate skills by distilling agent execution traces. Trace2Skill (Ni et al. 2026) segments a trajectory into lo-cal lessons and abstracts each into a transferable document indexed by task context. MUSE-Autoskill (Lin et al. 2026) couples this extraction with a memory module and a skill manager that decides when to create, revise, or retire en-tries. SkillCAT (Anonymous 2026) attacks the attribution question head-on: for each task it pairs successful and failed trajectories, applies contrastive causal extraction to isolate the fragments responsible for the outcome gap, and routes the survivors through a topology-aware subgraph at infer-ence. SkillFoundry (Shen et al. 2026) sidesteps trajectories entirely, assembling skill libraries from heterogeneous sci-entific documents. In all of these systems, quality is judged by whether the source task passes or fails after the skill is injected—a binary verdict that costs one full oracle call per decision. 
+
+Text-space skill optimization. A more recent thread for-malizes skill revision as optimization over the skill docu-ment. SkillOpt (Yang et al. 2026) and SkillGrad (Wang et al. 2026) both borrow from weight-space training—the former maintains a textual learning rate, a rejected-edit buffer, and validation gates, while the latter generates text-based gra-dient signals from trajectory-level losses with a momentum Rubric Guided Skill Update Oracle-Aligned Rubric Update 
+
+Skills Slots 
+
+Skills Slots 
+
+Rubrics Gen. 
+
+> R
+
+Task Description 𝒕  
+
+> Recover Original Table TeX from arXiv Source. Env.
+
+Rubrics 
+
+Skills 
+
+Skills Gen. Inner Loop   
+
+> 𝑅 !𝑆 !!
+> 𝑅 !𝑆 !"
+
+𝑆 !!
+
+𝑆 !"
+
+𝑆 !#
+
+𝑆 𝑅 !
+
+> Creates at least one .tex output file with numeric-only stem naming convention +1 All ground-truth tables are recovered with no missing tables +2 Multiple table environments are merged into a single output file instead of being separated -2
+> Download arXiv source package, resolve \input/\include … [add] using Python's built-in tarfile for archive extraction … [add] resolve \impor/\subfile[…] resolution with root_dir tracking …
+> Verifier
+
+Maximizing Rubric Scores 
+
+Skills 
+
+Skills 
+
+Skills 
+
+Rubrics 
+
+> R
+
+Oracle Call 
+
+> Env.
+
+LLM Agent 
+
+> This skill downloads the original LaTeX source package from an arXiv paper URL, resolves all \input/\include…
+
+Maximizing Ranking Align 
+
+𝑆 R!!
+
+> Ranking
+
+𝑆 #∗
+
+𝑆 %∗
+
+𝑆 "∗
+
+𝑆 !∗ 
+
+> Low High
+> Ranking
+
+Rubrics R!"
+
+> Verifier
+
+Outer Loop 
+
+𝑆 %∗ > 𝑆 "∗ > 𝑆 #∗ > 𝑆 !∗
+
+> Ranking
+
+𝑆 %∗ > 𝑆 #∗ > 𝑆 "∗ > 𝑆 !∗
+
+𝜏 = 0.33 𝜏 = 0.67 
+
+> All ground-truth tables are recovered with no missing tables +2
+> Resolves four distinct LaTeX inclusion commands (e.g., \input,..) ,executes fallback table extractio unconditionally …
+
+Figure 2: Overview of SkillLift. The system alternates between two phases: inner loop (rubric-guided skill update) where the rubric R scores and guides skill revision without oracle rollouts, and outer loop (oracle-aligned rubric update) where oracle evaluations on frozen skills re-align R via Kendall’s τ .term. SkillClaw (Ma et al. 2026) and CoEvoSkills (Zhang et al. 2026) shift the unit of optimization from individual skills to evolving populations, using co-evolutionary verifi-cation and cross-skill feedback to escape local optima. Skill-Forge (Liu et al. 2026b) applies iterative refinement in an industrial pipeline for cloud technical support. The shared blind spot is that every edit must be ratified by an oracle roll-out before it enters the skill. With oracle calls as the binding constraint, the search collapses to conservative local patches around the current best skill. In contrast, SkillLift decou-ples skill search from oracle cost by learning a rubric that approximates oracle rankings, enabling dense feedback for skill revision without requiring a rollout per edit. 
+
+3 Method 
+
+We solve the bilevel program via alternating optimization over K skills and a shared rubric R. The initial rubric is bootstrapped from the seed skill’s execution trajectory and the task description (prompt in Appendix). In the inner loop 
+
+(Mode A), R is held fixed and guides skill revision at no oracle cost. In the outer loop (Mode B), skills are frozen and K oracle rollouts re-align R with true rankings. The two modes alternate for L rounds or until the champion’s oracle score—the fraction of successful rollouts across seeds, which we call the pass rate —reaches θstop . Section 3 formalizes the objective; Figure 2 illustrates the full pipeline. 
+
+Problem Formulation 
+
+Let π be a frozen agent and T a task distribution. Loading a skill S before task t produces a rollout ξ ∼ π(· | S, t ), scored by an oracle O(ξ). Each oracle call requires a full rollout, so the budget B on scored (S, t ) pairs is the binding constraint. Directly solving arg max S Et,ξ [O(ξ)] is hard: B is small and the skill text space is highly non-smooth, so the optimizer sees few signals and falls back to patching observed failures. We introduce a rubric R that scores a skill R(S) via a single LLM call—no rollout needed. The rubric is cheap but must stay aligned with the oracle. We formalize this as a bilevel program (Colson, Marcotte, and Savard 2007): 
+
+min  
+
+> R
+
+Et∼T 
+
+D σRt , σ O
+
+> t
+
+ 
+
+s.t. S∗(R) = arg max  
+
+> S
+
+Et∼T 
+
+R(S) (1) where σRt and σO 
+
+> t
+
+are the rankings that the rubric and the oracle induce over candidate skills on task t, and D is a rank-ing discrepancy measure (instantiated as 1 − τ in the outer loop, where τ is Kendall’s rank correlation). The upper level keeps R aligned with the oracle’s preference ordering; the lower level searches skill text to maximize R(S). Because R
+
+requires no rollout, thousands of candidates can be scored at near-zero cost. Only relative order matters—not score calibration—so a handful of oracle evaluations per round suffices to re-align R (Christiano et al. 2017). Once aligned, the rubric provides dense feedback for the lower-level search without consuming additional rollouts. 
+
+Rubric-Guided Skill Update 
+
+The lower level of the bilevel program searches skill text to maximize expected rubric score. Since R(S) costs one LLM call rather than a full rollout, the skill generator can test far more candidates than the oracle budget permits. A scalar score alone, however, tells the generator how much askill falls short but not where : to guide targeted revision, the evaluation must expose which aspects of the skill’s behavior are deficient. We structure the rubric as a set of M binary criteria 
+
+{(c1, p 1), . . . , (cM , p M )}. Each ci is a yes/no question about the skill’s behavior on the task, and pi ∈ Z \ { 0} is a signed weight: pi > 0 rewards meeting ci (a merit), pi < 0 pe-nalizes violating it (a flaw). Given a task–skill pair (t, S k),a verifier —an LLM prompted with (t, S k, R )—judges each criterion, producing hits hi(Sk, t ) ∈ { 0, 1}. The rubric score is 
+
+R(Sk) = 
+
+PMi=1 pi hi(Sk, t ) − Smin 
+
+Smax − Smin 
+
+, (2) where Smax = P 
+
+> pi>0
+
+pi and Smin = P 
+
+> pi<0
+
+pi, normaliz-ing the score to [0 , 1] . The hit vector h(Sk) = ( h1, . . . , h M )
+
+accompanies the score, so the generator can see which criteria failed and target those in its revision. This rubric-as-reward formulation connects to recent work on structured criteria for reward modeling (Gunjal et al. 2025; Liu et al. 2026a). In each outer round ℓ, SkillLift maintains a single cham-pion skill S⋆ℓ−1. The initial champion is the seed skill; after each Mode B update, the oracle selects the next champion from the refined branches together with the preceding cham-pion. The verifier first evaluates S⋆ℓ−1 under the fixed rubric 
+
+Rℓ and produces criterion hits h⋆ℓ . Conditioned on this feed-back, the skill generator constructs K diverse revision di-rections dℓ,k —natural-language directives targeting distinct improvement aspects (e.g., strategy optimization, tool-usage policy, error handling), inspired by the skill lifecycle de-composition of Lin et al. (2026)—and derives a fresh set of candidate branches via the generator G, an LLM call using the same backbone under test as the agent itself: 
+
+S(0)  
+
+> ℓ,k
+
+= G(t, S ⋆ℓ−1, R ℓ, h⋆ℓ , d ℓ,k ), k = 1 , . . . , K. 
+
+Each branch is refined only within the current outer round. Let h(a) 
+
+> ℓ,k
+
+be the verifier hits for branch k after inner step a.Conditioned on these hits, the generator proposes a branch-local revision bS(a+1)  
+
+> ℓ,k
+
+, which is retained only when its rubric score does not decrease: 
+
+S(a+1)  
+
+> ℓ,k
+
+=
+
+( bS(a+1)  
+
+> ℓ,k
+
+if Rℓ( bS(a+1)  
+
+> ℓ,k
+
+) ≥ Rℓ(S(a) 
+
+> ℓ,k
+
+),S(a) 
+
+> ℓ,k
+
+otherwise. Thus, the verifier prevents local refinement from degrad-ing an individual branch, while diversity is refreshed in ev-ery outer round through new directions. Mode A terminates when every branch satisfies Rℓ(Sℓ,k ) ≥ θA (i.e., the worst branch clears the threshold), or when the inner-loop bud-get is exhausted; a per-branch early-stop would further re-duce inner-loop LLM calls but is left to future work. Only then does Mode B evaluate the preceding champion and the refined branches with the oracle, align the verifier-induced ranking with the oracle ranking, and, when necessary, revise the rubric. No oracle rollout is invoked during Mode A. 
+
+Oracle-Aligned Rubric Update 
+
+After the inner loop converges, each skill slot holds its best candidate under the current rubric. The rubric itself, however, may have drifted: it can be too lenient, too harsh, or blind to failure modes that the oracle detects. Without correction, subsequent inner-loop rounds optimize against a misaligned standard. Re-aligning the rubric requires oracle feedback, but each rollout consumes part of the oracle budget B.The rubric need not reproduce oracle scores—it only needs to rank skills in the same order. Ranking is a weaker su-pervision target than score regression and is robust to the noise and non-comparability that plague absolute oracle val-ues (Christiano et al. 2017; Wirth, Fürnkranz, and Neumann Algorithm 1: SkillLift 
+
+Input : task t, seed skill S0, rubric R, thresholds θA, θ B , θ stop ,rounds L, population K, inner budget Amax , revision budget 
+
+Bmax  
+
+> 1:
+
+S⋆ ← S0 
+
+> 2:
+
+for ℓ = 1 to L do  
+
+> 3:
+
+Mode A (no oracle): score S⋆ with R; derive K
+
+branches via G(t, S ⋆, R, h⋆, d k) 
+
+> 4:
+
+repeat  
+
+> 5:
+
+Refine each Sk by G; accept if R does not decrease  
+
+> 6:
+
+until min k R(Sk) ≥ θA or inner steps ≥ Amax  
+
+> 7:
+
+Mode B (oracle): rank {S⋆, S 1, . . . , S K } by oracle 
+
+→ σO , by rubric → σR 
+
+> 8:
+
+while τ (σR, σ O ) < θ B and revisions < B max do  
+
+> 9:
+
+Revise R via rubricator given (σR, σ O ); re-score 
+
+→ σR 
+
+> 10:
+
+end while  
+
+> 11:
+
+S⋆ ← arg max S O(S); break if O(S⋆) ≥ θstop  
+
+> 12:
+
+end for  
+
+> 13:
+
+return S⋆, R 
+
+2016). We evaluate the K refined branches with the oracle; the champion’s preceding oracle score is reused, so only K
+
+new rollouts are needed. Together with the cached champion score, the oracle ranking σO spans K+1 skills. The verifier re-scores the same skills with the current rubric R(t), produc-ing local ranking σR. Alignment is measured by Kendall’s 
+
+τ :
+
+τ (σR, σ O ) = 2(K+1) K
+
+X
+
+> i<j
+
+sgn  σRi − σRj
+
+ · sgn  σO 
+
+> i
+
+− σO
+
+> j
+
+
+
+(3) If τ ≥ θB , the rubric already agrees with the oracle. Oth-erwise, a rubricator —an LLM prompted to revise R—receives the two rankings, per-skill scores and hit vectors from both sides, and optional oracle feedback, then outputs a revised rubric R(t+1) . The revision can add missing criteria, reweight existing ones, or remove criteria that consistently disagree with the oracle. The verifier re-scores and re-checks alignment, iterating until τ ≥ θB or the iteration budget is exhausted. If the budget is exhausted before alignment is reached, the last revised rubric—which maximizes τ over the iteration history—is retained; the champion is still selected directly by oracle score, so a misaligned rubric degrades inner-loop guidance quality but never corrupts the final out-put. With small K (e.g., K = 3 in our experiments, yielding 
+
+K+1 = 4 ranked skills), τ takes only  K+1 2
+
+ + 1 discrete values, so we set θB = 0 .9 to require near-perfect agreement; the rubricator receives per-skill hit vectors as supplementary signal to compensate for the coarseness of ordinal compari-son alone. The rubricator does not see a single misjudged case. In-stead, it receives a systematic discrepancy pattern: which skills the rubric over- or under-rates relative to the ora-cle. This pattern directly identifies the criteria responsible for the misalignment, enabling targeted revision. This iter-ative rubric evolution resonates with recent work on adap-Table 2: Score rate (%) per task category on WildClawBench (left) and SkillsBench (right). Bold and underline indicate the best and second-best per model group. highlighted rows are our method. ∗SkillsBench uses GPT-5.4-mini and WildClawBench uses GPT-5.4 to align with the official implementation.                                                                                                                                                                                                                                                                                                                                    
+
+> WildClawBench SkillsBench Method Prod. Code Social Search Creative Safety Overall SE IPS NS OWC Finance Math Cyber Media Overall
+> n=10 n=12 n=6 n=11 n=11 n=10 n=60 n=16 n=14 n=14 n=14 n=9 n=8 n=7 n=5 n=87
+> GPT-5.4 ∗54.0% 47.8% 87.6% 52.3% 38.3% 38.5% 50.3% +00.0 26.9% 28.6% 38.3% 40.5% 18.5% 37.5% 15.0% 20.0% 29.9% +00.0
+> + Human-written 58.8% 51.0% 85.2% 54.5% 40.4% 66.1% 56.9% +6.6 43.4% 35.7% 52.1% 47.6% 11.1% 58.3% 34.9% 40.0% 41.4% +11.5
+> + LLM-written 56.2% 52.3% 82.5% 52.3% 40.1% 63.9% 55.7% +5.4 41.7% 33.3% 50.0% 45.2% 14.8% 54.2% 28.6% 40.0% 39.5% +9.6
+> + SkillOpt 66.0% 58.0% 86.0% 62.0% 44.0% 82.0% 64.3% +14.0 52.1% 57.1% 73.8% 69.0% 33.3% 66.7% 42.9% 60.0% 58.2% +28.3
+> + CoEvoSkills 63.0% 55.0% 86.0% 57.0% 42.5% 83.0% 62.2% +11.9 50.0% 47.6% 64.3% 61.9% 25.9% 62.5% 47.6% 53.3% 52.5% +22.6
+> +SkillLift (ours) 71.4% 64.0% 89.0% 63.0% 45.0% 90.0% 68.4% +18.1 54.2% 69.0% 78.6% 76.2% 33.3% 66.7% 42.9% 60.0% 62.5% +32.6
+> GLM-5.1 37.3% 52.7% 75.6% 40.9% 32.2% 62.0% 48.1% +00.0 39.6% 21.4% 36.8% 38.1% 14.8% 54.2% 33.2% 13.3% 32.7% +00.0
+> + Human-written 44.9% 54.1% 78.6% 50.9% 34.6% 80.2% 55.2% +7.1 56.6% 45.2% 77.9% 52.4% 44.4% 86.2% 46.8% 60.0% 58.4% +25.7
+> + LLM-written 41.4% 55.2% 77.5% 40.0% 33.3% 78.4% 52.2% +4.1 60.4% 42.9% 71.4% 54.8% 40.7% 83.3% 47.6% 60.0% 57.5% +24.8
+> + SkillOpt 47.5% 57.2% 83.5% 73.7% 33.6% 87.9% 62.0% +13.9 66.7% 64.3% 83.3% 73.8% 55.6% 87.5% 57.1% 73.3% 70.5% +37.8
+> + CoEvoSkills 43.6% 56.0% 82.2% 44.9% 33.9% 88.7% 55.9% +7.8 64.6% 57.1% 78.6% 66.7% 51.9% 86.2% 57.1% 73.3% 66.6% +33.9
+> +SkillLift (ours) 59.0% 60.8% 89.4% 75.0% 35.3% 92.1% 66.5% +18.4 66.7% 64.3% 92.9% 92.9% 55.6% 87.5% 57.1% 73.3% 75.1% +42.4
+> DeepSeek-V4-Pro 43.4% 36.0% 86.8% 42.3% 36.4% 41.0% 44.4% +00.0 40.0% 22.1% 33.6% 16.7% 18.5% 37.5% 17.4% 20.0% 26.9% +00.0
+> + Human-written 50.6% 40.2% 83.0% 45.9% 38.7% 79.8% 53.6% +9.2 37.8% 42.9% 69.7% 50.0% 40.7% 56.5% 56.3% 53.3% 50.1% +23.2
+> + LLM-written 44.0% 37.0% 80.0% 42.0% 38.5% 65.0% 48.3% +3.9 39.6% 40.5% 66.7% 47.6% 37.0% 54.2% 52.4% 46.7% 47.9% +21.0
+> + SkillOpt 54.6% 48.0% 82.3% 53.9% 43.8% 88.0% 59.5% +15.1 60.4% 66.7% 85.7% 78.6% 44.4% 79.2% 57.1% 73.3% 69.0% +42.1
+> + CoEvoSkills 52.0% 40.2% 83.0% 48.0% 38.7% 83.0% 54.7% +10.3 58.3% 57.1% 85.7% 76.2% 48.1% 75.0% 57.1% 66.7% 66.3% +39.4
+> +SkillLift (ours) 63.4% 51.5% 85.6% 54.2% 44.0% 90.0% 62.4% +18.0 64.6% 71.4% 92.9% 92.9% 44.4% 83.3% 52.4% 80.0% 74.3% +47.4
+
+tive rubric refinement for reinforcement learning (Shao et al. 2026). 
+
+4 Experiments 
+
+Experimental Setup 
+
+Benchmarks. We evaluate on two benchmarks differing in harness, scale, and difficulty. WildClawBench (Ding et al. 2026) provides 60 bilingual, multimodal tasks across six categories in Docker containers with a real OpenClaw CLI harness. SkillsBench (Li et al. 2026) contains 87 tasks across 8 domains under the OpenHands harness (Wang et al. 2025) with deterministic verifiers, where curated skills raise the average pass rate up to 50.5%. 
+
+Baselines. We compare against four baselines. Human-written skills are benchmark-provided or practitioner-authored. LLM-written skills are generated one-shot by GPT-5.4. SkillOpt (Yang et al. 2026) is a text-space optimizer with bounded edits and validation gates. Co-EvoSkills (Zhang et al. 2026) employs a co-evolutionary generator–verifier loop. All evolving methods share the same seed skills, namely the human-written and LLM-written vari-ants, for a fair starting point. 
+
+Hyperparameters. SkillLift uses L=3 rounds, K=3 
+
+skills, ≤ 2 inner steps, ≤ 2 outer steps, θA=0 .85 ,
+
+θB =θstop =0 .9. SkillOpt runs 2 epochs × 4 steps × 4 roll-outs (1 held out), cosine learning rate 4 →2, turns 2/8. Co-EvoSkills uses turns 1/20, oracle threshold 1.0, context cap 0.7 (200k chars), 5 final repetitions. Both baselines receive 
+
+2× SkillLift’s default token budget. The generator and rubri-cator both use the same backbone model as the agent under test, ensuring that SkillLift’s gains stem from the framework rather than a stronger auxiliary model. 
+
+Evaluation Protocol. All methods use an early-stop strat-egy that halts when no improvement is observed for two con-secutive rounds. We report mean per-task best evolved-skill scores over 3 rollout seeds. Token consumption is reported separately for oracle rollout cost and framework LLM cost. 
+
+Main Results 
+
+Table 2 reports per-category pass rates for three backbone models across both benchmarks. 
+
+Static Skill Ceiling and Cross-Benchmark Gains. 
+
+Human-written and LLM-written skills achieve nearly iden-tical overall pass rates (differing by at most 5.3 pp), sug-gesting a shared ceiling for one-shot authoring. SkillLift surpasses this ceiling by +8.8 to +11.5 pp on WildClaw-Bench and +16.7 to +24.2 pp on SkillsBench (1.5–2.8 × ra-tio), with larger gains on SkillsBench where deterministic verifiers provide crisper oracle signal. This confirms that the rubric’s value depends on oracle quality: noisier rankings on WildClawBench’s bilingual, open-ended tasks cap the achievable improvement. Crucially, SkillLift wins in all six model–benchmark combinations, including the strongest baseline configurations where SkillOpt and CoEvoSkills al-0 200 400 600 800 1000 1200 
+
+> Cumulative Token Consumption (M tokens)
+> 30 35 40 45 50 55
+> Pass Rate (%)
+> GPT-5.4-Mini
+> SkillLift SkillOpt CoEvoSkills
+
+(a) 0 500 1000 1500 2000  
+
+> Cumulative Token Consumption (M tokens)
+> 35 40 45 50 55 60 65
+> Pass Rate (%)
+> GLM-5.1
+> SkillLift SkillOpt CoEvoSkills
+
+(b) 0 200 400 600 800 1000 1200 1400 1600  
+
+> Cumulative Token Consumption (M tokens)
+> 25 30 35 40 45 50 55 60 65
+> Pass Rate (%)
+> DeepSeek-V4
+> SkillLift SkillOpt CoEvoSkills
+
+(c) 
+
+Figure 3: Token consumption vs. average pass rate on SkillsBench across three backbone models. Curves are smoothed up to the 0.9 quantile and truncated when no improvement is observed for two consecutive rounds. SkillLift reaches higher pass rates at substantially lower token cost than SkillOpt and CoEvoSkills. 2.68x 2.17x 2.74x 2.22x 2.62x 2.13x 
+
+Figure 4: Average token cost to first reach the 0.9 quantile of total pass-rate score on SkillsBench. SkillLift reduces token overhead by 40–70% compared to baselines. ready raise pass rates substantially over static skills. 
+
+Heterogeneous Category-Level Gains. Disaggregating by category reveals pronounced heterogeneity: on GLM-5.1, Search jumps from 40.9% to 75.0% (+34.1) on WildClaw-Bench and Network Security from 36.8% to 92.9% (+56.1) on SkillsBench, whereas Creative barely moves (+3.1). This pattern is consistent across models—categories with code-checkable criteria see the largest jumps, while subjective Creative writing remains flat (Figure 5). The rubric’s binary criteria are inherently more effective when correctness is ver-ifiable, and the rubricator naturally learns criteria that mirror the deterministic verifier. On DeepSeek-V4-Pro, the same trend holds: Code rises from 36.0% to 51.5% on WildClaw-Bench, while Creative gains only 7.6 pp despite a compara-ble token budget, reinforcing that subjective categories resist rubric-based improvement. 
+
+Convergence Speed and Token Efficiency. Figures 3–4 dissect the cost-quality trade-off. SkillLift’s curve rises more steeply and plateaus higher than SkillOpt and Co-EvoSkills, indicating that dense, criterion-level feedback guides the generator toward effective revisions early. Skill-Lift reduces token cost to reach the 0.9 quantile by 40–70%. The saving stems from the bilevel design: rubric scoring in Mode A costs a single LLM call per candidate, whereas baselines invoke a full oracle rollout at every step, keeping oracle-call complexity at O(L) rather than O(LT ).
+
+Ablation Study 
+
+Rubric Revision and Seed Quality. Removing the rubri-cator ( w/o rubricator ) collapses overall pass rate to 42.5– 65.5% on SkillsBench, barely above the static-skill baseline on GPT-5.4 and GLM-5.1 (+1.1 and +1.4 pp), confirming that oracle-aligned re-alignment—not merely dense feedback— is the core driver. The collapse is most severe on GPT-5.4, where unaligned dense feedback can actively mislead the generator when the rubric’s criteria diverge from the or-acle’s preference ordering. Without seed skills ( w/o seed skills ), performance drops 4–7 pp: the rubricator loses its initial failure pattern and must spend early rounds discover-ing deficiencies that a seed already encodes. Notably, even without seeds, GLM-5.1 (71.3%) marginally exceeds Skil-lOpt (70.5%), indicating that rubric-guided revision alone can outperform scalar-score optimization. 
+
+Ranking-based Alignment. Replacing ranking-based alignment with direct score regression ( w/ score regression )degrades performance by 3–5 pp despite identical oracle bud-get. Absolute oracle scores are noisy and non-comparable across tasks with different difficulty distributions; ranking discards the unreliable magnitude and retains only ordinal information, making it a more robust supervision target. This validates the design choice in Section 3: the outer loop aligns rubric and oracle rankings via Kendall’s τ , not absolute score agreement. The two effects compound: without oracle align-ment the rubric provides misaligned criteria, and without a seed the rubricator has no failure pattern to realign from, so both components are necessary. K = 2 K = 3 K = 4 K = 8                  
+
+> Population size K
+> L= 2
+> L= 3
+> L= 4
+> L= 8
+> Rounds  L
+> 57.3 65.8 65.6 66.8 60.7 66.8 67.4 65.6 58.5 70.1 71.3 67.2 59.1 70.9 72.1 68.5
+> WildClawBench / GLM-5.1
+> 55 60 65 70 75 80
+> Pass rate (%)
+
+(a) K = 2 K = 3 K = 4 K = 8                   
+
+> Population size K
+> L= 2
+> L= 3
+> L= 4
+> L= 8
+> Rounds  L
+> 58.3 62.5 62.5 66.7 62.5 70.8 75.0 70.8 66.7 75.0 79.2 75.0 66.7 75.0 79.2 79.2
+> SkillsBench / GLM-5.1
+> 55 60 65 70 75 80
+> Pass rate (%)
+
+(b) K = 2 K = 3 K = 4 K = 8                   
+
+> Population size K
+> L= 2
+> L= 3
+> L= 4
+> L= 8
+> Rounds  L
+> 55.4 56.3 58.7 57.5 64.5 62.7 63.6 61.5 65.1 63.2 66.6 64.7 65.4 64.0 67.5 65.8
+> WildClawBench / DeepSeek-V4-Pro
+> 55 60 65 70 75 80
+> Pass rate (%)
+
+(c) K = 2 K = 3 K = 4 K = 8                   
+
+> Population size K
+> L= 2
+> L= 3
+> L= 4
+> L= 8
+> Rounds  L
+> 54.2 58.3 62.5 66.7 62.5 70.8 75.0 75.0 66.7 75.0 79.2 75.0 66.7 75.0 79.2 79.2
+> SkillsBench / DeepSeek-V4-Pro
+> 55 60 65 70 75 80
+> Pass rate (%)
+
+(d) 
+
+Figure 5: Sensitivity to seed skill count and iteration rounds on SkillsBench. Seed skill counts and iteration rounds vary over {2, 3, 4, 8}, with overall pass rate shown for each configuration. SKILL PATCH      
+
+> ANCHOR SKILL
+> AGENT BEHAVIOR
+> route -> generic check -> report
+
+# 0.0 
+
+> ANCHOR + ROUND 0
+
+# 1.0      
+
+> ACCEPTED / ROUND 1
+> ACCEPTED ROUND 1 PATCH
+> AGENT BEHAVIOR
+> route -> replay audit -> report
+> PARATRANSIT TASK
+> DESCRIPTION
+
+Schedule  515 paired trips  with 32 vehicles of capacity three. Each pickup must precede its matching dropoff while time windows, service times, and invalid arcs define feasibility. 
+
+> VERIFIER
+
+Replay the submitted node sequence; reject broken pairing, capacity, time-window, or arc constraints; then recompute served trips.     
+
+> DPDD
+> pickup dropoff
+
+no ordered-stop replay -
+
+no DARP audit checklist -
+
+missed violations can reach report 
+
+-
+
+add dial-a-ride (DARP) audit +
+
+recompute timing and load +
+
+check pair, capacity, arc, and window +
+
+reject inconsistent route before report +
+
+> RUBRIC-PLAN EVOLUTION
+> SEED
+
+The anchor portfolio has generic routing skills, but 
+
+no task-specific rubric .  
+
+> ROUND 0 / ADDED CRITERIA
+> data + indices invalid arcs time windows
+
+It targets data format, invalid arcs, and dropoff windows. All three candidates remain at  0.0 .
+
+> ROUND 1 / RE-PLANNED DIRECTIONS
+
+The plan shifts to a  DARP audit , capacity propagation , and  report output . The audit direction yields the first  1.0  at  7.37M .
+
+Figure 6: Case study on a SkillsBench paratransit scheduling task, showing rubric and skill co-evolution across two outer rounds. Table 3: Ablation study on SkillsBench (overall pass rate, %). w/o rubricator disables oracle-aligned rubric updates, reducing SkillLift to naïve self-evolution. w/o seed skills 
+
+sets the initial skill count to one with human-authored seed. 
+
+w/ score regression replaces ranking-based alignment with direct oracle score regression. 
+
+Variant GPT-5.4 ∗ GLM-5.1 DeepSeek 
+
+w/o rubricator 42.5 59.8 65.5 w/o seed skills 57.5 71.3 67.8 w/ score regression 59.8 72.4 69.0 
+
+SkillLift (ours) 62.5 75.1 74.3 
+
+Case Study 
+
+Figure 6 traces SkillLift on a paratransit scheduling task from SkillsBench involving 515 paired trips, 32 vehicles, and time-window and invalid-arc constraints. The seed skill scores 0.0 because it never replays the planned stops in order and lacks a dial-a-ride audit, so capacity and win-dow violations go undetected and propagate into the fi-nal output. In Round 0, the rubricator creates criteria for surface-level issues—data format, invalid arcs, and dropoff windows—but all candidates still score 0.0, meaning these criteria miss the root cause. After the oracle reveals that the rubric is misaligned, the rubricator replaces them with deeper checks: whether capacity is tracked across stops, whether each pair/trip respects capacity, arc, and window constraints, and whether inconsistent routes are rejected before reporting. In Round 1, the revised skill reroutes through this audit and achieves a 1.0 verifier score at 7.37M tokens. 
+
+5 Conclusion 
+
+We presented SkillLift, which decouples skill search from oracle cost by learning an oracle-aligned rubric as a struc-tured evaluation space. A few oracle rollouts per round keep the rubric calibrated; between alignments, it scores candi-dates via single LLM calls with criterion-level feedback for targeted revision. On two benchmarks covering 147 tasks and three models, SkillLift outperforms existing auto-skill methods with 40–70% lower token cost. Ablations confirm that oracle-aligned rubric revision is the core driver and ranking-based alignment outperforms score regression. As SkillLift relies on compute-time rollouts, its effectiveness is subject to model stochasticity and iteration latency may affect user experience; extending to multi-task skill libraries, integrating weight-space adaptation, and reducing rollout variance are natural next steps. References 
+
+Alzubi, S.; Provenzano, N.; Bingham, J.; Chen, W.; and Vu, T. 2026. EvoSkill: Automated Skill Discovery for Multi-Agent Systems. arXiv:2603.02766. Anonymous. 2026. SkillCAT: Contrastive Assessment and Topology-Aware Skill Self-Evolution. arXiv:2606.13317. Anthropic. 2025. Agent Skills. https://www.anthropic.com/ engineering/agent-skills. Accessed: 2025. Bezdek, J. C.; and Hathaway, R. J. 2003. Convergence of Al-ternating Optimization. Neural, Parallel & Scientific Com-putations , 11(4): 351–368. Christiano, P. F.; Leike, J.; Brown, T.; Martic, M.; Legg, S.; and Amodei, D. 2017. Deep Reinforcement Learning from Human Preferences. In Advances in Neural Information Processing Systems (NeurIPS) .Colson, B.; Marcotte, P.; and Savard, G. 2007. An Overview of Bilevel Optimization. Annals of Operations Research ,153: 235–256. Ding, S.; Dai, X.; Xing, L.; Ding, S.; Liu, Z.; JingYi, Y.; Yang, P.; Zhang, Z.; Wei, X.; Fang, X.; Ma, Y.; Duan, H.; Shao, J.; Wang, J.; Lin, D.; Chen, K.; and Zang, Y. 2026. WildClawBench: A Benchmark for Real-World, Long-Horizon Agent Evaluation. arXiv:2605.10912. Gunjal, A.; Wang, A.; Lau, E.; Nath, V.; He, Y.; Liu, B.; and Hendryx, S. 2025. Rubrics as Rewards: Reinforcement Learning Beyond Verifiable Domains. arXiv:2507.17746. Jimenez, C. E.; Yang, J.; Wettig, A.; Yao, S.; Pei, K.; Press, O.; and Narasimhan, K. 2024. SWE-bench: Can Language Models Resolve Real-world GitHub Issues? In Proceedings of the International Conference on Learning Representations (ICLR) .Khattab, O.; Singhvi, A.; Maheshwari, P.; Zhang, Z.; San-thanam, K.; Vardhamanan, S.; Haq, S.; Sharma, A.; Joshi, T. T.; Moazam, H.; Miller, H.; Zaharia, M.; and Potts, C. 2024. DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines. In Proceedings of the Inter-national Conference on Learning Representations (ICLR) .Li, X.; Liu, Y.; Chen, W.; You, B.; Di, Z.; He, Y.; Zheng, S.; Choe, K. W.; Sun, J.; Wang, S.; Tao, C.; Li, B.; Zhao, X.; Geng, H.; Wu, X.; Zhou, J.; Chen, X.; Xing, H.; Li, Y.; Zeng, Q.; Wang, D.; Wang, Y.; Chaim, R. B.; Jiang, P.; Shen, H.; Kong, L.; Liu, X.; Wang, R.; Liu, X.; Li, J.; Lan, X.; Lin, Y.; Ye, W.; He, J.; Li, S.; Zhang, Y.; Gao, Y.; Li, Y.; Ma, Z.; Jing, L.; Wang, T.; Li, K.; Xue, Y.; Lyu, H.; He, Y.; Tian, Y.; Wu, S.; Wang, B.; Gao, Y.; Chen, B.; Liu, L.; Cheng, S.; Bao, J.; Tong, S.; Xu, S.; Zhuo, T. Y.; Ye, T.; Qi, Q.; Li, M.; Liao, L.; Tan, Z.; Shi, C.; Tang, X.; Tankasala, S.; Yuan, B.; Qian, Y.; Tu, J.; Wang, C.; Sun, Y.; Wang, W.; Taylor, A.; Yang, Z.; Guan, C.; Dong, Z.; Zhang, X.; Dillmann, S.; chung Lee, H.; and Song, D. 2026. SkillsBench: Benchmarking How Well Agent Skills Work Across Diverse Tasks. arXiv:2602.12670. Lin, H.; Li, P.; Song, J.; Jiang, F.; and Zhang, T. 2026. MUSE-Autoskill: Self-Evolving Agents via Skill Creation, Memory, Management, and Evaluation. arXiv:2605.27366. Liu, T.; Xu, R.; Yu, T.; Hong, I.; Yang, C.; Zhao, T.; and Wang, H. 2026a. OpenRubrics: Towards Scalable Synthetic Rubric Generation for Reward Modeling and LLM Align-ment. In Liakata, M.; Moreira, V. P.; Zhang, J.; and Jur-gens, D., eds., Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 17417–17437. San Diego, California, United States: Association for Computational Linguistics. ISBN 979-8-89176-390-6. Liu, X.; Luo, X.; Li, L.; Huang, G.; Liu, J.; and Qiao, H. 2026b. SkillForge: Forging Domain-Specific, Self-Evolving Agent Skills in Cloud Technical Support. In Proceedings of the ACM SIGIR Industry Track .Ma, Z.; Yang, S.; Ji, Y.; Wang, X.; Wang, Y.; Hu, Y.; Huang, T.; and Chu, X. 2026. SkillClaw: Let Skills Evolve Collec-tively with Agentic Evolver. arXiv:2604.08377. Ni, J.; Liu, Y.; Liu, X.; Sun, Y.; Zhou, M.; Cheng, P.; Wang, D.; Zhao, E.; Jiang, X.; and Jiang, G. 2026. Trace2Skill: Dis-till Trajectory-Local Lessons into Transferable Agent Skills. arXiv:2603.25158. Schick, T.; Dwivedi-Yu, J.; Dessì, R.; Raileanu, R.; Lomeli, M.; Zettlemoyer, L.; Cancedda, N.; and Scialom, T. 2023. Toolformer: Language Models Can Teach Themselves to Use Tools. In Proceedings of the Conference on Neural Informa-tion Processing Systems (NeurIPS) .Shao, R.; Asai, A.; Shen, S. Z.; Ivison, H.; Kishore, V.; Zhuo, J.; Zhao, X.; Park, M.; Finlayson, S. G.; Sontag, D.; Murray, T.; Min, S.; Dasigi, P.; Soldaini, L.; Brahman, F.; tau Yih, W.; Wu, T.; Zettlemoyer, L.; Kim, Y.; Hajishirzi, H.; and Koh, P. W. 2026. DR Tulu: Reinforcement Learning with Evolving Rubrics for Deep Research. arXiv:2511.19399. Shen, S.; Cheng, W.; Ma, M.; Turcan, A.; Zhang, M. J.; and Ma, J. 2026. SkillFoundry: Building Self-Evolving Agent Skill Libraries from Heterogeneous Scientific Resources. arXiv:2604.03964. Shinn, N.; Cassano, F.; Berman, E.; Gopinath, A.; Narasimhan, K.; and Yao, S. 2023. Reflexion: Language Agents with Verbal Reinforcement Learning. In Proceed-ings of the Conference on Neural Information Processing Systems (NeurIPS) .Sugiyama, H.; Meguro, T.; and Minami, Y. 2012. Preference-learning based inverse reinforcement learning for dialog con-trol. In Interspeech 2012 , 222–225. Wang, H.; Lan, Y.; Cao, B.; Lin, L.; and Chen, J. 2026. SkillGrad: Optimizing Agent Skills Like Gradient Descent. arXiv:2605.27760. Wang, X.; Li, B.; Song, Y.; Xu, F. F.; Tang, X.; Zhuge, M.; Pan, J.; Song, Y.; Li, B.; Singh, J.; Tran, H. H.; Li, F.; Ma, R.; Zheng, M.; Qian, B.; Shao, Y.; Muennighoff, N.; Zhang, Y.; Hui, B.; Lin, J.; Brennan, R.; Peng, H.; Ji, H.; and Neubig, G. 2025. OpenHands: An Open Platform for AI Software Developers as Generalist Agents. arXiv:2407.16741. Wirth, C.; Fürnkranz, J.; and Neumann, G. 2016. Model-free preference-based reinforcement learning. In Proceedings of the Thirtieth AAAI Conference on Artificial Intelligence ,AAAI’16, 2222–2228. AAAI Press. Yang, C.; Chen, S.; Li, Z.; Hou, L.; Srivastava, D.; Gupta, R.; Sohn, K.; and Chen, X. 2024. Large Language Models as Optimizers. In Proceedings of the International Conference on Learning Representations (ICLR) .Yang, Y.; Gong, Z.; Huang, W.; Yang, Q.; Zhou, Z.; Huang, Z.; Li, Y.; Gao, X.; Dai, Q.; Liu, B.; Qiu, K.; Yang, Y.; Chen, D.; Yang, X.; and Luo, C. 2026. SkillOpt: Executive Strategy for Self-Evolving Agent Skills. arXiv:2605.23904. Yao, S.; Zhao, J.; Yu, D.; Du, N.; Shafran, I.; Narasimhan, K.; and Cao, Y. 2023. ReAct: Synergizing Reasoning and Acting in Language Models. In Proceedings of the International Conference on Learning Representations (ICLR) .Yuksekgonul, M.; Madan, V.; Bhaskar, A.; Lin, Z.; Pang, W.; Zou, J.; and Landay, J. 2024. TextGrad: Automatic “Dif-ferentiation” via Text. In Advances in Neural Information Processing Systems (NeurIPS) .Zhang, H.; Fan, S.; Zou, H. P.; Chen, Y.; Wang, Z.; Zhou, J.; Li, C.; Huang, W.-C.; Yao, Y.; Zheng, K.; Liu, X.; Li, X.; and Yu, P. S. 2026. CoEvoSkills: Self-Evolving Agent Skills via Co-Evolutionary Verification. arXiv:2604.01687. Zhou, Y.; Muresanu, A. I.; Han, Z.; Paster, K.; Pitis, S.; Chan, H.; and Ba, J. 2023. Large Language Models Are Human-Level Prompt Engineers. In Proceedings of the International Conference on Learning Representations (ICLR) .This appendix gives the executable details behind Skill-Lift. The bilevel optimization loop holds the oracle fixed and alternates between two phases: an inner loop that optimizes skills under a frozen rubric, and an outer loop that revises the rubric to align with oracle ranking. A separate rubrica-tor model reads verifier–oracle rank discrepancies, proposes receipt revisions grounded in visible skill evidence, and val-idates each candidate receipt against the frozen skill popu-lation. The oracle only receives skill execution attempts; it does not see the verifier or rubricator prompts below. We provide the complete prompt design for each frame-work component, hyperparameter settings and token ac-counting protocol, parameter sensitivity analysis, a full case study, and per-domain result breakdowns. 
+
+A Prompt Design 
+
+SkillLift orchestrates four LLM-called roles through struc-tured prompts that enforce the bilevel separation. Table 4 summarizes their input–output contracts. All prompts return JSON under a fixed schema; the rubricator and verifier run at temperature 0 for deterministic scoring, while the generator uses temperature 0.7 for exploration. Table 4: Prompt roles and their input–output contracts.           
+
+> Role Input Output Bootstrapper task description, refer-ence receipt (5–15 binary crite-ria) Verifier skill package, receipt criterion hits, rationale Generator skill, receipt, verifier hits revised skill package Rubricator skills, receipt, rank gap revised receipt
+
+Rubric Bootstrapper 
+
+The bootstrapper initializes a task-specific receipt before evo-lution begins. Its design enforces three properties: (1) criteria must be binary (present/absent) rather than graded, (2) each criterion must be verifiable from the skill package alone with-out oracle access, and (3) criteria must discriminate skill quality rather than restate task requirements. Signed integer points ( −5 to +5 , zero excluded) weight merits and flaws by importance. 
+
+Rubric Bootstrap System Prompt                                                                                                         
+
+> You are an expert in assessment and rubric design. Generate binary, signed-point rubrics for evaluating task-specific skills. Return valid JSON only. USER INPUT:
+> •Task ID: {task_name}
+> •Task Description: {task_description}
+> •Reference Material: {reference_material} REQUIRED JSON SCHEMA:
+> •Receipt(version, rubrics[{rubric_id, category, criterion, points}], maximum_score, minimum_score, baseline_score, metadata) RULES:
+> •Generate 5to 15 binary criteria.
+> •Points: signed integers in 1..5 (merit) or -5..-1 (flaw).
+> •No fractional points or multi-threshold variants.
+> •Cover every required public task intent, including state-changing intents, mid-conversation intent changes, required preconditions, and verification obligations.
+> •Positive criteria require concrete evidence: what action, what precondition/check, when to refuse/execute, and how to verify after action.
+> •Negative criteria only for explicit unsafe or forbidden instructions present in the skill.
+> •Missing required behavior is amissed positive criterion, not anegative flaw.
+> •Do not use private oracle labels or hidden answers from task solutions.
+
+A repair sub-prompt handles validation failures by regen-erating the receipt under stricter evidence-boundedness rules. Verifier 
+
+The verifier scores a candidate skill against a frozen receipt, returning per-criterion binary hits and a short rationale. The normalized score is computed by the framework from hit weights, preventing the verifier from gaming the formula. In Mode A (inner loop), the verifier emphasizes actionable feedback to guide revision; in Mode B (outer loop), it applies batch-wide consistent standards to enable ranking. 
+
+Verifier System Prompt 
+
+You are an expert evaluator (role: Verifier). Evaluate the candidate skill against each rubric criterion. Return valid JSON only. Do not invent assumptions beyond the provided task, skill, and rubrics. USER INPUT: 
+
+• Task: {task.to_dict()} 
+
+• Candidate Skill: {skill package: files, entrypoint, metadata} 
+
+• Receipt: {receipt.to_dict()} REQUIRED JSON SCHEMA: 
+
+• {"criterion_hits": {"r1": true, ...}, "rationale": "short explanation"} RULES: 
+
+• Positive criterion: true = merit present, false = absent. 
+
+• Negative criterion: true = flaw present, false = absent. 
+
+• Judge independently from observable package evidence only. 
+
+• Check for hardcoded data, keyword matching, missing tool use, and missing semantic processing. 
+
+• Do not credit intent without executable workflow evidence. 
+
+• Indeterminate positive = false; flaw not present = false. 
+
+• Do not assume private labels or oracle outputs. 
+
+• criterion_hits keys must exactly match receipt rubric IDs. 
+
+• Keep rationale below 120 words. MODE-SPECIFIC ADDENDUM: 
+
+• Inner loop (Mode A): emphasize actionable missed positives and explicit negative flaws. 
+
+• Outer loop (Mode B): apply batch-wide consistent standard; do not use oracle results for scoring. 
+
+For agent-skill formats, the anti-pattern check targets oper-ational preconditions, observations, post-action verification, and guidance beyond procedural placeholders. 
+
+Skill Generator 
+
+The generator produces one candidate per population slot in each inner-loop iteration, targeting specific missed criteria identified by the verifier. It operates under two constraints that make the non-decreasing acceptance rule meaningful: edits must be substantive (no-op patches are rejected before execution), and the receipt remains frozen throughout the inner loop. 
+
+Skill Generator System Prompt 
+
+You are an expert agent skill engineer (role: Skill Generator, inner loop). You improve one candidate skill package under a fixed receipt. Return exactly one JSON object. USER INPUT: 
+
+• Task: {task} 
+
+• Fixed Receipt: {receipt} 
+
+• Current Skill Package: {key, skill_name, entrypoint, metadata, files} 
+
+• Verifier Result: {score, criterion_hits} 
+
+• Actionable Target Rubrics: {missed positives, present flaws} OUTPUT MODE: 
+
+• Choose exactly one: patch or full. Do not mix schemas. 
+
+• Use patch for localized edits; use full only if the package is misleading, inconsistent, or too broken to patch safely. UPDATE OBJECTIVE: 
+
+• Address verifier misses with executable or agent-facing changes. 
+
+• Do not merely rephrase rubric wording. 
+
+• Rescored by the same verifier and receipt. 
+
+• Accepted only if normalized_score does not decrease. TARGET SELECTION: 
+
+• targeted_rubrics must use exact actionable rubric IDs. 
+
+• Prefer executable code changes for misses involving outputs, parsing, ordering, validation, or artifact generation. 
+
+• Documentation-only edits allowed only for procedural misses. 
+
+• Metadata-only edits are invalid. HARD CONSTRAINTS: 
+
+• Preserve task objective, safety constraints, and working workflow unless replaced by a stronger equivalent. • Do not update the receipt, hardcode outputs, use private labels, or expose hidden answers. 
+
+• Do not return a no-op patch. 
+
+Population initialization uses two variants of this prompt: a seed variant grounds each initial skill in public task material, while a diversification variant assigns each of the K slots a distinct workflow stress condition to prevent early population collapse. 
+
+Rubricator 
+
+The rubricator revises the receipt in the outer loop when verifier–oracle rank alignment falls below θB . Unlike the bootstrapper, it receives explicit rank discrepancies (which skills the oracle separates but the verifier ties) and returns a complete replacement receipt. The central design constraint is evidence-boundedness: the rubricator may only add or strengthen criteria judgeable from visible skill text, prevent-ing it from encoding oracle answers as evaluation rules. 
+
+Rubricator System Prompt 
+
+You are an expert rubric reviser. Improve the receipt so local skill ranking better matches public oracle evidence, without using private labels. Return valid JSON only. USER INPUT: 
+
+• Revision Input: {task, current_receipt, visible skill evidence, verifier_scores, public oracle_scores, verifier_rank, oracle_rank, rank_alignment, rank_mismatches, optional invalid candidate + validation report} ORACLE CONTRAST DIAGNOSIS: 
+
+• If oracle scores separate skills but verifier scores tie or give full credit, the receipt is too weak. 
+
+• Make only evidence-bounded hypotheses from visible skill text and public scores; write no_visible_explanation rather than guessing. 
+
+• Do not infer expected answers, hidden labels, or private oracle rules from logs, artifacts, paths, or filenames. 
+
+• Treat tied oracle score groups as ties; never create a slot-based order. 
+
+• If no usable oracle contrast exists, preserve the receipt except for validation-error repair. 
+
+• Revise only by adding or strengthening positive binary criteria judgeable from the skill package alone. REVISION RULES: 
+
+• Return a complete receipt, not apatch. 
+
+• Keep only specific, binary-evaluable, discriminative criteria. 
+
+• Do not remove positive criteria; only reweight or add directly explanatory positive criteria. 
+
+• Negative criteria only for explicit unsafe/forbidden text. 
+
+• Do not invent policies, hidden rules, or unobserved execution details. 
+
+• Do not overfit to tools, task IDs, or a single trajectory. 
+
+• Repair supplied validation errors. Points remain signed integers in -5..-1 or 1..5. 
+
+This asymmetry—adding criteria but never removing them—biases the rubric toward stricter rather than more le-nient evaluation, consistent with the goal of aligning with a fixed oracle standard. 
+
+B Full Hyperparameters 
+
+SkillLift 
+
+Table 5 lists all SkillLift settings. We use two Mode B iter-ations so each revision is verified—a single iteration would apply an unverified final receipt. Table 5: SkillLift hyperparameters. 
+
+Group Parameter Value Search outer rounds L 3stable skill slots K 3inner-loop (Mode A) iterations 2outer-loop (Mode B) iterations 2skill format code_package Thresholds Mode A acceptance θA 0.85 rank alignment θB 0.90 oracle-pass stop θstop 0.90 Oracle success threshold 0.80 rollout concurrency 2feedback verbosity level 2Evidence budget budget level auto total characters 60,000 per-skill / auxiliary characters 12,000 / 2,000 per-excerpt characters 6,000 Runtime initial skill path none (seeded) rate-limit retries; wait 2; 120 s framework role model backbone LLM 
+
+Baselines 
+
+Table 6 reports baseline settings. SkillOpt runs at reduced scale relative to its published defaults to match our per-task oracle budget. Table 6: Baseline hyperparameters.                          
+
+> Method Parameter Value SkillOpt epochs ×steps 2×4
+> rollouts per step 4validation rollouts per step 1reflection minibatch 4analyst workers 2merge batch 8textual learning rate cosine 4→2
+> min / max agent turns 2 / 8 improvement gate threshold 0.80 CoEvoSkills min / max agent turns 1 / 20 surrogate retries (max) 15 oracle interventions (max) 5oracle threshold 1.00 context cap (ratio; chars) 0.7; 200,000 surrogate timeout 30 s final evaluation repeats 5
+
+SkillOpt uses patch-style editing with a deterministic train/selection/test split at seed 42, and disables its slow-update, optimizer-meta-skill, and rejected-edit-buffer com-ponents. CoEvoSkills fixes the surrogate container image, initial-suite generation policy, and retry-counter policy. 
+
+Token Accounting Protocol 
+
+We count all LLM traffic uniformly: oracle rollouts plus framework calls (verifier, rubricator, reflection, surrogate verification). For the token-efficiency comparison (Fig-ures 3–4), we measure cumulative tokens consumed before a method first reaches the 0.9 quantile of pass-rate on a task. Tasks whose anchor already meets the threshold are excluded (no search needed); tasks that never reach it are excluded (no crossing point). Curves truncate when no improvement oc-curs for two consecutive rounds. Table 7 lists cost ratios. Each entry is the baseline’s cu-mulative token cost divided by SkillLift’s. Both baselines receive 2× SkillLift’s default budget, so the comparison is against over-provisioned baselines. Table 7: Token cost to first reach the 0.9 pass-rate quantile on SkillsBench, as a multiple of SkillLift’s cost.         
+
+> Backbone SkillOpt CoEvoSkills GPT-5.4-mini 2.68 ×2.17 ×
+> GLM-5.1 2.74 ×2.22 ×
+> DeepSeek-V4-Pro 2.62 ×2.13 ×
+
+C Extended Ablation Analysis 
+
+Population Size and Round Count 
+
+Table 8 reports pass rate across the grid K, L ∈ { 2, 3, 4, 8}.Returns diminish or reverse beyond K=4 : on Skills-Bench/GLM at L=4 , increasing K from 2 to 4 gains 12.5 pp, but 4 to 8 loses 4.2 pp. A larger population spreads the inner-loop budget across more slots; on WildClaw/DeepSeek this spreading makes K=2 optimal at L=3 . Beyond L=4 , early stopping halts most tasks. Table 8: Sensitivity to population size K and rounds L (pass rate, %).                                                                       
+
+> Benchmark Backbone LK=2 K=3 K=4 K=8 WildClaw GLM-5.1 257.3 65.8 65.6 66.8 360.7 66.8 67.4 65.6 458.5 70.1 71.3 67.2 859.1 70.9 72.1 68.5 DeepSeek 255.4 56.3 58.7 57.5 364.5 62.7 63.6 61.5 465.1 63.2 66.6 64.7 865.4 64.0 67.5 65.8 SkillsBench GLM-5.1 258.3 62.5 62.5 66.7 362.5 70.8 75.0 70.8 466.7 75.0 79.2 75.0 866.7 75.0 79.2 79.2 DeepSeek 254.2 58.3 62.5 66.7 362.5 70.8 75.0 75.0 466.7 75.0 79.2 75.0 866.7 75.0 79.2 79.2
+
+We report K=3 rather than the grid-optimal K=4 because the 0.6–4.2 pp gain at L=3 comes at proportional inner-loop cost. On WildClaw/DeepSeek, K=2 actually leads at L=3 
+
+(64.5 vs. 63.6). K=3 is a cost–quality operating point, not a tuned-per-benchmark optimum. 
+
+Component Ablations 
+
+Removing the rubricator collapses performance to within 1.1–1.4 pp of the static baseline on GPT-5.4-mini and GLM. Dense feedback remains—what’s missing is oracle align-ment. An unaligned rubric supplies confident, wrong guid-ance. Replacing ranking with score regression costs 2.7–5.3 pp under identical oracle budget, isolating the supervision tar-get. The effect is smallest where absolute scores are highest. The seed ablation changes both seed quality and initial population size ( K=1 vs. K=3 ), so its 3.8–6.5 pp drop is not attributable to seed quality alone. 
+
+D Per-Task Results 
+
+Figure 7 shows pass rates for all individual tasks across both benchmarks. WildClawBench comprises 60 tasks spanning 6 domains; SkillsBench comprises 87 tasks spanning 8 do-mains. Task names appear on the left; domain labels appear on the right. Black horizontal lines separate domain bound-aries. Each heatmap displays five conditions: Human-written skills, LLM-written skills, and SkillLift results across three backbones (GPT-5.4/GPT-5.4-mini, GLM-5.1, DeepSeek-V4-Pro). The heatmaps reveal several distinct patterns across task categories and backbones. SkillLift consistently outperforms both Human-written and LLM-written baselines across most domains, with particularly strong gains in procedural cate-gories (e.g., WildClawBench Productivity, SkillsBench SE Figure 7: Per-task pass rate heatmaps across both benchmarks. Left : WildClawBench (60 tasks across 6 domains). Columns represent Human-written baseline, LLM-written baseline, and SkillLift with three backbones: GPT-5.4 , GLM-5.1 , and 
+
+DeepSeek-V4-Pro . Right : SkillsBench (87 tasks across 8 domains). Columns represent the same baseline conditions, with SkillLift using GPT-5.4-mini , GLM-5.1 , and DeepSeek-V4-Pro . Task names appear on the left; domain labels on the right. Black horizontal lines separate domain boundaries. Warm colors (red/orange) indicate low pass rates ( <0.4); cool colors (blue) indicate high pass rates ( >0.8). Table 9: Evolution trajectory for the tictoc-unnecessary-abort-detection task.                                             
+
+> Stage Candidate Direction / material change Reward Decision Anchor seed Curated three-skill portfolio 0.00 Parent Round 0 r000-c00 D1: trace-driven classification. Adds TSV-to-protocol 0.85 Accepted mapping, per-key WTS reconstruction, conservative-abort rule. Round 0 r000-c01 D2: protocol-specification direction 0.00 Not accepted Round 0 r000-c02 D3: safe-order witness direction 0.35 Not accepted Round 1 r001-c00 D1: implementation precision. Adds explicit data structures, 1.00 Terminal range semantics, and edge-case handling. Round 1 r001-c01 D2: access-counter ordering check 0.85 Not accepted Round 1 r001-c02 D3: global serialization consistency —Invalid (overlapping edits) Final 0 frozen Independent post-stop trial 1.00 Final trial Final 1 frozen Independent post-stop trial 1.00 Final trial Final 2 frozen Independent post-stop trial 1.00 Final trial
+
+and IPS) where binary criteria effectively capture task re-quirements. In contrast, creative and open-ended tasks (e.g., WildClawBench Creative domain) show smaller improve-ments, reflecting the inherent difficulty of defining verifiable rubrics for subjective outputs. Cross-backbone comparison shows that GPT-5.4/GPT-5.4-mini generally achieves the highest pass rates, followed by DeepSeek-V4-Pro and GLM-5.1. However, GLM-5.1 demonstrates competitive performance on specific domains such as WildClawBench Search and SkillsBench NS (net-work and system tasks), suggesting that domain-specific strengths persist across the SkillLift framework. The per-task granularity also exposes failure modes: tasks requiring multi-step reasoning or external tool coordination (e.g., cer-tain Code domain tasks in WildClawBench) remain challeng-ing for all methods, indicating that rubric-guided evolution cannot fully compensate for fundamental reasoning limita-tions in the underlying backbone models. 
+
+E Case Study 
+
+We trace the evolution of the 
+
+tictoc-unnecessary-abort-detection task from SkillsBench (SE domain). This task requires determin-ing which transaction aborts are unnecessary given two trace files (write timestamps and abort records). We selected this case because its full evidence chain is preserved: anchor, search plans, candidate patches, validation records, and post-stop trials. The receipt remains stable across both rounds (three cri-teria: classification procedure, trace-to-state mapping, safe-order witness). The seed portfolio scores 0.00. Round 0 can-didate D1 (0.85) converts a general trace-analysis guide into a TicToc-specific method with per-key timeline reconstruction. Round 1 candidate D1 (1.00) adds explicit data structures and edge-case handling. Table 9 shows the full trajectory. The Stage column indicates the search round: Anchor is the seed portfolio; Round 0 and Round 1 are inner-loop it-erations with three candidate directions each; Final 0–2 are post-stop validation trials to confirm stability. The Candi-date column identifies each skill variant (e.g., r000-c00 de-notes Round 0, Candidate 0). Direction / material change 
+
+describes the substantive modification applied in that candi-date. Reward is the oracle pass rate (0.00–1.00), computed from execution rollouts. Decision records whether the can-didate was accepted as the new parent for the next round, rejected due to insufficient improvement, marked invalid due to overlapping edits, or identified as terminal when the oracle-pass threshold ( ≥ 0.9) was met. All three final trials achieve 1.00, confirming the converged skill’s stability under inde-pendent rollouts. The run terminates after r001-c00 meets the oracle-pass threshold. Total cost through first ≥ 0.9 attainment: 8.4M tokens. This case demonstrates direction-guided search and strict acceptance but not receipt revision—the initial rubric aligned without outer-loop updates.
