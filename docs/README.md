@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-16</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-17</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 14 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 8 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>5</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>9</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>3</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-16 21:52:38 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-17 22:09:46 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,10 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共生成 14 篇推荐（精读 5 篇，速读 9 篇）</p>
-<p>精读：《EvoRS: On-Policy Self-Evolution of Reward Systems for Open-Ended Reinforcement Learning》（9.0/10）, 《SkillLift: Learning Dense Rubrics from Sparse Oracles for Efficient Skill Evolution》（9.0/10）</p>
-<p>速读：《Toward Self-Adaptive Physical AI: Can LLM Agents Manage Long-Horizon Physical Tasks?》（7.0/10）, 《MOSCOPT: Mixture-of-Skills Collective Optimization for LLM Agents》（7.0/10）, 《REVOLVE: An Automated Closed-Loop Framework for Evolving Robot Manipulation with Minimal Human Intervention》（7.0/10）</p>
-<p>这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。</p>
+<p>2026-09-17日报：共8篇，精读5、速读3，ThinkFlow与ScienceBuddy以9.0分并列领跑。</p>
+<p>最值得看的是终身对话智能体的自演化概率潜记忆，以及交互式科学智能体的递归自改进。</p>
+<p>普通读者可先精读这两篇9分文章，再按兴趣速读交互记忆学习与强化学习内在动机相关速读。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -84,7 +83,7 @@
     <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="EvoRS: On-Policy Self-Evolution of Reward Systems for Open-Ended Reinforcement Learning">EvoRS: On-Policy Self-Evolution of Reward Systems for Open-Ended Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="SkillLift: Learning Dense Rubrics from Sparse Oracles for Efficient Skill Evolution">SkillLift: Learning Dense Rubrics from Sparse Oracles for Efficient Skill Evolution</span></li><li><span class="dpr-home-dashboard-paper-title" title="SE-GoS: Self-Evolving Graph-of-Skills for Skill Library at Scale">SE-GoS: Self-Evolving Graph-of-Skills for Skill Library at Scale</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ThinkFlow: Self-Evolving Probabilistic Latent Memory for Lifelong Conversational Agents">ThinkFlow: Self-Evolving Probabilistic Latent Memory for Lifelong Conversational Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="ScienceBuddy: Recursive-in-Recursive Self-Improvement for Interactive Scientific Agents">ScienceBuddy: Recursive-in-Recursive Self-Improvement for Interactive Scientific Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Retrieval-Driven Memory Reconsolidation for Long-Term LLM Agents">Retrieval-Driven Memory Reconsolidation for Long-Term LLM Agents</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>5</strong></span></div>
 </section>
@@ -94,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">9 篇</strong>
+    <strong class="dpr-home-dashboard-count">3 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Toward Self-Adaptive Physical AI: Can LLM Agents Manage Long-Horizon Physical Tasks?">Toward Self-Adaptive Physical AI: Can LLM Agents Manage Long-Horizon Physical Tasks?</span></li><li><span class="dpr-home-dashboard-paper-title" title="MOSCOPT: Mixture-of-Skills Collective Optimization for LLM Agents">MOSCOPT: Mixture-of-Skills Collective Optimization for LLM Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="REVOLVE: An Automated Closed-Loop Framework for Evolving Robot Manipulation with Minimal Human Intervention">REVOLVE: An Automated Closed-Loop Framework for Evolving Robot Manipulation with Minimal Human Intervention</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Interactive Memory Learning for Long-Term Conversations">Interactive Memory Learning for Long-Term Conversations</span></li><li><span class="dpr-home-dashboard-paper-title" title="Atria Dawn: The Dawn of Agentic Superintelligence">Atria Dawn: The Dawn of Agentic Superintelligence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Intrinsic Motivation in Reinforcement Learning: A Research Agenda for Adaptive Self-Organisation">Intrinsic Motivation in Reinforcement Learning: A Research Agenda for Adaptive Self-Organisation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>9</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
 </section>
 </div>
 
