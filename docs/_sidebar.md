@@ -1,6 +1,9 @@
 * <a class="dpr-sidebar-root-link" href="#/">首页</a>
 * <a class="dpr-sidebar-root-link dpr-sidebar-noactive-link" href="javascript:void(0)" data-dpr-hash="#/tutorial/README">使用教程</a>
 * Daily Papers
+  * 2026-09-19 <!--dpr-date:20260919-->
+    * 速读区
+      * <a class="dpr-sidebar-item-link dpr-sidebar-item-structured" href="#/202609/19/2609.20784v1-retireopd-self-retiring-on-policy-distillation-for-agentic-reinforcement-learning" data-sidebar-item="{&quot;title&quot;: &quot;RetireOPD: Self-Retiring On-Policy Distillation for Agentic Reinforcement Learning&quot;, &quot;link&quot;: &quot;https://arxiv.org/abs/2609.20784v1-retireopd-self-retiring-on-policy-distillation-for-agentic-reinforcement-learning&quot;, &quot;score&quot;: &quot;7.0&quot;, &quot;tags&quot;: [{&quot;kind&quot;: &quot;query&quot;, &quot;label&quot;: &quot;agent-evolve&quot;}], &quot;evidence&quot;: &quot;面向智能体RL自我改进的自在线策略蒸馏&quot;}">RetireOPD: Self-Retiring On-Policy Distillation for Agentic Reinforcement Learning</a>
   * 2026-09-18 <!--dpr-date:20260918-->
     * 精读区
       * <a class="dpr-sidebar-item-link dpr-sidebar-item-structured" href="#/202609/18/2609.20089v1-unifiedplayers-enhance-tool-integrated-reasoning-in-agentic-reinforcement-learning" data-sidebar-item="{&quot;title&quot;: &quot;UnifiedPlayers: Enhance Tool-Integrated Reasoning in Agentic Reinforcement Learning&quot;, &quot;link&quot;: &quot;https://arxiv.org/abs/2609.20089v1-unifiedplayers-enhance-tool-integrated-reasoning-in-agentic-reinforcement-learning&quot;, &quot;score&quot;: &quot;8.0&quot;, &quot;tags&quot;: [{&quot;kind&quot;: &quot;query&quot;, &quot;label&quot;: &quot;agent-evolve&quot;}], &quot;evidence&quot;: &quot;自进化工具智能体自行生成训练数据&quot;}">UnifiedPlayers: Enhance Tool-Integrated Reasoning in Agentic Reinforcement Learning</a>
