@@ -1,0 +1,648 @@
+Title: AutoData: Agentic Search for Pre-training Data Selection
+
+URL Source: https://arxiv.org/pdf/2609.19754v1
+
+Published Time: Fri, 18 Sep 2026 00:41:05 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+> 2026-09-18
+
+# AutoData : Agentic Search for Pre-training Data Selection 
+
+Yan Meng †1, Dhruv Srikanth 2, Bingchen Zhao 2, Zhengyao Jiang 2 and Yuxiang Wu 21University of Amsterdam, 2Weco AI 
+
+LLM agents have recently shown promise in automating machine learning engineering by editing model and training code under execution feedback. Data, however, remains largely outside this agentic optimisation loop. We frame pre-training data selection as heuristic engineering over per-document features, i.e., lexical statistics, categorical labels, and perplexity. We introduce AutoData , an agent that searches directly over executable selection algorithms. Unlike prior data mixture methods that optimise weights over a fixed set of domains, AutoData searches a richer program space of scoring, stratification, and stochastic selection rules, discovering feature interactions automatically by iteratively refining algorithms with validation feedback from a proxy model. Within an overnight search, AutoData 
+
+discovers a selection algorithm that outperforms existing human-designed curation pipelines. Despite being searched only on this small proxy, the discovered recipe transfers to larger scales and improves the downstream metric CORE. These results suggest that data engineering can be treated as an agentic machine learning problem, extending autonomous research from model and training-code optimization to the data. 
+
+1. Introduction 
+
+The performance of large language models depends on both model architecture and data. On the recent NanoChat leaderboard (Karpathy, 2025), training recipes have been discovered by auto-research agents (Karpathy, 2026), but these agents treat the training data as static. This overlooks a first-order lever, i.e., data. A recent NanoChat result shows that simply replacing the training data from FineWeb-Edu (Penedo et al., 2024) with NVIDIA-ClimbMix (Diao et al., 2025) reduces wall-clock GPT-2 training time by 27%, a larger gain than most architecture-level improvements at this scale. In this paper, we close this gap by extending agentic search to data selection. Existing human-designed data curation methods combine deduplication, quality classification, perplexity-based filtering, importance sampling, and domain mixture optimization (Ankner et al., 2025; Li et al., 2024a; Penedo et al., 2024; Thrush et al., 2025; Xie et al., 2023b). However, manually designed methods often rely on a fixed combination of these heuristics, thus bottlenecking both the design space and the iteration speed. We introduce AutoData , an agentic search framework for data selection. 1 We frame data selection as a heuristic engineering problem, where each document is characterized by a set of features, i.e., lexical statistics, categorical labels, perplexity, and LLM-annotated quality signals. AutoData builds on an AIDE-style (Jiang et al., 2025) LLM agent that searches over selection algorithms on these features. At each step, the agent proposes an executable selection strategy, trains a small proxy model on the selected subset, observes validation feedback, and refines the strategy in the next iteration. AutoData 
+
+then returns the selection algorithm with the best proxy-validation performance. Our results show that agentic search is an effective and practical paradigm for pre-training data 
+
+> †
+
+Work done during a research internship at Weco AI. 
+
+> 1
+
+Code will be released at https://github.com/WecoAI/AutoData 
+
+> Correspondence: y.meng@uva.nl, yuxiang@weco.ai
+> © 2026 Weco AI. All rights reserved arXiv:2609.19754v1 [cs.AI] 17 Sep 2026 AutoData : Agentic Search for Pre-training Data Selection
+
+## training_subset =  data_selection (data _pool, feature_bank, budget) 
+
+## proxy_model = nanochat_train(training_subset) 
+
+## score  = evaluate(proxy_model) 
+
+## Evaluation  Pipeline 
+
+Data Pool  LLM Agent  Data Build  Evaluation 
+
+Data pool with features 
+
+Propose data selection functions 
+
+Build pre-training 
+
+data 
+
+Evaluate by pre-
+
+training a proxy 
+
+model 
+
+## AutoData    
+
+> Figure 1 |Overview of AutoData . An LLM agent proposes data-selection functions over a feature-annotated document pool. Each selected subset is used to pre-train a proxy language model, and the resulting validation score provides feedback for further search.
+
+engineering. Within 200 search steps on a small GPT-2 proxy model (125M), AutoData discovers recipes that outperform DCLM (Li et al., 2024a), perplexity filtering, RegMix (Liu et al., 2025), and the default ClimbMix ordering (Diao et al., 2025) on both search objectives: including validation bits-per-byte (val-bpb) and downstream CORE accuracy. Without re-tuning, these discovered recipes transfer across model scales. AutoData achieves the best val-bpb from 125M to 897M, with statistically significant improvement over all baselines. Analysis of the discovered recipes shows that they move beyond single-feature ranking and threshold filtering. Instead, AutoData discovers composite scoring rules paired with diversity-preserving selection mechanisms, favoring higher-quality documents while maintaining broad coverage of the data distribution. Overall, AutoData shows that data engineering is a natural next frontier for autonomous AI research. Instead of treating curation as a fixed, manually designed preprocessing pipeline, AutoData 
+
+makes data selection searchable: agents discover how to score documents, combine signals, and preserve diversity using direct validation feedback. This reframes pre-training data curation as an optimization problem over executable recipes, extending autonomous AI research to the data that shapes model learning. 
+
+2. Background 
+
+2.1. NanoChat Task 
+
+We use the NanoChat speedrun task as our experimental harness for language model pre-training (Karpa-thy, 2025). NanoChat provides a lightweight GPT-style pre-training setup, and this small-scale setting makes iterative training experiments feasible. Moreover, this speedrun environment has produced insights that generalize beyond the leaderboard itself. For example, Muon (Jordan et al., 2024), which originated from nanoGPT-style speedrun experiments, has recently challenged the dominance 
+
+> 2AutoData : Agentic Search for Pre-training Data Selection
+
+of AdamW (Loshchilov and Hutter, 2019) in large-scale language model training. The leaderboard already shows that data quality is a first-order factor in training efficiency. Simply switching the training corpus from FineWeb-Edu (Penedo et al., 2024) to ClimbMix (Diao et al., 2025) reduces the time required to reach the CORE threshold by roughly 27%. However, the current speedrun uses only a small slice of ClimbMix—approximately the first 2% of the full corpus. This raises a natural question: under the same compute budget, whether we can select a more effective 2% subset from the full ClimbMix pool. 
+
+2.2. Base Corpus: NVIDIA ClimbMix 
+
+We conduct our data selection experiments on ClimbMix (Diao et al., 2025), a 400B-token English pre-training corpus released by NVIDIA. ClimbMix is produced by a human-designed pipeline, which is curated on Common Crawl using document clustering, reference-model scoring, and cluster-level reweighting. We use the full ClimbMix as the source corpus and study whether LLM-generated selection strategies can identify 2% compact subsets that outperform the default ones used in NanoChat. 
+
+3. AutoData 
+
+AutoData builds on the AIDE scaffold (Jiang et al., 2025), an LLM-powered code-optimisation agent that improves candidate programs using execution feedback. We adapt AIDE to the pre-training data selection task by optimising the selection algorithm via code. As shown in Figure 1, the LLM agent proposes data selection methods with the given data pool, executes the selection function to build the training data, and evaluates the selection method by training a small proxy language model. The evaluation metrics are provided to the LLM agent as feedback, guiding subsequent search toward more effective data selection methods. 
+
+3.1. Problem Formulation 
+
+We frame pre-training data selection as a search over selection algorithms. Given a candidate document pool D = {𝑑 𝑖 }𝑁 𝑖 =1 with document-level features {x𝑖 }𝑁 𝑖 =1 and a fixed budget 𝐵 , a selection algorithm is a function  
+
+> 𝑓
+
+:  D, {x𝑖 }𝑁 𝑖 =1, 𝐵  → S , S ⊂ D , |S| = 𝐵, 
+
+that maps the pool, feature bank, and budget to a budget-constrained subset. Let A𝜃 (S) denote the model obtained by pre-training with fixed hyperparameters 𝜃 on S, and let 𝐽 (·) be an evaluation function (e.g., validation bits-per-byte or downstream task accuracy). AutoData searches over the space F of selection algorithms to maximize empirical training performance:   
+
+> 𝑓 ∗
+
+= arg max    
+
+> 𝑓 ∈ F 𝐽
+
+ A𝜃 
+
+  𝑓 (D , {x𝑖 }, 𝐵 ) .
+
+3.2. Feature Bank 
+
+To support compositional selection, we provide the agent with document-level features along four complementary axes: lexical statistics, categorical labels, reference-model perplexity, and LLM-generated content annotations. These features characterize documents from multiple perspectives, capturing surface-level properties, topical diversity, learning difficulty as estimated by a reference model, and content factuality. 
+
+> 3AutoData : Agentic Search for Pre-training Data Selection
+
+Lexical features. For each document, we compute its length in tokens (via the nanochat tokenizer) and distinct 𝑛 -gram ratios for 𝑛 ∈ { 1, . . . , 5}. Document length serves as a coarse quality signal: very short documents are often fragments, while very long documents tend to contain mixed or off-topic content. Distinct 𝑛 -gram ratios capture repetition and templatic text. Low values tend to have boilerplate or repeated phrasing, while high values on short texts often flag broken or randomized strings. 
+
+Categorical features. We assign each document a topic label and a format label using the WebOr-ganizer classifiers. 2 Topic and format together yield 24 × 24 = 576 joint categories on the ClimbMix pool, covering domains (e.g., news, science, finance) and document types (e.g., article, FAQ, listicle, advertisement). 
+
+Perplexity features. We compute per-document bits-per-byte under a small reference model (Qwen2.5-0.5B-Base ). Motivated by prior work on perplexity-based pruning with small reference mod-els (Ankner et al., 2025), this signal captures document difficulty relative to the reference distribution: low perplexity flags texts that are easy to predict while high perplexity flags noisy content. 
+
+LLM annotation features. For a subset of the candidate pool, we use LLM-generated annotations from Gemini-3-Flash . These annotations extract three document-level counts: • n_factual : number of incorrect factual claims; • n_rsteps : number of explicit inferential reasoning steps; • n_rerrors : number of invalid reasoning steps. We aim to study whether content-level signals provide complementary information beyond cheap lexical, categorical, and perplexity features. Annotation guidelines are shown in Appendix A.3. 
+
+3.3. Self-Evolving Loop 
+
+At each iteration, the LLM agent proposes a candidate selection function 𝑓 ∈ F , conditioned on a summary of previously evaluated candidates and their scores. The proposed program is executed in three stages: (i) it constructs a training subset S = 𝑓 (D , {x𝑖 }, 𝐵 ) from the document pool; (ii) the resulting subset is used to pre-train a proxy language model with fixed hyperparameters 𝜃 ; and (iii) the proxy is evaluated on a held-out validation set under an evaluation function 𝐽 (·) . The resulting score is returned to the agent as feedback, together with a summarized record of previous trajectories to inform the next proposal. Through this self-evolving loop, AutoData optimises pre-training data selection using empirical small-scale training performance as the objective signal. The specific proxy architecture, validation set, and evaluation metric used in our experiments are described in Section 4. 
+
+4. Experiments 
+
+4.1. Experimental Setup Data pool. We apply AutoData to NVIDIA’s full ClimbMix corpus (Diao et al., 2025), a 400B-token English pretraining corpus. The corpus contains 6 ,542 training shards, covering 𝑁 = 553 ,155 ,584 
+
+> 2https://huggingface.co/WebOrganizer
+> 4
+
+AutoData : Agentic Search for Pre-training Data Selection 0 25 50 75 100 125 150 175 200    
+
+> AutoData optimisation step
+> 0.9520 0.9525 0.9530 0.9535 0.9540 0.9545
+> val_bpb (lower is better)
+> AutoData [Val_BPB]: LLM Comparison
+> Random sampling baseline (0.9537 ± 0.0003) GPT-5.5 (best=0.95213 @ step 93) Gemini-3-Pro-Preview (best=0.95240 @ step 112) Claude-Opus-4.7 (best=0.95236 @ step 93)
+
+(a) Optimisation signal on val-bpb. 0 25 50 75 100 125 150 175 200     
+
+> AutoData optimisation step
+> 0.080 0.085 0.090 0.095 0.100 0.105 0.110 0.115
+> CORE (higher is better)
+> AutoData [CORE]: LLM Comparison
+> Random sampling baseline (0.0973 ± 0.0023) GPT-5.5 (best=0.1142 @ step 105) Gemini-3-Pro-Preview (best=0.1134 @ step 93) Claude-Opus-4.7 (best=0.1110 @ step 63)
+
+(b) Optimisation signal on CORE. 
+
+Figure 2 | AutoData search trajectories across base LLMs (GPT-5.5, Claude-Opus-4.7, and Gemini-3-Pro-Preview) on the full ClimbMix pool. Each step proposes a new data selection recipe, which is evaluated by training a proxy GPT-2 (depth=8) model. 
+
+documents. We reserve one shard as a held-out validation set and exclude it from all selection pools. 
+
+Selection budget. AutoData selects a subset of 𝐵 = 14 ,374 ,266 documents from the ClimbMix pool, corresponding to approximately 2 .6% of the corpus. This budget matches the data scale used in the standard NanoChat pre-training task. All methods are therefore compared under the same document-level selection budget. 
+
+Proxy model. Training a proxy model on the full 𝐵 -document subset for every candidate strategy would be computationally expensive We instead evaluate each strategy on an 880 ,000-document subset sampled uniformly from its selected pool. We train a depth-8 GPT-2 model with target-param-data-ratio = 10, which corresponds to approximately 0 .42B training tokens. Each run takes approximately 10 minutes on one H100 GPU. 
+
+Subsample protocol. To reduce the high seed variance of single small-scale runs, we evaluate each selection strategy by training four proxy models on the same selected subsample, varying only the proxy training seed. The four trainings run in parallel on 4 ×H100 GPUs. Holding the subsample fixed and varying only the training seed isolates training-induced variance, yielding a stable estimate of each selector’s performance. 
+
+Evaluation signals. AutoData uses proxy-model performance as search feedback. We consider two feedback signals: validation bits-per-byte (val-bpb) and downstream CORE. For each signal, we run a separate AutoData search using that signal as the optimization objective. We then report both metrics for each discovered recipe: the optimized metric measures direct improvement, while the non-optimized metric tests whether the recipe generalizes beyond the feedback signal used during search. Val-bpb is measured on a held-out ClimbMix shard, with lower values indicating better language modeling performance. Following Li et al. (2024a), CORE is used as the downstream evaluation metric. It is defined as the unweighted mean of centered accuracy across 22 standard tasks spanning commonsense reasoning, reading comprehension, and world knowledge. 
+
+5AutoData : Agentic Search for Pre-training Data Selection 
+
+Algorithm 1 AutoData (val-bpb)                                                                                     
+
+> Require: pool Dof size 𝑁 , budget 𝐵 , slate size 𝑎 =3
+> Ensure: 𝐵 unique document indices 1: 𝐵 back ← ⌊ 𝐵 /3⌋;𝐵 fill ←𝐵 −𝐵 back
+> 2: Draw 𝐵 back +𝑎𝐵 fill docs from Dw/o replacement 3: First 𝐵 back form the backbone ; the rest form 𝐵 fill slates of 𝑎 ⊲Candidate scoring
+> 4: 𝑠 div ←12
+> tanh ˜ 𝑧 (div avg ) + tanh ˜ 𝑧 (div 5)
+> 5: 𝑠 ppl ←tanh ˜ 𝑧 (− log ppl )
+> 6: 𝑠 len ← −| tanh ˜ 𝑧 (log tok )|
+> 7: 𝑠 rat ← −| tanh ˜ 𝑧 (chars /tok )|
+> 8: 𝑠 ←𝑠 div +𝑠 ppl 𝑠 div +12+𝑠 len +𝑠 rat
+> ⊲Shrinkage centering, per topic ×format cell 𝑐
+> 9: 𝜇 𝑐 ←mean (𝑠 |𝑐 );𝜆 𝑐 ←𝑛 𝑐 /( 𝑛 𝑐 +˜𝑛 )
+> 10: 𝑠 ←𝑠 −12𝜆 𝑐 𝜇 𝑐
+> ⊲Gumbel tournament
+> 11: 𝑠 ←𝑠 +𝑔 ,𝑔 ∼Gumbel (0,1)
+> 12: Take arg max per slate; union with backbone 13: return sorted indices
+
+4.2. Baselines Random sampling. This baseline randomly samples documents from the ClimbMix selection pool. It measures the performance of the curated ClimbMix corpus without applying data selection. 
+
+DCLM classifier. We adapt the DCLM-Baseline classifier (Li et al., 2024a) to the ClimbMix setting. The original DCLM classifier is a FastText model trained with Reddit ELI5 and OpenHermes-2.5 as positive examples and RefinedWeb as negative examples. We keep the positive data unchanged, but replace the negative data with documents sampled from ClimbMix so that the classifier is calibrated to our target corpus. We then select documents based on the classifier score. 
+
+Perplexity filter. A perplexity-based filtering baseline using Qwen2.5-0.5B as the scoring model, following Ankner et al. (2025). Each document is scored by its perplexity under the reference model. Since ClimbMix is heavily pre-filtered, we follow the recommendation of Ankner et al. (2025) for filtered corpora and select documents from the middle perplexity band. 
+
+RegMix. We adapt RegMix (Liu et al., 2025) to ClimbMix using the 𝐾 =24 WebOrganizer topic categories as domains. We sample 𝑁 =128 Dirichlet mixtures, train a GPT-2 (depth=8) proxy model on each, and fit a LightGBM regressor to predict val-bpb from mixture weights. The mixture with the lowest predicted val-bpb is then used for topic sampling to form the final training sets. 
+
+Selection protocol. All methods follow a controlled two-stage protocol. Each method first selects 𝐵 
+
+documents from the full ClimbMix pool, where 𝐵 is the global selection budget used by AutoData and matches the training-data budget for GPT-2 depth-24. For smaller models, including GPT-2 depth-8 and depth-12, we draw uniform subsamples from the same selected 𝐵 -document subset according to their corresponding training budgets. This keeps the source pool and global selection budget fixed across methods. The training-data sizes for each model scale are reported in Appendix Table 5. 
+
+> 6AutoData : Agentic Search for Pre-training Data Selection
+
+Method d = 8 (125 M) d = 12 (286 M) d = 16 (537 M) d = 20 (897 M) d = 24 (1.3B) 
+
+val-bpb ↓
+
+Random uniform 0.9484 ±0.0002 0.8477 ±0.0003 0.7806 ±0.0002 0.7346 ±0.0004 0.7055 ±0.0011 
+
+DCLM-Baseline 0.9954 ±0.0001 0.8886 ±0.0001 0.8202 ±0.0003 0.7766 ±0.0006 0.7499 ±0.0001 
+
+PPL filter 0.9605 ±0.0001 0.8638 ±0.0000 0.7983 ±0.0001 0.7545 ±0.0003 0.7267 ±0.0001 
+
+RegMix 0.9550 ±0.0009 0.8529 ±0.0005 0.7848 ±0.0002 0.7401 ±0.0002 0.7124 ±0.0002 
+
+AutoData (CORE) 0.9529 ±0.0001 0.8474 ±0.0001 0.7791 ±0.0001 0.7334 ±0.0001 0.7064 ±0.0001 
+
+AutoData (val-bpb) 0.9475 ±0.0000 0.8473 ±0.0001 0.7802 ±0.0001 0.7349 ±0.0004 0.7065 ±0.0003 
+
+CORE ↑
+
+Random uniform 0.1041 ±0.0125 0.1403 ±0.0034 0.2053 ±0.0065 0.2364 ±0.0011 0.2609 ±0.0058 
+
+DCLM-Baseline 0.1043 ±0.0028 0.1362 ±0.0065 0.2006 ±0.0111 0.2245 ±0.0027 0.2470 ±0.0019 
+
+PPL filter 0.0933 ±0.0051 0.1449 ±0.0034 0.1926 ±0.0029 0.2276 ±0.0080 0.2535 ±0.0051 
+
+RegMix 0.0999 ±0.0080 0.1508 ±0.0036 0.2025 ±0.0105 0.2319 ±0.0072 0.2567 ±0.0081 
+
+AutoData (CORE) 0.1142 ±0.0023 0.1430 ±0.0094 0.2009 ±0.0015 0.2389 ±0.0072 0.2727 ±0.0128 
+
+AutoData (val-bpb) 0.1037 ±0.0030 0.1568 ±0.0021 0.1959 ±0.0004 0.2372 ±0.0084 0.2647 ±0.0085 
+
+Table 1 | AutoData v.s. human-designed data curation pipelines across five model scales (from depth = 8 to 24). We report the mean over three runs, with the subscript denoting the sample standard deviation. In each column, the best mean is shown in bold . A cell is shaded when the best tested method is significantly better than it ( 𝑝 < 0.05). Tests are paired 𝑡 -tests over the three training seeds. 
+
+4.3. AutoData Recipe 
+
+AutoData generates 1200 candidate selection methods across GPT-5.5, Gemini-3-Pro-Preview, and Claude-Opus-4.7. For the main comparison against human-designed baselines (Section 4.2), we adopt the best recipe from each search objective (in Figure 2): the top recipe found when optimising val-bpb and CORE, both selected on the depth=8 proxy model. The two recipes are shown in Algorithm 1 (val-bpb) and Algorithm 2 (CORE). 
+
+4.3.1. Algorithm 1 (val-bpb) 
+
+Stage 1: Scoring. One third of the budget is reserved as a uniformly sampled random backbone to ensure broad coverage. For the remaining budget, each candidate receives a composite score combining four features: lexical diversity ( 𝑛 -gram), perplexity, document length, and character-to-token density. A key design choice is that the perplexity term is gated by diversity: low perplexity weights higher only when 𝑛 -gram diversity is also high, which prevents the score from favoring repetitive boilerplate. Length and density functions as central terms that penalize outliers in either direction. 
+
+Stage 2: Selection. Scores are normalized within each (topic, format) cell via shrinkage-based centering, which reduces over-selection from frequent cells. Candidates are then partitioned into slates of three; Gumbel noise is added to the centered scores, and the best of each slate is selected, equivalent to softmax sampling. The selected data balances topic coverage, quality-aware scoring, and stochastic competition. 
+
+> 7AutoData : Agentic Search for Pre-training Data Selection
+
+Algorithm 2 AutoData (CORE) 
+
+Require: pool D of size 𝑁 , budget 𝐵 , seed 
+
+Ensure: 𝐵 unique document indices 1: 𝐵 back ← ⌊ 𝐵 /2⌋; 𝐵 rep ← 𝐵 − 𝐵 back 
+
+2: 𝑛 cand ← min (𝑁 − 𝐵 back , 2𝐵 rep )
+
+3: Draw 𝐵 back + 𝑛 cand docs w/o replacement 4: First 𝐵 back form the backbone; the rest form C 
+
+> ⊲
+
+Finite-safe features 
+
+5: ℓ𝑖 ← log (1 + tok 𝑖 ); 𝑟 𝑖 ← log chars 𝑖 +1tok 𝑖 +1
+
+6: Load div 𝑖 , ppl 𝑖 for 𝑖 ∈ C  
+
+> ⊲
+
+Pool-adaptive hygiene, tri = triangular kernel 
+
+7: 𝑠 len  
+
+> 𝑖
+
+← tri (ℓ𝑖 ; 𝑞 2/3, 𝑞 1/3, 𝑞 2/3)
+
+8: 𝑠 div  
+
+> 𝑖
+
+← tri (div 𝑖 ; 𝑞 2/3, 𝑞 1/3, 𝑞 2/3)
+
+9: 𝑠 ppl  
+
+> 𝑖
+
+← tri (ppl 𝑖 ; 𝑞 1/3, 𝑞 1/3, 𝑞 2/3)
+
+10: 𝑠 rat  
+
+> 𝑖
+
+← tri (𝑟 𝑖 ; 𝑞 1/2, 𝑞 1/3, 𝑞 2/3)
+
+11: 𝑎 𝑖 ← z  14
+
+Í𝑘 𝑠 𝑘 𝑖 
+
+ 
+
+> ⊲
+
+Source-neighborhood prior 
+
+12: 𝑀 ← max (1, ⌊√︁ |C|⌋) ; 𝑏 𝑖 ← min (⌊ 𝑖𝑀 /𝑁 ⌋, 𝑀 −1)
+
+13: 𝜇 𝑏 ← mean {𝑎 𝑖 : 𝑏 𝑖 = 𝑏 }; 𝑝 𝑖 ← z(𝜇 )𝑏 𝑖  
+
+> ⊲
+
+Stochastic repair 
+
+14: score 𝑖 ← 𝑎 𝑖 + 𝑝 𝑖 + 𝑔 𝑖 , 𝑔 𝑖 ∼ Gumbel (0, 1)
+
+15: R ← Top 𝐵 rep (C ; score )
+
+16: S ← backbone ∪ R 
+
+17: if |S| ≠ 𝐵 then repair to exactly 𝐵 unique 18: return sorted indices S
+
+4.3.2. Algorithm 2 (core) 
+
+Stage 1: Scoring. The recipe first reserves 50% of the budget as a uniformly sampled backbone to preserve corpus distribution. For the remaining budget, it assigns each candidate document a composite score based on document length, character-to-token ratio, 𝑛 -gram diversity, and perplexity. These features are mapped to pool-adaptive scores: length and diversity prefer medium-to-high values, perplexity prefers fluent text, and the ratio score prefers normal text density. The recipe further adds a prior by grouping candidates into contiguous source-order blocks and assigning each document the standardized mean composition score of its block. The final score is the sum of the composition score, the prior, and Gumbel noise. 
+
+Stage 2: Selection. The final subset is the union of the random sampled backbone and repair set, followed by deduplication to obtain exactly 𝐵 unique documents. The selected data balances data coverage, document-level quality, local source quality, and stochastic competition. 
+
+5. Results 
+
+Tables 1 compare AutoData with human-designed data selection pipelines across five model scales for val-bpb and CORE. We highlight two findings. 
+
+Human-designed curation pipelines struggle on a well-curated pool. DCLM-Baseline and PPL filtering regress val-bpb across scales, indicating worse language modeling performance. RegMix performs better on GPT-2 depth=12 CORE, but still does not consistently improve either val-bpb or CORE. These results suggest that data curation methods are sensitive to the source data pool and may require redesign to remain effective when applied to already well-curated data. 
+
+> 8AutoData : Agentic Search for Pre-training Data Selection
+
+Feature GPT-5.5 Gemini-3-Pro Opus-4.7 
+
+Length 200 200 200 
+
+> 𝑁
+
+-gram 200 199 200 Perplexity 200 199 200 Topic 178 2 187 Format 177 3 172 
+
+Total recipes 200 200 200  
+
+> Table 2
+
+| Number of feature usage in selection recipes generated by different LLMs. Here, we analyze recipes generated by AutoData (val-bpb.) 
+
+Feature subset GPT-5.5 bpb ↓ Δ𝜎 ↑
+
+Random sampling 0.95181 ± 0.00077 Lexical (2) 0.95043 +1.8Perplexity (1) 0.95037 +1.9Categorical (2) 0.95041 +1.8LLM annotations (3) 0.95021 +2.1
+
+All features (8) 0.95048 +1.7 
+
+> Table 3
+
+| Feature search-space ablation on the annotated subset data pool, where LLM-annotation features are available. Bold marks the best result. 
+
+AutoData transfers across model scales. AutoData recipes significantly outperform all four base-lines on val-bpb from depth 8 to depth 20, showing that recipes discovered with a small proxy model can remain effective at larger scales. At depth 24, however, AutoData performs similarly to the default ClimbMix, indicating a limit to its cross-scale transfer. On the downstream CORE benchmark, 
+
+AutoData outperforms the baselines at every scale except depth 16. However, these gains are not statistically significant, possibly because CORE has high variance. The lack of statistically significant improvements on CORE is a limitation of our methodology. 
+
+6. Analysis 
+
+6.1. Number of Feature Usage 
+
+Table 2 shows the number of features used in AutoData generated recipes. First, all three LLMs use the same core features: length, 𝑛 -gram, and perplexity. Second, the LLMs disagree on categorical features (topic and format): GPT-5.5 and Opus-4.7 use them in about 90% of recipes, while Gemini-3-Pro-Preview uses them in only 1–2%. This reflects a real gap in how each agent thinks about the problem: GPT-5.5 and Opus-4.7 treat it as a compositional structure, while Gemini-3-Pro-Preview relies almost entirely on lexical statistics. 
+
+> 9AutoData : Agentic Search for Pre-training Data Selection
+
+Axis Sub-type Operational definition GPT-5.5 Gemini-3-Pro Opus-4.7 
+
+Score aggregation Single feature Use one normalized feature as the score: 𝑠 𝑖 = 𝑥 𝑖𝑘 .0.0% 0.0% 0.0% Linear composite Sum normalized features with fixed weights: 𝑠 𝑖 = Í𝑘 𝑤 𝑘 𝑥 𝑖𝑘 .13 .0% 96 .0% 85 .5%Multiplicative composite Combine features by products or log-sums: 𝑠 𝑖 = Î𝑘 𝜙 𝑘 (𝑥 𝑖𝑘 )𝑤 𝑘 .
+
+86 .5% 0.5% 1.0% Gated / conditional Make a feature’s weight de-pend on other features: 𝑠 𝑖 =Í𝑘 𝑤 𝑘 (𝑥 𝑖 ) 𝑥 𝑖𝑘 .0.5% 3.5% 13 .5% Selection rule Threshold Select documents whose score passes a cutoff: 𝑧 𝑖 = 1[𝑠 𝑖 ≥ 𝜏 ].1.5% 6.0% 0.5% Top-𝐵 Select the 𝐵 highest-scoring doc-uments: 𝑧 𝑖 = 1[𝑖 ∈ Top-B (𝑠 )] .6.5% 6.5% 12 .0% Tournament Pick a winner per local slate  
+
+> 𝐴
+
+by noisy comparison: 𝑖 ★ =
+
+arg max 𝑗 ∈ 𝐴 (𝑠 𝑗 + 𝜖 𝑗 ).
+
+91 .0% 0.0% 0.0% Stratified quota Allocate a budget 𝐵 𝑐 to each cell 
+
+> 𝑐
+
+, select within cells: Í𝑖 : 𝑐 (𝑖 )=𝑐 𝑧 𝑖 =
+
+> 𝐵 𝑐
+
+.1.0% 87 .5% 87 .5% 
+
+> Table 4
+
+| Operation usage across LLM agents along two compositional axes, computed over 200 recipes per LLM. Within each axis, sub-types are mutually exclusive, so percentages sum to 100% per agent ( bold marks each LLM’s dominant sub-type). Notation: 𝑥 𝑖 is the normalized feature vector of document 𝑖 , 𝑥 𝑖𝑘 its 𝑘 -th feature,  
+
+> 𝜙 𝑘
+
+a per-feature transform, 𝑤 𝑘 a fixed weight, 𝑠 𝑖 the document score, 𝑧 𝑖 ∈ { 0, 1} the selection indicator, 𝜏 athreshold, 𝜖 𝑗 noise, 𝑐 (𝑖 ) the stratification cell of 𝑖 , and 𝐵 𝑐 the per-cell quota. 
+
+6.2. Impact of Feature Space 
+
+Table 3 reports the best val-bpb found by GPT-5.5 under five different feature subsets, evaluated against the random-sampling baseline. 
+
+LLM-annotation features yield the best overall result. This suggests that semantic signals such as factual errors, reasoning errors, and reasoning steps provide useful structure beyond what cheap statistics can capture, and pointing to headroom for future work on richer annotations. 
+
+Cheap features alone already form a rich search space. Lexical, perplexity, and categorical subsets each individually reach +1.8–1 .9𝜎 over random. For example, restricting AutoData to only two lexical features ( 𝑛 -gram diversity and length) matches the improvement obtained from providing all eight features simultaneously, and a single perplexity feature does slightly better than the full set. This indicates that AutoData benefits from a small and well-chosen feature set. 
+
+6.3. Categories of AutoData Recipes 
+
+To interpret the methods generated by AutoData , we categorize each recipe along two operational axes: score aggregation and selection rule. Let D be the candidate pool and 𝐵 the selection budget. Each document 𝑖 ∈ D has a normalized feature score 𝑥 𝑖 = (𝑥 𝑖 1, . . . , 𝑥 𝑖𝐾 ), where 𝑥 𝑖𝑘 is the feature value 
+
+𝑘 . A recipe first computes a score 𝑠 𝑖 = 𝑔 (𝑥 𝑖 ), then applies a selection rule to produce an indicator 
+
+𝑧 𝑖 ∈ { 0, 1}, with 𝑧 𝑖 = 1 if document 𝑖 is selected. 
+
+> 10 AutoData : Agentic Search for Pre-training Data Selection
+
+Annotation procedure. We annotate all 600 recipes by AutoData (val-bpb) (200 per LLM) along the two axes in Table 4. For each recipe, we provide Claude Opus-4.7 with the selection algorithm code and the operational definitions, and ask it to assign one mutually exclusive sub-type for score aggregation and one for the selection rule. 
+
+Score aggregation. The three LLM agents have different score aggregation types. GPT-5.5 prefers multiplicative composites (86 .5%), combining features through products or log-sum forms. Gemini-3-Pro-Preview and Opus-4.7 instead favor linear composites (96 .0% and 85 .5%), summing fixed-weight features into a single score. Opus-4.7 uses gated scoring more than the others (13 .5%), suggesting a stronger tendency to vary the scoring rule across document groups. No agent uses single-feature scoring, indicating that the recipes consistently treat selection as a multi-feature decision rather than filtering by one heuristic. 
+
+Selection rule. The LLMs also differ in selection rules. GPT-5.5 primarily uses tournament selection (91 .0%), where each selection step compares a small candidate set and chooses the document with the highest noisy score. Unlike global top-𝐵 selection, this rule favors high-scoring documents while still preserving stochasticity and diversity in the final subset. Gemini-3-Pro-Preview and Opus-4.7 instead prefer stratified quota rules (87 .5% each), partitioning the corpus into cells (by topic, format, or feature-value bins), allocating a quota 𝐵 𝑐 per cell 𝑐 , and selecting within each cell to preserve coverage. Pure thresholding and global top-𝐵 selection are rare across all LLMs, indicating they avoid hard filtering but in favor of rules that preserve diversity. 
+
+7. Related Work 
+
+Pre-training data curation and configuration search. Prior works have developed pipelines for curating high-quality data. Early large-scale corpora such as C4 (Raffel et al., 2020) relied on rule-based cleaning, language identification, etc. More recent open corpora, including Dolma, DataComp-LM, FineWeb, FineWeb-Edu, and ClimbMix, make these design choices more explicit and evaluate how filtering, deduplication, and source composition affect downstream model quality (Diao et al., 2025; Li et al., 2024a; Penedo et al., 2024; Soldaini et al., 2024). These pipelines combine heuristics such as deduplication (Lee et al., 2022; Tirumala et al., 2023), quality filtering (Li et al., 2024a; Penedo et al., 2024), classifier- or model-based filtering (Li et al., 2024a), loss-based data selection (Ankner et al., 2025; Thrush et al., 2025), training data correction (Meng et al., 2025), importance resampling toward a target distribution (Xie et al., 2023b), and domain-mixture optimisation (Diao et al., 2025; Liu et al., 2025; Xie et al., 2023a; Ye et al., 2025). Another line of work studies whether small-scale proxy experiments can predict better data choices at a larger scale (Liu et al., 2025; Magnusson et al., 2025). 
+
+LLM agents for research automation. A growing line of work uses LLM agents to automate machine learning and scientific research. AIDE (Jiang et al., 2025) frames ML engineering as a tree search over executable code, where an LLM proposes, runs, and refines candidate solutions using validation feedback. Related systems automate ML experimentation and data-science workflows (Chan et al., 2025; Guo et al., 2024; Hong et al., 2025; Huang et al., 2024), research ideation (Baek et al., 2025), autonomous ML research workflows (Li et al., 2024b; Schmidgall et al., 2025), and automated scientific discovery or paper generation (Lu et al., 2024; Yamada et al., 2025). Recent work also studies research agents as search policies over candidate ML solutions (Baek et al., 2025). These systems mainly automate model development, experiment design, research ideation, or end-to-end 
+
+> 11 AutoData : Agentic Search for Pre-training Data Selection
+
+research workflows. AutoData applies the same propose–execute–refine paradigm to pre-training data engineering, where each candidate solution is an executable data-selection method. 
+
+8. Conclusion 
+
+We introduce AutoData , an agentic framework for searching pre-training data selection algorithms. This work extends autonomous research from model-side optimisation to data engineering, studying whether LLM agents can discover effective data engineering strategies. Built on an AIDE-style LLM agent, AutoData treats each candidate as an executable selection recipe over document-level features and refines these recipes through proxy training feedback. With a few hundred search steps on a small GPT-2 proxy model, AutoData discovers recipes that outperform human-designed data curation baselines. The discovered recipes further transfer across several model scales and evaluation metrics, suggesting that small-scale proxy search can produce useful data selection strategies for larger pre-training runs. Overall, our results position pre-training data selection as a promising target for auto-research and show that LLM-generated recipes can serve as effective alternatives to human-designed curation pipelines. 
+
+Limitations 
+
+We acknowledge several limitations of this work. First, our experiments are conducted on models from 125M to 1 .3B parameters and use a single base corpus, ClimbMix. Although the discovered recipes transfer across model scales within this setting, their generalization to other corpora, domains, and larger model scales remains an open question. Second, the effectiveness of AutoData depends on the proxy objective used during search. Using CORE and val-bpb as search objectives yields different levels of improvement, highlighting the importance of choosing reliable proxy objectives for agentic data selection. Finally, some of the strongest gains rely on LLM-annotated document features, whose annotation cost is non-trivial. Understanding the cost–quality trade-off across feature sources, and scaling AutoData to richer annotations and larger data pools, are important directions for future work. 
+
+Acknowledgments 
+
+This research was supported by the NVIDIA DGX Cloud Innovation Lab. We also thank the reviewers for their valuable feedback and suggestions. 
+
+References 
+
+Z. Ankner, C. Blakeney, K. Sreenivasan, M. Marion, M. L. Leavitt, and M. Paul. Perplexed by perplexity: Perplexity-based data pruning with small reference models. In The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview.net/forum?id=1GTARJhxtq . 1, 4, 6, 11 J. Baek, S. K. Jauhar, S. Cucerzan, and S. J. Hwang. ResearchAgent: Iterative research idea generation over scientific literature with large language models. In L. Chiruzzo, A. Ritter, and L. Wang, editors, Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 6709–6738, Albuquerque, New Mexico, Apr. 2025. Association for Computational Linguistics. ISBN 979-8-89176-189-6. doi: 10.18653/v1/2025. naacl-long.342. URL https://aclanthology.org/2025.naacl-long.342/ . 11 J. S. Chan, N. Chowdhury, O. Jaffe, J. Aung, D. Sherburn, E. Mays, G. Starace, K. Liu, L. Maksin, T. Patwardhan, A. Madry, and L. Weng. MLE-bench: Evaluating machine learning agents on machine learning engineering. 
+
+> 12 AutoData : Agentic Search for Pre-training Data Selection
+
+In The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview. net/forum?id=6s5uXNWGIh . 11 S. Diao, Y. Yang, Y. Fu, X. Dong, D. Su, M. Kliegl, Z. Chen, P. Belcak, Y. Suhara, H. Yin, M. Patwary, Y. C. Lin, J. Kautz, and P. Molchanov. Climb: Clustering-based iterative data mixture bootstrapping for language model pre-training. In Advances in Neural Information Processing Systems (NeurIPS) , December 2025. 1, 2, 3, 4, 11 S. Guo, C. Deng, Y. Wen, H. Chen, Y. Chang, and J. Wang. DS-agent: Automated data science by empowering large language models with case-based reasoning. In Forty-first International Conference on Machine Learning ,2024. URL https://openreview.net/forum?id=LfJgeBNCFI . 11 S. Hong, Y. Lin, B. Liu, B. Liu, B. Wu, C. Zhang, D. Li, J. Chen, J. Zhang, J. Wang, L. Zhang, L. Zhang, M. Yang, M. Zhuge, T. Guo, T. Zhou, W. Tao, R. Tang, X. Lu, X. Zheng, X. Liang, Y. Fei, Y. Cheng, Y. Ni, Z. Gou, Z. Xu, Y. Luo, and C. Wu. Data interpreter: An LLM agent for data science. In W. Che, J. Nabende, E. Shutova, and M. T. Pilehvar, editors, Findings of the Association for Computational Linguistics: ACL 2025 , pages 19796– 19821, Vienna, Austria, July 2025. Association for Computational Linguistics. ISBN 979-8-89176-256-5. doi: 10.18653/v1/2025.findings-acl.1016. URL https://aclanthology.org/2025.findings-acl.1016/ . 11 Q. Huang, J. Vora, P. Liang, and J. Leskovec. MLAgentbench: Evaluating language agents on machine learning experimentation. In Forty-first International Conference on Machine Learning , 2024. URL https: //openreview.net/forum?id=1Fs1LvjYQW . 11 Z. Jiang, D. Schmidt, D. Srikanth, D. Xu, I. Kaplan, D. Jacenko, and Y. Wu. Aide: Ai-driven exploration in the space of code. 2025. URL https://arxiv.org/abs/2502.13138 . 1, 3, 11 K. Jordan, Y. Jin, V. Boza, J. You, F. Cesista, L. Newhouse, and J. Bernstein. Muon: An optimizer for hidden layers in neural networks. https://kellerjordan.github.io/posts/muon/ , 2024. Blog post, accessed 2026-05-22. 2 A. Karpathy. nanochat: The best chatgpt that $100 can buy. https://github.com/karpathy/nanochat , 2025. GitHub repository. 1, 2 A. Karpathy. autoresearch. https://github.com/karpathy/autoresearch , 2026. GitHub repository. 1 K. Lee, D. Ippolito, A. Nystrom, C. Zhang, D. Eck, C. Callison-Burch, and N. Carlini. Deduplicating training data makes language models better. In S. Muresan, P. Nakov, and A. Villavicencio, editors, Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 8424–8445, Dublin, Ireland, May 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022.acl-long.577. URL https://aclanthology.org/2022.acl-long.577/ . 11 J. Li, A. Fang, G. Smyrnis, M. Ivgi, M. Jordan, S. Gadre, H. Bansal, E. Guha, S. Keh, K. Arora, S. Garg, R. Xin, N. Muennighoff, R. Heckel, J. Mercat, M. Chen, S. Gururangan, M. Wortsman, A. Albalak, Y. Bit-ton, M. Nezhurina, A. Abbas, C.-Y. Hsieh, D. Ghosh, J. Gardner, M. Kilian, H. Zhang, R. Shao, S. Pratt, S. Sanyal, G. Ilharco, G. Daras, K. Marathe, A. Gokaslan, J. Zhang, K. Chandu, T. Nguyen, I. Vasiljevic, S. Kakade, S. Song, S. Sanghavi, F. Faghri, S. Oh, L. Zettlemoyer, K. Lo, A. El-Nouby, H. Pouransari, A. Toshev, S. Wang, D. Groeneveld, L. Soldaini, P. W. Koh, J. Jitsev, T. Kollar, A. G. Dimakis, Y. Carmon, A. Dave, L. Schmidt, and V. Shankar. Datacomp-lm: In search of the next generation of training sets for language models. In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, and C. Zhang, editors, 
+
+Advances in Neural Information Processing Systems , volume 37, pages 14200–14282. Curran Associates, Inc., 2024a. doi: 10.52202/079017-0455. URL https://proceedings.neurips.cc/paper_files/paper/2024/ file/19e4ea30dded58259665db375885e412-Paper-Datasets_and_Benchmarks_Track.pdf . 1, 2, 5, 6, 11 R. Li, T. Patel, Q. Wang, Q. Wang, and X. Du. Mlr-copilot: Autonomous machine learning research based on large language models agents. ArXiv , abs/2408.14033, 2024b. URL https://api.semanticscholar.org/ CorpusID:271957477 . 11 Q. Liu, X. Zheng, N. Muennighoff, G. Zeng, L. Dou, T. Pang, J. Jiang, and M. Lin. Regmix: Data mixture as regression for language model pre-training. In The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview.net/forum?id=5BjQOUXq7i . 2, 6, 11 
+
+> 13 AutoData : Agentic Search for Pre-training Data Selection
+
+I. Loshchilov and F. Hutter. Decoupled weight decay regularization. In International Conference on Learning Representations , 2019. URL https://openreview.net/forum?id=Bkg6RiCqY7 . 3 C. Lu, C. Lu, R. T. Lange, J. N. Foerster, J. Clune, and D. Ha. The ai scientist: Towards fully automated open-ended scientific discovery. ArXiv , abs/2408.06292, 2024. URL https://api.semanticscholar.org/CorpusID: 271854887 . 11 I. Magnusson, N. Tai, B. Bogin, D. Heineman, J. D. Hwang, L. Soldaini, A. Bhagia, J. Liu, D. Groeneveld, O. Tafjord, N. A. Smith, P. W. Koh, and J. Dodge. Datadecide: How to predict best pretraining data with small experiments. In Forty-second International Conference on Machine Learning , 2025. URL https: //openreview.net/forum?id=p9YlQPF8fE . 11 Y. Meng, D. Wu, and C. Monz. How to learn in a noisy world? self-correcting the real-world data noise in machine translation. In L. Chiruzzo, A. Ritter, and L. Wang, editors, Findings of the Association for Computational Linguistics: NAACL 2025 , pages 7466–7482, Albuquerque, New Mexico, Apr. 2025. Association for Computational Linguistics. ISBN 979-8-89176-195-7. doi: 10.18653/v1/2025.findings-naacl.416. URL 
+
+https://aclanthology.org/2025.findings-naacl.416/ . 11 G. Penedo, H. Kydlíček, L. B. allal, A. Lozhkov, M. Mitchell, C. Raffel, L. V. Werra, and T. Wolf. The fineweb datasets: Decanting the web for the finest text data at scale. In The Thirty-eight Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2024. URL https://openreview.net/forum? id=n6SCkn2QaG . 1, 3, 11 C. Raffel, N. Shazeer, A. Roberts, K. Lee, S. Narang, M. Matena, Y. Zhou, W. Li, and P. J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. J. Mach. Learn. Res. , 21(1), Jan. 2020. ISSN 1532-4435. 11 S. Schmidgall, Y. Su, Z. Wang, X. Sun, J. Wu, X. Yu, J. Liu, M. Moor, Z. Liu, and E. Barsoum. Agent laboratory: Using LLM agents as research assistants. In C. Christodoulopoulos, T. Chakraborty, C. Rose, and V. Peng, editors, Findings of the Association for Computational Linguistics: EMNLP 2025 , pages 5977–6043, Suzhou, China, Nov. 2025. Association for Computational Linguistics. ISBN 979-8-89176-335-7. doi: 10.18653/v1/ 2025.findings-emnlp.320. URL https://aclanthology.org/2025.findings-emnlp.320/ . 11 L. Soldaini, R. Kinney, A. Bhagia, D. Schwenk, D. Atkinson, R. Authur, B. Bogin, K. Chandu, J. Dumas, Y. Elazar, V. Hofmann, A. Jha, S. Kumar, L. Lucy, X. Lyu, N. Lambert, I. Magnusson, J. Morrison, N. Muennighoff, A. Naik, C. Nam, M. Peters, A. Ravichander, K. Richardson, Z. Shen, E. Strubell, N. Subramani, O. Tafjord, E. Walsh, L. Zettlemoyer, N. Smith, H. Hajishirzi, I. Beltagy, D. Groeneveld, J. Dodge, and K. Lo. Dolma: an open corpus of three trillion tokens for language model pretraining research. In L.-W. Ku, A. Martins, and V. Srikumar, editors, Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 15725–15788, Bangkok, Thailand, Aug. 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.acl-long.840. URL https://aclanthology.org/2024.acl-long.840/ .11 T. Thrush, C. Potts, and T. Hashimoto. Improving pretraining data using perplexity correlations. In The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview.net/ forum?id=huuKoVQnB0 . 1, 11 K. Tirumala, D. Simig, A. Aghajanyan, and A. S. Morcos. D4: Improving llm pretraining via document de-duplication and diversification. ArXiv , abs/2308.12284, 2023. URL https://api.semanticscholar.org/ CorpusID:261076313 . 11 S. M. Xie, H. Pham, X. Dong, N. Du, H. Liu, Y. Lu, P. Liang, Q. V. Le, T. Ma, and A. W. Yu. Doremi: Optimizing data mixtures speeds up language model pretraining. In Thirty-seventh Conference on Neural Information Processing Systems , 2023a. URL https://openreview.net/forum?id=lXuByUeHhd . 11 S. M. Xie, S. Santurkar, T. Ma, and P. Liang. Data selection for language models via importance resampling. In Advances in Neural Information Processing Systems , 2023b. URL https://openreview.net/forum?id= uPSQv0leAu . 1, 11 
+
+> 14 AutoData : Agentic Search for Pre-training Data Selection
+
+Y. Yamada, R. T. Lange, C. Lu, S. Hu, C. Lu, J. N. Foerster, J. Clune, and D. Ha. The ai scientist-v2: Workshop-level automated scientific discovery via agentic tree search. ArXiv , abs/2504.08066, 2025. URL https: //api.semanticscholar.org/CorpusID:277741107 . 11 J. Ye, P. Liu, T. Sun, J. Zhan, Y. Zhou, and X. Qiu. Data mixing laws: Optimizing data mixtures by predicting language modeling performance. In The Thirteenth International Conference on Learning Representations ,2025. URL https://openreview.net/forum?id=jjCB27TMK3 . 11 
+
+A. Appendix 
+
+A.1. The use of AI Assistant 
+
+We used AI assistants for auxiliary support during the preparation of this paper. Specifically, we used them to improve grammar, clarity, and wording in the manuscript, and to help debug code used in our experiments. All research ideas, experimental designs, analyses, and conclusions were developed and verified by the authors. 
+
+A.2. Training Details 
+
+Table 5 summarizes the model sizes and training budgets used in our cross-scale experiments. 
+
+Depth Total params Scaling params † Ratio 𝑟 Training tokens 
+
+d8 125 .8 M 41 .9 M 10 0.42 B d12 286 .3 M 110 .1 M 10 1.10 B d16 536 .9 M 234 .9 M 10 2.35 B d20 896 .5 M 435 .2 M 10 4.35 B d24 1.38 B 729 .8 M 8 5.84 B  
+
+> Table 5
+
+| Training configurations across the five model scales. †Scaling parameters exclude the in-put embedding parameters. The ratio 𝑟 is nanochat’s –target-param-data-ratio , defined as 𝑟 =
+
+training tokens /scaling params. All models are trained with FP8 on 8 ×H100 with DDP. 
+
+A.3. Annotation of Content Errors. 
+
+Figure 3 and 4 shows the annotation prompts by Gemini-3-flash-preview on factual errors, reasoning steps, and errors. 
+
+> 15
+
+AutoData : Agentic Search for Pre-training Data Selection 
+
+Factual-error annotation prompt 
+
+factual_errors (structured output) Identify CLEARLY WRONG verifiable factual claims in the document. A "factual error" means a verifiable statement (date, number, named entity, event, attribution) that you are confident is incorrect based on general knowledge. STRICT RULES: 1. Only list errors you are CONFIDENT are wrong. When uncertain, do not list. False positives are worse than false negatives. 2. Only verifiable factual claims count: - dates, years, numbers, measurements - named entities (people, places, organizations) - historical or scientific events - attributions (who said/wrote/invented X) 3. Do NOT list: - opinions, values, aesthetic judgments - grammatical or stylistic mistakes - outdated-but-once-true statements, unless clearly wrong today - vague generalizations without specific claims - invalid reasoning from correct facts; that is reasoning_errors 4. For each error, QUOTE the exact text from the document (max ~30 words per quote), and briefly explain why it is wrong. 5. If there are no clear errors, return an empty list. OUTPUT (JSON field): "factual_errors": [ {"quote": "<exact text from the document, <=30 words>", "why_wrong": "<one-sentence reason, what the correct fact is>" }, ... ]If the document has no clear errors, return: "factual_errors": [] 
+
+Figure 3 | Prompt for factual errors annotation. 
+
+16 AutoData : Agentic Search for Pre-training Data Selection 
+
+Reasoning steps 
+
+For each document CHUNK, identify reasoning_steps: each place where the chunk makes a logical inference (not just states a fact). A "reasoning step" is an inference: a move from premises to a conclusion, a derivation, a calculation, a causal attribution, an analogy used as argument, or any other logical bridging. Mere description, narration, or recall of facts is NOT a reasoning step. Examples of reasoning steps: - "Because the temperature is above 100C, the water will boil." (premise -> conclusion) - "If all primes > 2 are odd, then 97 is odd because 97 is prime." (modus ponens on a known property) .... NOT reasoning steps: - Pure description: "The Eiffel Tower is 330 m tall ." - Narrative sequence: "She walked to the store and bought bread." - Quotations that merely restate a source. STRICT RULES: 1. Count at the granularity of inference moves: one premise -> conclusion pair = one step. A chained argument with two deductions counts as two steps. 2. Quote the exact text that performs the inference (<=30 words). 3. In ‘explanation‘, state what is being inferred in ONE sentence. 4. If the chunk contains NO reasoning, return an empty list. 
+
+Reasoning errors 
+
+For each document CHUNK, identify reasoning_errors: each place where the reasoning is clearly INVALID. A "reasoning error" is an invalid logical step. Types that count: - non sequitur (conclusion does not follow) - affirming the consequent - denying the antecedent - hasty generalisation .... STRICT RULES: 1. Only list errors you are CONFIDENT are invalid. When uncertain, do not list. False positives are worse than false negatives. 2. A factual error used as a premise counts as a factual error, NOT a reasoning error, unless the logical step is also invalid. 3. Quote the exact invalid step (<=30 words) and explain in ONE sentence why it is wrong. 4. If the chunk contains NO invalid reasoning, return an empty list. OUTPUT (JSON only): {"reasoning_steps": [ {"quote": "<<=30 words>", "explanation": "<one sentence>"}, ... ], "reasoning_errors": [ {"quote": "<<=30 words>", "why_wrong": "<one sentence>"}, ... ]}No preamble, no explanation outside the JSON, no markdown. 
+
+Figure 4 | Prompt for reasoning steps and reasoning errors annotation. 
+
+17 AutoData : Agentic Search for Pre-training Data Selection 0.0 0.2 0.4 0.6 0.8 1.0 1.2 count 1e8 
+
+Science & Tech. Health Home & Hobbies Education & Jobs Transportation Food & Dining Industrial Sports & Fitness Hardware Art & Design Software Dev. Software History Fashion & Beauty Finance & Business Games Entertainment Politics Social Life Religion Literature Travel Crime & Law Adult 
+
+(a) Topic 
+
+0.0 0.2 0.4 0.6 0.8 1.0 count 1e8 
+
+Knowledge Article Tutorial Product Page Q&A Forum News Article Personal Blog Comment Section Academic Writing FAQ Nonfiction Writing Content Listing Listicle News (Org.) Truncated Customer Support Structured Data Audio Transcript About (Org.) Documentation Spam / Ads User Review Creative Writing About (Pers.) Legal Notices 
+
+(b) Format 
+
+0 500 1000 1500 2000 doc_tokens (nanochat BPE) 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5 count 1e7 (c) Document Length 
+
+median = 527.00 mean = 635.80 
+
+0 2 4 6 8 10 12 n_rsteps 10 2
+
+10 3
+
+10 4
+
+10 5
+
+10 6
+
+> count (log)
+
+(d) Reasoning Steps mu=1.81, zero=4% 
+
+0 2 4 6 8 10 12 n_rerrors 10 0
+
+10 1
+
+10 2
+
+10 3
+
+10 4
+
+10 5
+
+10 6
+
+> count (log)
+
+(e) Reasoning Errors mu=0.27, zero=76% 
+
+0 2 4 6 8 10 12 n_factual 10 1
+
+10 2
+
+10 3
+
+10 4
+
+10 5
+
+10 6
+
+> count (log)
+
+(f) Factual Errors mu=0.35, zero=72% 
+
+1 2 3 4 5logppl_qwen 0.0 0.5 1.0 1.5 2.0 2.5 3.0 count 1e7 (g) Qwen PPL 
+
+median = 2.70 mean = 2.73 
+
+1 2 3 4 5 6 7 8logppl_d8_ref 050000 100000 150000 200000 250000 count 
+
+(h) d8 Reference PPL (53-shard) 
+
+median = 3.52 mean = 3.67 
+
+2.5 3.0 3.5 4.0 4.5 5.0 avg_distinct_ngram_bpe 0.0 0.5 1.0 1.5 2.0 2.5 3.0 count 1e7 (i) N-gram Distinctness 
+
+median = 4.28 mean = 4.26 
+
+Feature Distributions — Full ClimbMix (cheap features, N=553.2M); 53-shard subset for LLM annotations (N=4.48M) 
+
+Figure 5 | Full ClimbMix data distribution with multiple features. 
+
+18 AutoData : Agentic Search for Pre-training Data Selection Reasoning Steps Reasoning Errors Factual Errors 
+
+Science & Tech. (n=1,075,779) Health (n=666,065) Home & Hobbies (n=514,834) Education & Jobs (n=286,122) Transportation (n=207,372) Food & Dining (n=203,455) Industrial (n=183,568) Sports & Fitness (n=164,547) Hardware (n=140,688) Art & Design (n=138,648) Software Dev. (n=124,115) Software (n=95,474) History (n=90,286) Fashion & Beauty (n=88,630) Finance & Business (n=87,843) Games (n=70,625) Entertainment (n=59,358) Politics (n=59,231) Religion (n=53,435) Social Life (n=51,754) Literature (n=42,184) Travel (n=38,174) Crime & Law (n=37,404) Adult (n=4,068) 
+
+-0.02 -0.05 +0.11 +0.15 +0.04 -0.01 +0.17 -0.04 -0.04 -0.22 -0.10 -0.23 +0.04 +0.07 -0.00 -0.11 -0.00 +0.03 +0.04 -0.16 -0.06 +0.04 +0.06 -0.01 -0.01 +0.03 +0.01 -0.14 -0.11 -0.14 -0.12 -0.12 -0.15 -0.16 -0.04 -0.12 -0.30 +0.01 +0.57 -0.24 +0.01 -0.15 +0.21 +0.07 -0.13 -0.00 +0.19 -0.00 -0.27 +0.20 +0.01 +0.10 +0.50 +0.03 +0.17 +0.52 +0.05 +0.07 +0.25 -0.26 -0.19 +0.12 +0.08 -0.28 -0.06 +0.21 -0.05 +0.13 -0.07 -0.21 +0.32 -0.19 
+
+Topic x LLM Annotation Features (53 Shards) 
+
+−1.00 −0.75 −0.50 −0.25 0.00 0.25 0.50 0.75 1.00 group-mean z-score 
+
+(a) Topic distribution by LLM annotation features. Qwen PPL d8 Ref PPL Distinctness Length 
+
+Science & Tech. (n=1,075,779) Health (n=666,065) Home & Hobbies (n=514,834) Education & Jobs (n=286,122) Transportation (n=207,372) Food & Dining (n=203,455) Industrial (n=183,568) Sports & Fitness (n=164,547) Hardware (n=140,688) Art & Design (n=138,648) Software Dev. (n=124,115) Software (n=95,474) History (n=90,286) Fashion & Beauty (n=88,630) Finance & Business (n=87,843) Games (n=70,625) Entertainment (n=59,358) Politics (n=59,231) Religion (n=53,435) Social Life (n=51,754) Literature (n=42,184) Travel (n=38,174) Crime & Law (n=37,404) Adult (n=4,068) 
+
+-0.13 -0.04 -0.09 +0.07 -0.39 -0.35 -0.05 +0.12 -0.08 -0.19 +0.01 +0.04 +0.08 +0.05 +0.06 -0.05 +0.27 +0.16 +0.10 -0.14 -0.07 -0.02 +0.16 -0.12 +0.06 +0.02 -0.08 -0.03 +0.34 +0.25 +0.13 -0.09 +0.24 +0.19 -0.08 -0.16 +0.31 +0.22 +0.23 -0.14 +0.10 +0.23 -0.31 -0.05 +0.13 +0.13 -0.06 -0.15 +0.03 +0.12 -0.06 +0.18 +0.47 +0.56 +0.30 -0.38 -0.09 -0.04 -0.04 +0.03 +0.73 +0.47 +0.12 -0.10 +0.78 +0.74 +0.35 -0.29 +0.36 +0.26 +0.18 +0.09 +0.11 +0.04 -0.13 +0.20 +0.36 +0.21 +0.25 -0.07 +0.45 +0.39 +0.08 +0.02 +0.02 +0.03 +0.08 +0.02 +0.00 +0.04 -0.04 +0.03 
+
++1.20 +0.89 +0.43 -0.36 
+
+Topic x Surface Features (53 Shards) 
+
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.5 group-mean z-score (b) Topic distribution by surface features. 
+
+Figure 6 | Feature correlation in the 53-shard ClimbMix pool. 
+
+19 AutoData : Agentic Search for Pre-training Data Selection 
+
+Recipe #1 (AutoData (val-bpb); GPT-5.5 Step 93, +5.6𝜎 on val-bpb) 
+
+[Code] 
+
+def select_docs(budget=BUDGET, seed=42): rng = np.random.default_rng(seed) n_backbone = budget // 3 n_fill = budget - n_backbone arm = min(3, (N - n_backbone) // n_fill) draw = rng.choice(N, size=n_backbone + n_fill * arm, replace=False) backbone, cand = draw[:n_backbone], draw[n_backbone:] # --- Per-candidate quality score ---------------------------------div = (_tanh(div_avg[cand]) + _tanh(div5[cand])) * 0.5 ppl = _tanh(logppl[cand], prefer_low=True) lenS = _central_tanh(np.log1p(doc_tokens[cand])) ratS = _central_tanh(doc_chars[cand] / np.maximum(doc_tokens[cand], 1)) score = div + ppl * (div + 1.0) * 0.5 + lenS + ratS # --- Shrinkage centering on (topic, format) cells ---------------inv = _category_inverse(topic_id[cand], format_id[cand]) counts = np.bincount(inv) means = np.bincount(inv, weights=score) / np.maximum(counts, 1) shrink = counts / (counts + max(np.median(counts), 1.0)) # --- Gumbel slate-argmax tournament -----------------------------score += rng.gumbel(size=score.shape) slate = score.reshape(n_fill, arm) winners = cand[np.arange(n_fill) * arm + np.argmax(slate, axis=1)] return np.sort(np.concatenate([backbone, winners])) 
+
+Figure 7 | Recipe #1 — AutoData (val-bpb) best step 
+
+> 20 AutoData : Agentic Search for Pre-training Data Selection
+
+Recipe #2 (AutoData (CORE); GPT-5.5, step 105, +7.3𝜎 on Core) 
+
+[Code] 
+
+def select_docs(budget=BUDGET, seed=42): rng = np.random.default_rng(seed) n_backbone = budget // 2 n_repair = budget - n_backbone n_cand = min(N - n_backbone, n_repair * 2) draw = rng.choice(N, size=n_backbone + n_cand, replace=False) backbone, cand = draw[:n_backbone], draw[n_backbone:] # --- Goldilocks tri-anchor scores: -|x - anchor| / (hi - lo) ----log_len = np.log1p(doc_tokens[cand]) ratio = np.log((doc_chars[cand] + 1) / (doc_tokens[cand] + 1)) div = avg_distinct_ngram_bpe[cand] ppl = logppl_qwen[cand] lq = _safe_quantiles(log_len, [1/3, 2/3]) # length tertiles dq = _safe_quantiles(div, [1/3, 2/3]) # diversity tertiles pq = _safe_quantiles(ppl, [1/3, 2/3]) # PPL tertiles rq = _safe_quantiles(ratio, [1/3, 1/2, 2/3]) # char/tok with median anchor s_len = _tri(log_len, anchor=lq[1], lo=lq[0], hi=lq[1]) s_div = _tri(div, anchor=dq[1], lo=dq[0], hi=dq[1]) s_ppl = _tri(ppl, anchor=pq[0], lo=pq[0], hi=pq[1]) # prefer low-PPL s_rat = _tri(ratio, anchor=rq[1], lo=rq[0], hi=rq[2]) indiv = _zscore((s_len + s_div + s_ppl + s_rat) / 4.0) # --- Source-order neighborhood prior ----------------------------n_blocks = max(1, int(np.sqrt(cand.size))) block = np.minimum((cand * n_blocks) // N, n_blocks - 1) counts = np.bincount(block, minlength=n_blocks) sums = np.bincount(block, weights=indiv, minlength=n_blocks) block_mean = sums / np.maximum(counts, 1) block_prior = _zscore(block_mean)[block] # rewards consistently clean source ranges # --- Gumbel-perturbed top-n selection ---------------------------total = indiv + block_prior + rng.gumbel(size=cand.size) repair = cand[np.argpartition(total, -n_repair)[-n_repair:]] return np.sort(np.concatenate([backbone, repair])) 
+
+Figure 8 | Recipe #2 — AutoData (CORE) best step 
+
+> 21 AutoData : Agentic Search for Pre-training Data Selection
+
+Recipe #3 (AutoData (val-bpb), Claude-Opus-4.7, step 93, +4.8𝜎 on val-bpb) 
+
+[Code] 
+
+def select_docs(budget=BUDGET, seed=42): rng = np.random.default_rng(seed) logppl = np.asarray(logppl_qwen).copy() logppl[~np.isfinite(logppl)] = float(np.nanmedian(logppl)) # --- Spam-corner + very-short soft penalty masks ----------------spam_mask = (distinct_5gram_bpe <= np.quantile(distinct_5gram_bpe, 0.10)) \ & (logppl <= np.quantile(logppl, 0.10)) short_mask = doc_tokens <= np.quantile(doc_tokens, 0.05) # --- (topic, format, length-bin) joint cell key, 4 length bins --n_bins = 4 edges = np.quantile(doc_tokens, np.linspace(0,1,n_bins+1)[1:-1]) len_bin = np.searchsorted(edges, doc_tokens, side="right") cell = (topic_id * (format_id.max()+1) + format_id) * n_bins + len_bin # --- Gumbel keys with penalties ---------------------------------keys = rng.gumbel(size=N) - 1.5 * spam_mask - 0.5 * short_mask # --- Proportional per-cell quota (largest-remainder) -----------order = np.argsort(cell, kind="stable") uniq_cells, starts, counts = np.unique(cell[order], return_index=True, return_counts=True) raw = counts * (budget / N) quota = np.floor(raw).astype(np.int64) extra = budget - quota.sum() if extra > 0: # distribute leftover via largest-remainder rem_top = np.argpartition(-(raw - quota), extra-1)[:extra] quota[rem_top] += 1 quota = np.minimum(quota, counts) # never overshoot a cell # --- Within each cell, take top-q docs by penalised key ---------out = np.empty(quota.sum(), dtype=np.int64); w = 0 for s, c, q in zip(starts, counts, quota): if q <= 0: continue local = (np.arange(c) if q >= c else np.argpartition(-keys[order[s:s+c]], q-1)[:q]) out[w:w+q] = order[s + local]; w += q return np.sort(np.unique(out)) 
+
+Figure 9 | Recipe #3 — AutoData (val-bpb) Opus-4.7 best step 
+
+> 22 AutoData : Agentic Search for Pre-training Data Selection
+
+Recipe #4 (AutoData (val-bpb); Gemini-3-Pro-Preview, step 112, +4.6𝜎 on val-bpb) 
+
+[Code] 
+
+def select_docs(budget=BUDGET, seed=42): rng = np.random.default_rng(seed) # --- 85% robust uniform backbone --------------------------------n_backbone = int(budget * 0.85) n_repair = budget - n_backbone backbone = rng.choice(N, size=n_backbone, replace=False) pool = np.setdiff1d(np.arange(N), backbone, assume_unique=False) # --- 4x candidate oversample for the 15% quality repair ---------cand = np.sort(rng.choice(pool, size=min(n_repair*4, pool.size), replace=False)) # --- 10 global length deciles via random subsample ---------------sub = rng.choice(N, size=1_000_000, replace=False) len_bins = np.quantile(doc_tokens[sub], np.linspace(0,1,11)) len_bins[0], len_bins[-1] = -1, np.inf cand_bin = np.clip(np.digitize(doc_tokens[cand], len_bins) - 1, 0, 9) # --- Per-bin Spearman-Mahalanobis distance to ideal percentile --target = np.array([1/3, 0.85, 0.85, 0.50]) # PPL, AvgDiv, 5gDiv, Char/Tok repair = [] for b in range(10): m = cand_bin == b b_idx = cand[m] q = min(int(np.ceil(n_repair * m.sum() / cand.size)), b_idx.size) if q == 0: continue feats = np.column_stack([ np.where(np.isnan(logppl_qwen[b_idx]), np.inf, logppl_qwen[b_idx]), np.where(np.isnan(avg_distinct_ngram_bpe[b_idx]), -np.inf, avg_distinct_ngram_bpe[ b_idx]), np.where(np.isnan(distinct_5gram_bpe[b_idx]), -np.inf, distinct_5gram_bpe[b_idx]), doc_chars[b_idx] / np.maximum(doc_tokens[b_idx], 1), ]) # Map each feature to in-bin uniform percentiles U = np.argsort(np.argsort(feats, axis=0), axis=0) / max(len(b_idx)-1, 1) # Spearman-Mahalanobis distance to ideal target invC = np.linalg.pinv(np.cov(U, rowvar=False)) delta = U - target dist = np.einsum("ij,jk,ik->i", delta, invC, delta) # Reject malformed (NaN/inf-flagged) docs dist[np.isinf(feats[:,:3]).any(axis=1)] = np.inf repair.append(b_idx[np.argsort(dist)[:q]]) repair = np.concatenate(repair) if repair else np.empty(0, dtype=np.int64) out = np.concatenate([backbone[: budget - repair.size], repair]) return np.sort(out.astype(np.int64)) 
+
+Figure 10 | Recipe #4 — AutoData (val-bpb) Gemini-3-Pro-Preview best step
