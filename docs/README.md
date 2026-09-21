@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-20</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-21</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 4 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 6 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>2</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>1</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-20 21:53:04 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-21 22:18:55 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,10 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共生成 4 篇推荐（精读 2 篇，速读 2 篇）</p>
-<p>精读：《STRETCH the Boundaries: A Unified Self-Taught Framework for Progressive LLM Evolution》（9.0/10）, 《Self-Evolving Search Index》（8.0/10）</p>
-<p>速读：《Bad Genius: Counterfactual-Guided Harness Evolution Beyond Task-Specific Shortcuts》（6.0/10）, 《AutoData: Agentic Search for Pre-training Data Selection》（6.0/10）</p>
-<p>这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。</p>
+<p>今日精读1篇、速读5篇，重点落在图结构智能体技能的进化优化与多智能体记忆协同。最值得看的是《GraphSkillEvo》用进化方法优化图结构技能（8.0分），以及《MACE》让记忆与智能体在多智能体系统中共同演化（7.0分）。普通读者可先读这两篇，理解智能体如何靠结构化技能和记忆越用越强。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">2 篇</strong>
+    <strong class="dpr-home-dashboard-count">1 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="STRETCH the Boundaries: A Unified Self-Taught Framework for Progressive LLM Evolution">STRETCH the Boundaries: A Unified Self-Taught Framework for Progressive LLM Evolution</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Search Index">Self-Evolving Search Index</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="GraphSkillEvo: Evolutionary Optimization of Graph-Structured Agent Skills">GraphSkillEvo: Evolutionary Optimization of Graph-Structured Agent Skills</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">2 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Bad Genius: Counterfactual-Guided Harness Evolution Beyond Task-Specific Shortcuts">Bad Genius: Counterfactual-Guided Harness Evolution Beyond Task-Specific Shortcuts</span></li><li><span class="dpr-home-dashboard-paper-title" title="AutoData: Agentic Search for Pre-training Data Selection">AutoData: Agentic Search for Pre-training Data Selection</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MACE: Memory-Agent Co-Evolution with Adaptive Memory Graphs for Multi-Agent Systems">MACE: Memory-Agent Co-Evolution with Adaptive Memory Graphs for Multi-Agent Systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="Cognitive Extensions for Dual-Process Language Agents: Memory and Self-Reflection in Interactive Environments">Cognitive Extensions for Dual-Process Language Agents: Memory and Self-Reflection in Interactive Environments</span></li><li><span class="dpr-home-dashboard-paper-title" title="In-Context Robot Learning with VLM Agents">In-Context Robot Learning with VLM Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>5</strong></span></div>
 </section>
 </div>
 

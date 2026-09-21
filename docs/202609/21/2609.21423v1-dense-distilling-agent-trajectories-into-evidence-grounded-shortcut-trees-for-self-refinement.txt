@@ -1,0 +1,1242 @@
+Title: DENSE: Distilling Agent Trajectories into Evidence-Grounded Shortcut Trees for Self-Refinement
+
+URL Source: https://arxiv.org/pdf/2609.21423v1
+
+Published Time: Mon, 21 Sep 2026 00:37:10 GMT
+
+Number of Pages: 42
+
+Markdown Content:
+# DENSE: D ISTILLING AGENT TRAJECTORIES INTO 
+
+# EVIDENCE -G ROUNDED SHORTCUT TREES FOR SELF -R EFINEMENT 
+
+Siyuan Liu 1,2 , Fan Yu 1,2 , Dongyu Ru 2, Yizhu Liu 2
+
+Yifan Yang 2, Xuezhi Cao 2, Xunliang Cai 2, Yixin Cao 1 
+
+> 1
+
+Fudan University 2 Meituan Longcat Team 
+
+ABSTRACT 
+
+Online agent deployments produce abundant execution traces, while task-specific verification and expert annotation are costly to scale. We study how to distill these traces into reusable feedback with-out post-hoc outcome labels, drawing on their evidence of local progress, recovery, and unfinished requirements. We introduce DENSE (Distilling Evidence from Nested Subtask Executions), which organizes this evidence into evidence-grounded nested shortcut trees . DENSE compresses redun-dant attempts, reconciles issues across levels using recovery evidence, and summarizes completed branches while expanding unresolved ones, linking reusable progress to remaining obligations. We introduce REFIT , a source-paired protocol comparing feedback from shared initial trajectories un-der post-hoc outcome blindness, with environments and model contexts reset for fresh attempts at the same tasks. On Terminal-Bench 2.1, DENSE achieves the highest strict pass rate among tested non-privileged feedback methods across four recipient models. Relative to initial executions, strict pass rate improves by 7.12–15.64 pp , with 19.0–43.6% fewer observed recipient tokens in reruns. GPT-5.5 ablations support combining nested subtask analysis with shortcut construction and issue reconciliation. These findings point toward agent self-refinement through evidence-grounded trajec-tory reuse with less reliance on external supervision. 
+
+1 INTRODUCTION Online trajectories scale; supervision does not        
+
+> OFFLINE SUPERVISION slow · costly · bounded Sandbox Verifier Expert judgment
+> Reward signals
+> 0.77 1.0 0.0
+> ONLINE PRODUCTION continuous · abundant · diverse Software Browser Terminal Research Desktop Data
+> Trajectories
+> Useful
+> feedback?
+
+Figure 1: Execution traces accumulate, while external supervision is costly and bounded. Can their evidence support reuse without post-hoc outcome labels? Large language model agents increasingly operate in soft-ware engineering (Yang et al., 2024), web interaction (Zhou et al., 2023), deep research (Tongyi DeepResearch Team et al., 2025), and desktop automation (Xie et al., 2024). In offline evaluation, curated tasks can be assessed using task-specific verifiers or human expert annotations. Online deployment continuously generates long traces of actions, observations, failed attempts, and recovery across diverse tasks; providing comparable supervision for these traces is costly and difficult to scale (Figure 1). This gap raises a question: without post-hoc outcome signals, what value can we extract from the trajectories them-selves? 
+
+Our central insight is that missing outcome labels do not imply missing reusable evidence . An execution can re-veal locally effective paths, repaired errors, and unfinished requirements without establishing overall success. We study trajectory distillation under post-hoc outcome blind-ness : using only a task and its completed execution trace to construct feedback for a fresh attempt at the same task. Post-hoc rewards, hidden verifier outputs, reference answers, and human correctness labels are excluded; observations, including public test results seen during execution, remain available. Prior work explores reflection (Shinn et al., 2023), experience memory (Fang et al., 2026), and hierarchical diagnosis (Zhai et al., 2026). However, how to distill outcome-unlabeled trajectories into feedback that binds reusable progress to remaining obligations, and evaluate its utility under fully reset conditions, remains underexplored. Our goal is to develop both a representation for this evidence and a controlled protocol for testing its downstream value. This requires distinguishing local recovery from parent-task completion and historical success from current state: successful 1arXiv:2609.21423v1 [cs.AI] 18 Sep 2026 compilation does not establish correct inference, and a previously written file does not exist after an environment reset. Feedback must retain the evidence and completion scopes needed to reuse effective procedures while identifying what remains to be done. To evaluate this setting, we introduce REFIT , a protocol for comparing the downstream utility of trajectory feedback. Methods share an initial trajectory (run0) and construct feedback without post-hoc outcome information. The same recipient then performs separate run1 executions with both environment state and model context reset, making feed-back the only transfer channel. We compare strict pass rates and changes from run0 under matched task, tool, and execution-budget conditions. Following effectiveness-based critique evaluation (Tang et al., 2025), REFIT measures utility through subsequent performance, with post-hoc verification reserved for evaluation of these restricted feedback conditions. Within this setting, we propose DENSE (Distilling Evidence from Nested Subtask Executions), which constructs 
+
+evidence-grounded nested shortcut trees . Each shortcut connects historical attempts and reusable paths to supporting observations and outstanding requirements within a subtask. DENSE builds nested subtask boundaries, compresses redundant attempts, and reconciles inherited issues using recovery evidence across levels. It then summarizes com-pleted branches and expands unresolved ones, preserving critical actions needed to recreate progress. The resulting feedback explicitly links what the trajectory supports to what the next execution still needs to do. Our contributions are: 1. The REFIT framework. We formulate trajectory distillation under post-hoc outcome blindness and in-troduce a source-paired evaluation protocol. Shared initial trajectories, reset environments and contexts, and separate post-hoc verification enable controlled comparisons of feedback utility for fresh attempts at the same task. 2. The DENSE method. We introduce evidence-grounded nested shortcut trees that link reusable progress to recovery evidence and remaining requirements through subtask modeling, shortcut compression, cross-level issue reconciliation, and selective rendering. 3. Systematic evaluation and mechanism analysis. Using REFIT, we compare DENSE with alternative feed-back methods on Terminal-Bench 2.1 (Merrill et al., 2026). DENSE achieves the highest strict pass rate among the tested non-privileged methods 1 across four recipients, improving over run0 by 7.12–15.64 pp 
+
+and reducing observed run1 recipient tokens by 19.0–43.6% . GPT-5.5 ablations support combining nested subtask analysis with shortcut construction and issue reconciliation (Section 4.4); behavioral analyses further examine failure modes and underlying error mechanisms (Section 5). 
+
+2 DENSE: E VIDENCE -G ROUNDED SHORTCUT TREES 
+
+DENSE organizes scattered actions and observations into reusable task experience in two stages. It first identifies semantic boundaries in ordered queues to build a nested subtask tree. It then compresses attempts into shortcuts, reconciles issues across levels, and expands feedback according to issue state. The following sections explain these steps through one CSV report example. 2.1 PROBLEM SETTING AND OVERVIEW 
+
+Given task x and a finished attempt’s trajectory τ = ( a1, o 1, . . . , a T , o T ), DENSE produces bounded feedback dis-tinguishing useful progress, recovered local errors, and unfinished requirements (Figure 2). It reads only the task and visible trajectory; Section 3 defines the information boundary and reset conditions. 2.2 BUILDING NESTED SUBTASKS 
+
+Local outcomes must be interpreted within their goals. DENSE pairs actions and observations as leaves ℓi = ( ai, o i)
+
+in a temporally ordered queue Qk. The analysis model identifies a prefix G = ( u1, . . . , u b) serving one objective, expanding its visible range when evidence is insufficient. After selecting boundary b, it groups these nodes under parent v, diagnoses their actions, summarizes the subtask, and places v in Qk+1 . Repetition builds the root hierarchy. Each level preserves temporal order and source coverage, allowing local outcomes to be reinterpreted within higher-level goals. In Figure 2, the task is to read sales.csv and produce a total in summary.json and a bar chart in chart.png .After encountering missing pandas and an incorrect delimiter, the JSON branch uses the standard library to write the 
+
+> 1By privileged feedback, we mean exposing to the model post-hoc reward information and verifier outputs that are otherwise hidden during execution.
+
+2DENSE: Distilling Evidence from Nested Subtask Executions via Shortcut Trees 
+
+1 BUILD: Bottom-up nested hierarchy  
+
+> Root-ready level?
+> NO YES
+> level drained
+
+�
+
+… 
+
+> Final nested hierarchy
+> under root task
+
+�
+
+Higher-level queue ��+1 
+
+[� 1] [� 2] [� 3] … [�] 
+
+Drain level: summaries ready  
+
+> enqueue
+
+�
+
+> Advance to
+
+��+1    
+
+> the next level
+> context: task �+ subtree leaves: ℓ�=(� �,� �)
+
+�1 �2 �3 �4
+
+Diagnose actions Summarize at parent �
+
+�
+
+�1 �2 �3 �4 
+
+> dequeue
+
+� 
+
+> Contiguous prefix
+
+�=(� 1,…,� �) Boundary � 
+
+> feed next view
+
+�1 �2 �3 �4 �5 �6 �7 …   
+
+> Current-level
+> queue ��
+> insufficient view →extend view
+
+BUILD HIERARCHY 
+
+2 RECONCILE & RENDER: Shortcut Trees 
+
+RECONCILE & RENDER EVIDENCE 
+
+A. Same-level Shortcut Cleaner    
+
+> Illustrative task: sales.csv (A=10, B=20) →summary.json + chart.png
+> BEFORE TREE AFTER TREE
+
+�write · summary.json 
+
+ℓ1
+
+> read CSV
+
+ℓ2
+
+> no pandas
+
+ℓ3
+
+> bad delim.
+
+ℓ4 
+
+> JSON=30
+> preserve failed attempts, then recovery
+
+�write 
+
+ℓ1
+
+> read CSV
+
+�rec   
+
+> source: ℓ2–ℓ4
+> preserve succeeded
+
+�rec · succeeded     
+
+> dead end: no pandas; bad delimiter
+> working path: csv + json; total=30
+> outcome: succeeded; evidence: �4
+
+�plot · chart.png 
+
+ℓ6
+
+> A=10, B=20
+
+ℓ7
+
+> matplotlib
+
+ℓ8
+
+> plotly
+
+ℓ9 
+
+> gnuplot
+> data ready all three tools unavailable
+
+�plot 
+
+ℓ6
+
+> data ready
+
+�open   
+
+> source: ℓ7–ℓ9
+> preserve failed / open
+
+�open · failed     
+
+> dead end: plotting tools absent
+> open issue: chart.png missing
+> outcome: failed; evidence: �7–�9
+
+B. Hierarchical Issue Reconciliation JSON summary subtask 
+
+풯  � · incomplete   
+
+> open: �rec
+> �rec [�0]
+> summary.json missing
+
+�rec 
+
+> summary.json created
+
+�4  
+
+> read-back total=30
+> early child issue later recovery observed check
+> Reconcile
+
+풯�⋆ · complete 
+
+σ�: JSON total=30 verified     
+
+> ℐ�=∅ ; resolved: �rec
+> recovery: �rec ↦ [� rec ,� 4]
+> �rec · resolved
+> summary.json was missing
+
+�rec 
+
+> summary.json created
+
+�4
+
+> read-back total=30
+> Resolve inherited issues only with cited recovery evidence
+
+C. Issue-Gated Rerun Feedback Fresh run: recreate both outputs � · incomplete 
+
+� · complete   
+
+> summary.json verified: total=30
+> resolved: �rec
+> key action �4: write + read back JSON
+
+�plot · incomplete 
+
+�open · failed   
+
+> open �open : chart.png missing �9: chart.png absent
+
+Figure 2: DENSE has two stages. Stage 1 identifies a semantic boundary for a consecutive prefix of queue Qk,diagnoses its actions, summarizes a parent node, and places it in Qk+1 to build the hierarchy. Stage 2 has three steps: A compresses sibling attempts into shortcuts retaining failed attempts, working paths, and evidence; B reconciles inherited issues using later recovery evidence; C summarizes completed branches and expands unfinished requirements with their evidence. The constructed CSV report example has a completed JSON summary and an unfinished PNG chart. summary and read back a total of 30. The plotting branch tries three unavailable tools and produces no PNG. Separate subtasks represent both the completed summary and the unfinished chart. 2.3 COMPRESSING ATTEMPTS WITH THEIR EVIDENCE 
+
+DENSE processes the tree bottom-up, fusing consecutive attempts under one parent into a shortcut. Each shortcut retains failed approaches, a compact working path supported by observations, the final local outcome, and source references. Unresolved shortcuts retain unmet requirements and relevant observations. Fusion never crosses parent boundaries or reorders sources. In the CSV example, the JSON shortcut compresses the missing-pandas , incorrect-delimiter, and successful-write attempts. It records the first two as failed approaches and retains the working csv /json path with the observation confirming a total of 30. The plotting shortcut instead records the three unavailable tools and the missing chart.png .The same structure thus supplies historically supported paths and experience that helps the next attempt avoid repeating unproductive exploration. 2.4 RECONCILING ISSUES THROUGH RECOVERY EVIDENCE 
+
+An early issue may be repaired by actions in a later subtask, so a parent must revisit issues inherited from its children. For each compressed subtree, the analysis model produces a final-state summary and any unresolved or fatal issues. The parent combines child summaries, issues, and recovery evidence: 
+
+(T ⋆v , σ v , Iv ) = Reconcile 
+
+ eTv , {(σu, Iu)}u∈child( v)
+
+
+
+. (1) Here eTv is the compressed local subtree, σv its state summary, Iv the remaining issues, and T ⋆v the reconciled subtree passed upward. Closing an inherited issue requires concrete recovery evidence . In the CSV example, early inspection reports a miss-ing summary.json ; a later subtask writes and reads it back. The JSON parent closes that issue, while the root retains the unfinished chart.png requirement. Recovery, subtask completion, and overall completion are judged at 31 SHARED RUN 0 
+
+2 EXTRACT FEEDBACK 3 MATCHED RUN 1     
+
+> Task �Recipient �
+> Initial execution
+> TRACE �0
+> RUN 0 OUTPUT
+> Trajectory
+
+�0  
+
+> Post-hoc signals
+> reward, …
+> Identical (�, � 0)to every method
+> Method 1
+> �1(�, � 0)
+
+�1   
+
+> Recipient �+�1
+
++ �1 
+
+> Fresh env + context detour avoided
+
+�1(� 1) signals 
+
+> Method 2
+> �2(�, � 0)
+
+�2   
+
+> Recipient �+�2
+
++ �2 
+
+> Fresh env + context detour persists
+
+�1(� 2) signals 
+
+> Method 3
+> �3(�, � 0)
+
+�3   
+
+> Recipient �+�3
+
++ �3 
+
+> Fresh env + context new dead end
+
+�1(� 3) signals 
+
+> POST-HOC EVALUATION
+> Each method vs. the same Run 0
+> Shared baseline
+
+�0
+
+> Initial failures and successes
+> Strict pass rate
+
+�0
+
+�1
+
+�2
+
+�3
+
+> One common reference
+> Paired change
+
+Δ�(�) = �(�) − � 0
+
+�1
+
+�2
+
+�3     
+
+> 0
+> Change (pp)
+> +improvement 0unchanged −degradation
+> Schematic comparisons
+> All methods share the same initial successes and failures.
+
+Figure 3: REFIT uses a shared run0 to construct feedback for each method’s separate run1, with environment and context reset. Performance changes are measured against this common initial execution. Feedback generation is separated from post-hoc outcome evaluation. their respective scopes. Language models make semantic judgments; deterministic checks constrain source coverage, evidence references, issue updates, and key-action preservation. 2.5 RENDERING UNFINISHED REQUIREMENTS 
+
+Feedback combines a root overview with local expansion. Completed branches receive short summaries; incomplete, failed, or unsupported branches expose shortcuts, issues, and observations. The CSV example summarizes the JSON result and retains its key write operation, while expanding the missing PNG and failed plotting evidence. A fresh execution can recreate the JSON and focus further exploration on the PNG. Selected critical write operations and final-response information retain their original content. Task state determines which processes can be summarized and which issues need expansion, producing high-density feedback of bounded length for long-horizon tasks. Length budgets and token accounting appear in Appendix A; Appendix C shows the final feedback format. 
+
+3 REFIT: E VALUATING TRAJECTORY INFORMATION VALUE 
+
+REFIT quantifies trajectory feedback’s information value through improvement in an agent’s subsequent execution. It fixes the recipient, tasks, and execution budget; methods extract feedback from the same raw trajectory and compare subsequent performance against the common initial execution. 3.1 PAIRED RERUNS 
+
+Let D be a task distribution, x ∼ D a task, A the agent that receives and uses feedback, and s(x, τ ) ∈ { 0, 1} a strict pass indicator. An initial attempt (run0) produces a raw trajectory τ0. For a fair comparison, all trajectory-feedback methods analyze this same τ0. Each generator g produces feedback fg for its own subsequent attempt (run1): 
+
+τ0 = A(x; ∅, e 0), fg = g(x, τ 0), τ g
+
+1 = A(x; fg , e 0), sg
+
+1 = s(x, τ g
+
+1 ). (2) Each execution independently recreates the initial environment state e0 from the task specification; run1 also uses a fresh model context. Feedback is the only channel for transferring information between executions. Figure 3 summa-rizes the procedure. 3.2 AVAILABLE INFORMATION 
+
+The raw trajectory τ0 includes the source agent’s messages, actions, tool interactions, and observations during execu-tion. A generator constructs feedback from task x and this trajectory, without access to run0’s post-hoc reward, hidden 4tests or verifier diagnoses, reference answers or trajectories, or human correctness labels. We call this restriction 
+
+post-hoc outcome blindness . The experiments also include a separately identified Verifier Feedback reference with additional outcome information. Public test outputs observed during execution belong to the trajectory, even when they strongly indicate success; later private verifier judgments do not. Analysis-model diagnoses derive from visible evidence. The post-hoc verifier measures outcomes without informing the restricted generators. 3.3 DOWNSTREAM UTILITY 
+
+Feedback utility depends on the recipient that uses it. For a generator g, REFIT defines utility as the change in strict pass probability from the initial execution: 
+
+U (g | A, D) = Ex∼D [s(x, τ g 
+
+> 1
+
+) − s(x, τ 0)] . (3) Comparisons fix the recipient, tasks, prompt, tools, and execution budget. Shared initial executions give gains and subsequent pass rates the same ranking. Run0 is the common historical reference for recipient-specific feedback utility. 
+
+4 EXPERIMENTS 
+
+We evaluate task performance, token use, and subsequent behavior on Terminal-Bench 2.1. The comparisons test complete feedback methods and two core DENSE designs; the case analysis examines how their outputs relate to the recipient’s actions. 4.1 EXPERIMENTAL SETUP 
+
+Tasks. We use Terminal-Bench 2.1 (Merrill et al., 2026) to study trajectory reuse in complex, long-horizon tasks. Its containerized terminal environments require sustained tool interaction across multiple steps, approximating practical agent workflows. The 89 tasks span software engineering, file and data processing, and scientific computing, providing varied skills and failure modes within one benchmark. 
+
+Recipient models. We evaluate MiniMax-M2.7 (Chen et al., 2026a), DeepSeek V4 Pro (DeepSeek-AI et al., 2026), GPT-5.5 (OpenAI, 2026a), and Kimi K2.6 (Moonshot AI, 2026) as recipients, covering open-weight and closed models to compare their use of trajectory feedback. MiniMax, GPT, and Kimi use all 89 tasks; DeepSeek uses the 81 supported by its text endpoint, excluding eight tasks requiring direct image or video input. 
+
+Execution settings. We follow REFIT (Section 3) with three paired repetitions per task and recipient. Within each repetition, trajectory-feedback methods share one fixed run0 and provide feedback for separate run1 executions. For each recipient, run0 and run1 use the same task instruction, tools, and execution budget. 
+
+Feedback generation model. All-at-once, Step-by-step, DENSE, and Advisor use Gemini 3 Flash Preview to hold the feedback model fixed while comparing information inputs and extraction procedures. All conditions use the same complete-feedback length limit; configurations and prompts appear in Appendices A and E. 
+
+Metrics and coverage. Strict pass requires verifier reward exactly one. Let s0 and sg 
+
+> 1
+
+be the strict pass indicators for initial and subsequent executions. We define 
+
+S0 = s0, S(g) = sg
+
+> 1
+
+, ∆S(g) = S(g) − S0. (4) Averages first combine the three repetitions within each task, then weight tasks equally. Rates are percentages; absolute changes from baseline are in percentage points (pp), computed as the difference between the two rates. Supplementary coverage and consistency results appear in Appendix B.1. 4.2 COMPARISON METHODS 
+
+The controls test several information sources and extraction procedures. All-at-once assesses the complete trajec-tory globally; Step-by-step tests fine-grained action scoring from decision-time prefixes. Advisor tests the feedback model’s task priors, while Traj-only tests raw history reuse. DENSE (ours) extracts nested shortcut trees. Verifier Feed-back (VF) adds post-hoc signals as a privileged reference. Table 1 describes each method; run0 is the initial-execution reference. 5Table 1: Feedback supplied to the subsequent execution. Only Verifier Feedback (VF) uses post-hoc reward or verifier output. Advisor denotes the instruction-only advisor.          
+
+> Method Feedback and construction Role Advisor Advice based only on the task description, without the execution trajectory. Task-prior control Traj-only Actions and observations from the initial trajectory, without additional analysis. Raw-history control All-at-once One call analyzes the full trajectory and returns action-level assessments and rationales. Global baseline Step-by-step One call per action assesses history through that action, excluding its result and later events. Sequential baseline
+> DENSE (ours) Nested subtasks compress redundant attempts while retaining key evidence and unresolved issues. Proposed method Verifier Feedback The initial trajectory, its final reward, and verifier test output. Privileged ref.
+
+All-at-once and DENSE analyze complete-trajectory action outcomes; Step-by-step scoring excludes the target ac-tion’s result and later events. Delivered feedback combines source information with varied analyses, covering history replay, action assessment, and hierarchical extraction. 4.3 TASK PERFORMANCE 
+
+Table 2 compares strict pass rates. All-at-once and Step-by-step outperform Advisor on all four recipients and Traj-only on MiniMax, GPT, and Kimi. All-at-once ranks second among non-privileged feedback methods on MiniMax and Kimi; the two methods tie for second on GPT. On DeepSeek, Step-by-step reaches 65.43%, above Traj-only’s 63.79%, while All-at-once reaches 62.14%. Action analysis thus improves raw-trajectory utility in most comparisons, with outcomes also depending on the extraction procedure. DENSE achieves the highest strict pass rate among the tested non-privileged methods on all four recipients : 52.43%, 67.08%, 75.66%, and 50.94% on MiniMax, DeepSeek, GPT, and Kimi, respectively. These improve on the common initial execution by 7.87, 15.64, 7.12, and 11.61 pp. Table 2: Strict pass rate (%) / change from baseline (pp), computed before rounding. Baseline aggregates the initial executions shared by all methods. Verifier Feedback (VF) † has privileged outcome information. Bold / underline mark the highest / second-highest rates per recipient, including Baseline and excluding VF; ties share a mark.                                 
+
+> Method MiniMax-M2.7 DeepSeek V4 Pro GPT-5.5 Kimi K2.6 Baseline 44.57 51.44 68.54 39.33 Advisor 41.20 / -3.37 53.91 / +2.47 69.29 / +0.75 43.82 / +4.49 Traj-only 38.58 / -5.99 63.79 / +12.35 72.28 / +3.75 46.07 / +6.74 All-at-once 44.57 / +0.00 62.14 / +10.70 73.03 / +4.49 47.94 / +8.61 Step-by-step 42.70 / -1.87 65.43 / +13.99 73.03 / +4.49 46.82 / +7.49
+> DENSE (ours) 52.43 / +7.87 67.08 / +15.64 75.66 / +7.12 50.94 / +11.61
+> Verifier Feedback †44.94 / +0.37 66.67 / +15.23 83.90 / +15.36 53.93 / +14.61
+
+On MiniMax, Traj-only and Step-by-step fall below baseline by 5.99 and 1.87 pp, while All-at-once matches it. DENSE is the only non-privileged feedback method with a positive gain, exceeding even Verifier Feedback by 7.49 pp. Appendix D.4 decomposes this gap and examines historical-success misuse in a fresh environment. Verifier Feedback exceeds DENSE on GPT and Kimi and falls slightly below it on DeepSeek, illustrating recipient differences in the utility of outcome information. 4.4 ABLATION STUDY 
+
+We use GPT-5.5 to examine two core DENSE designs: nested subtask analysis and shortcut construction and issue reconciliation (S&R). The study covers all 89 tasks with three repetitions each, yielding 267 matched task–repetition pairs. All feedback conditions share the original run0 trajectories and use Gemini 3 Flash Preview for analysis. GPT-5.5 then executes run1 in a fresh environment and context, with the same task instruction, tools, and execution budget. We compare two ablations with full DENSE and the initial run0 reference. 6Without S&R. We retain subtask boundary detection, local action diagnosis, and bottom-up hierarchical summaries, while removing shortcut construction over consecutive attempts and the additional cross-level issue-reconciliation pass. This compares the initial subtask tree with the evidence integration in full DENSE. 
+
+Without hierarchical structure. We treat the complete trajectory as a single root node. One Gemini call assesses completion, summarizes supporting evidence and lessons, and proposes adjustments for the next attempt. This replaces nested subtask analysis with a whole-episode summary, without subtask segmentation, per-action scoring, or recursive shortcut/reconciliation operations. Table 3: GPT-5.5 ablations: mean execution tokens (K) and strict pass (%).         
+
+> Method Token cost (K) ↓
+> Strict pass (%) ↑
+> run0 319.1 68.54 w/o S&R 228.6 72.28 w/o hierarchy 199.2 72.66
+> DENSE 179.9 75.66
+
+Full DENSE reaches 75.66% strict pass, 7.12 pp above run0 (Table 3). Removing S&R lowers this to 72.28%, a decrease of 3.37 pp; the single-root summary reaches 72.66%, 3.00 pp below full DENSE. DENSE also uses fewer execution tokens: 179.9K, compared with 228.6K without S&R and 199.2K without hierarchy. These re-sults support combining nested subtask analysis with short-cut construction and issue reconciliation. Appendix A.2 provides implementation details and a verifier sensitivity check. 4.5 COMPUTATIONAL COST 
+
+Feedback methods emphasize different reusable experience from the same run0, guiding exploration in run1. To compare resource use across differently priced models, we measure tokens: execution input, output, and cache reads and writes. Appendix A details aggregation and attribution. DENSE reduces observed recipient tokens relative to the displayed baseline by 19.0%, 20.0%, 43.6%, and 23.7% for MiniMax, DeepSeek, GPT, and Kimi, respectively (Table 4). Together with the pass-rate gains, these results show that subsequent executions complete more tasks with fewer observed tokens. Table 4: Observed recipient token use: mean execution tokens (thousands) / percentage change from the baseline row. Negative changes indicate reduced use. †Privileged reference. Bold / underline mark the lowest / second-lowest token use per recipient, excluding VF; ties share a mark.                                 
+
+> Method MiniMax-M2.7 DeepSeek V4 Pro GPT-5.5 Kimi K2.6 Baseline 1,402.2 2,075.0 319.1 545.3 Advisor 1,729.6 / +23.4% 2,224.4 / +7.2% 302.6 / -5.2% 602.2 / +10.4% Traj-only 1,198.3 / -14.5% 1,709.0 / -17.6% 230.7 / -27.7% 559.7 / +2.6% All-at-once 1,353.9 / -3.4% 1,710.5 / -17.6% 211.4 / -33.7% 546.9 / +0.3% Step-by-step 1,609.8 / +14.8% 1,500.9 / -27.7% 294.8 / -7.6% 587.8 / +7.8%
+> DENSE (ours) 1,136.0 / -19.0% 1,660.4 / -20.0% 179.9 / -43.6% 416.1 / -23.7%
+> Verifier Feedback †1,718.5 / +22.6% 1,835.0 / -11.6% 260.2 / -18.5% 682.0 / +25.1%
+
+Figure 4 jointly compares task performance and recipient token use. DENSE combines the highest non-privileged pass rate with the lowest execution-token use on MiniMax, GPT, and Kimi. On DeepSeek, Step-by-step uses fewer execution tokens, while DENSE achieves a higher pass rate. 
+
+5 DISCUSSION 
+
+Recipient differences, feedback comparisons, and an illustrative case clarify what experience online trajectories con-tain and how DENSE makes it useful. 5.1 DIFFERENCES IN RECIPIENTS ’ U SE OF FEEDBACK 
+
+DENSE’s gain over run0 ranges from 7.12 pp on GPT to 15.64 pp on DeepSeek. MiniMax gains 7.87 pp and exceeds Verifier Feedback (VF) by 7.49 pp. VF adds post-hoc reward and verifier output to raw history. The paired analysis in Appendix D.4 shows that DENSE’s advantage mainly reflects more retained successes in fresh executions. This MiniMax result supports our central insight: extracting and organizing reusable evidence can yield greater down-stream utility than simply appending privileged outcome signals to raw history. In the accompanying case, the VF 71.2 1.5 1.8 40 48           
+
+> Strict pass (%)
+> MiniMax-M2.7
+> 1.6 2.0 48 56 64
+> DeepSeek V4 Pro
+> 0.18 0.24 0.30 68 72 76
+> GPT-5.5
+> 0.40 0.48 0.56 42 48 54
+> Kimi K2.6
+> Recipient tokens per result (M)
+> Baseline Advisor Traj-only All-at-once Step-by-step DENSE (ours)
+
+Figure 4: Strict pass rate versus observed recipient tokens per result for non-privileged conditions. Means use three repetitions and equal task weights: 89 tasks, or 81 for DeepSeek. Baseline is run0; other points count run1 execution only, excluding feedback generation and source run0. Axes vary by model; upper left is better. Token accounting follows Appendix A. recipient reports a historical deliverable as complete without recreating it. DENSE scopes completion to the source trajectory and retains the construction procedure, which the recipient uses to generate a verified current artifact. 5.2 USEFUL EXPERIENCE IN UNSUPERVISED ONLINE TRAJECTORIES 
+
+All-at-once, Step-by-step, and DENSE outperform task-prior-only Advisor on all four recipients, showing that ana-lyzed traces are more useful than general advice here. The first two also improve on raw-history Traj-only in most comparisons; DENSE leads it on MiniMax, DeepSeek, GPT, and Kimi by 13.86, 3.29, 3.37, and 4.87 pp, respectively. Thus, trajectories without post-hoc labels still contain useful experience, and selecting, connecting, and organizing it can help recipients use it more effectively than raw history alone. Considerable room remains to improve how trajectory evidence is selected, connected, and organized, and how its presentation is adapted to different recipients. 5.3 FROM LOCAL DISCOVERIES TO TASK COMPLETION 
+
+The password-recovery task requires recovering a password from a data image and writing it to a specified file. The initial trajectory contains two password fragments, but execution continues exploring without writing the file. DENSE separates failed reconnaissance from successful fragment discovery into subtasks, retaining failed ap-proaches and reusable evidence in shortcuts. The parent connects fragment concatenation to the unfinished file-writing requirement, turning local discoveries into a concrete delivery step. In a matched comparison with Kimi K2.6, the DENSE-guided execution checks the environment, verifies the frag-ments, and writes the result in three tool calls , passing verification. The other four feedback conditions use 25–47 calls and leave the file absent; All-at-once also assembles the same candidate but does not write it. This contrast illus-trates the value of connecting available discoveries to unfinished task requirements so that reusable evidence supports concrete completion steps. Appendix D provides full feedback, action records, and outcomes across repetitions. 
+
+6 RELATED WORK 
+
+6.1 TRAJECTORY REUSE AND REFINEMENT 
+
+Prior work uses trajectories to guide later attempts through reflection and debugging (Shinn et al., 2023; Zhu et al., 2025; 2026; Ma et al., 2025), retrieve experience for future tasks (Fang et al., 2026; Zhao et al., 2024; Liu et al., 2024), and reduce execution context (Ren et al., 2026; Xiao et al., 2026). Reward-verified retries also support training (Shi et al., 2026), while successful rollouts inform planning (Gonzalez-Pumariega et al., 2026). DENSE links reusable paths, recovery evidence, and outstanding requirements in a nested shortcut tree from one trajectory without post-hoc outcome labels. Its distinction is to preserve scope: local recovery need not complete a parent task, and historical success does not establish current completion. Compression and rendering retain both reusable procedures and unmet requirements. 6.2 PROCESS EVALUATION AND FEEDBACK UTILITY 
+
+Process evaluation assesses execution quality (Fan et al., 2026; L` u et al., 2025; Li et al., 2026; Zhai et al., 2026) and attributes failures to agents or steps (Zhang et al., 2025; Liu et al., 2026; Barke et al., 2026; Chen et al., 2026b). 8Critique evaluation measures whether feedback improves subsequent answers (Tang et al., 2025; Yu et al., 2025; Sui & Hooi, 2026), a criterion that can diverge from explanation ratings (Kunz et al., 2022). Recovery studies examine restarts with carried-over changes or reconstructed failure states (Wang et al., 2026; Tan et al., 2025); self-correction studies highlight the need to control resampling and privileged information (Kamoi et al., 2024; ˙ Is ¸can, 2026). REFIT’s distinction is a source-paired comparison of feedback for fresh agent executions: post-hoc outcomes are withheld during extraction, and both environment and context are reset. Feedback is the sole transfer channel. Task-prior, raw-history, and privileged-feedback controls compare information inputs and extraction choices under matched conditions, measuring downstream utility separately from diagnosis accuracy. 
+
+7 CONCLUSION 
+
+We study how trajectories without post-hoc outcome labels can support fresh task executions. DENSE binds reusable progress to recovery evidence and remaining obligations in nested shortcut trees. REFIT evaluates feedback utility using shared source trajectories, outcome-blind generation, and reset environments and model contexts. On Terminal-Bench 2.1, DENSE achieves the highest strict pass rate among tested non-privileged methods across four recipients, improving over initial executions by 7.12–15.64 pp with 19.0–43.6% fewer observed recipient tokens in reruns. GPT-5.5 ablations support combining nested subtask analysis with shortcut construction and issue reconciliation. The MiniMax comparison further shows that organized evidence can outperform raw history augmented with verifier signals. Case studies further examine feedback use and failure mechanisms. These findings offer new insights into the value of unlabeled trajectories and point toward agent self-refinement through systematic evidence distillation with less external supervision. 
+
+LIMITATIONS 
+
+Our evaluation is limited to one benchmark, Terminal-Bench 2.1. Nevertheless, its diverse tasks span software engi-neering, data processing, and scientific computing while approximating practical agent workflows. Gains across four recipients demonstrate DENSE’s effectiveness in this varied setting and support our central insight: trajectories with-out post-hoc supervision can yield useful experience. Future work can validate these findings across more benchmarks and environments. DENSE’s multi-stage distillation adds computation, and feedback may increase rerun context. A lower-priced gener-ator can offset this overhead: with Gemini 3 Flash Preview and GPT-5.5, DENSE feedback costs about $0.14, while feedback plus rerun costs 36.6% less than run0 and strict pass rate is 7.12 pp higher (Appendix B.2). This tradeoff depends on model prices and execution costs; reducing generation overhead remains a direction for improvement. 9AI USE STATEMENT 
+
+Generative AI tools assisted with drafting sections of the manuscript, revising and polishing the text, and retrieving and discovering relevant literature and research materials. They also assisted with organizing case-study evidence, preparing tables and figures, LaTeX formatting, code implementation, and quality review of code and research artifacts. The authors reviewed all final code, experimental procedures, and resulting data and artifacts, personally ran the experiments, and collected and organized the results. The authors checked the case-study descriptions against the underlying execution traces and verified the reported numerical results against the experimental records. All AI-assisted content was reviewed by the authors, who take full responsibility for the final text, claims, code, and artifacts. REPRODUCIBILITY STATEMENT 
+
+The anonymous supplementary package provides implementations of DENSE, the comparison methods, component ablations, and the REFIT pipeline, together with prompts, configurations, task lists, a dependency lockfile, and a con-solidated table of reward and token statistics for all 7,842 main-experiment and ablation executions. Its README gives instructions for data validation, offline recomputation of the main and ablation numerical summaries without model credentials, and running new experiments with separately obtained dependencies. Raw trajectories, delivered feedback files, and verifier logs are not included in this archive. Sections 3 and 4 describe the protocol and evaluation settings; Appendices A, E, and B provide configuration and accounting details, prompt descriptions, and supplemen-tary evaluation and cost analyses. ETHICS STATEMENT 
+
+This study evaluates agents in the containerized environments of Terminal-Bench 2.1 and does not involve human-subject experiments. Execution traces may contain sensitive information in real-world deployments; applying DENSE to such traces would require appropriate access controls and removal of sensitive content. Distilled feedback may preserve errors or unsafe actions from the source trajectory, so improved benchmark performance should not be inter-preted as a guarantee of safe deployment. 10 REFERENCES 
+
+Shraddha Barke, Arnav Goyal, Alind Khare, Avaljot Singh, Suman Nath, and Chetan Bansal. AgentRx: Diagnosing AI agent failures from execution trajectories, 2026. URL https://arxiv.org/abs/2602.02475 .Aili Chen, Aonian Li, Baichuan Zhou, Bangwei Gong, Binyang Jiang, et al. The MiniMax-M2 series: Mini activations unleashing max real-world intelligence, 2026a. URL https://arxiv.org/abs/2605.26494 .Jing Chen, Yang Sun, Li Zhang, Lin Xu, and Jie Shi. Long-horizon agent trajectory attribution: A unified benchmark and fine-grained annotation framework, 2026b. URL https://arxiv.org/abs/2608.06909 .DeepSeek-AI, Anyi Xu, Bangcai Lin, Bing Xue, Bingxuan Wang, et al. DeepSeek-V4: Towards highly efficient million-token context intelligence, 2026. URL https://arxiv.org/abs/2606.19348 .Shengda Fan, Xuyan Ye, Yupeng Huo, Zhi-Yuan Chen, Yiju Guo, Shenzhi Yang, Wenkai Yang, Shuqi Ye, Jingwen Chen, Haotian Chen, Xin Cong, and Yankai Lin. AgentProcessBench: Diagnosing step-level process quality in tool-using agents, 2026. URL https://arxiv.org/abs/2603.14465 .Gaodan Fang, Vatche Isahagian, K. R. Jayaram, Ritesh Kumar, Vinod Muthusamy, Punleuk Oum, and Gegi Thomas. Trajectory-informed memory generation for self-improving agent systems, 2026. URL https://arxiv.org/ abs/2603.10600 .Gonzalo Gonzalez-Pumariega, Saaket Agashe, Jiachen Yang, Ang Li, and Xin Eric Wang. On the reliability of computer use agents, 2026. URL https://arxiv.org/abs/2604.17849 .Google. Gemini developer API pricing, 2026. URL https://ai.google.dev/gemini-api/docs/ pricing . Accessed September 9, 2026. Mehmet ˙ Is ¸can. Falsification, not exposure: An internally preregistered placebo-controlled decomposition of self-repair feedback in frozen small code models, 2026. URL https://arxiv.org/abs/2606.31511 .Ryo Kamoi, Yusen Zhang, Nan Zhang, Jiawei Han, and Rui Zhang. When can LLMs actually correct their own mis-takes? a critical survey of self-correction of LLMs. Transactions of the Association for Computational Linguistics ,12:1417–1440, 2024. doi: 10.1162/tacl a 00713. URL https://aclanthology.org/2024.tacl-1. 78/ .Jenny Kunz, Martin Jirenius, Oskar Holmstr¨ om, and Marco Kuhlmann. Human ratings do not reflect downstream utility: A study of free-text explanations for model predictions. In Proceedings of the Fifth BlackboxNLP Work-shop on Analyzing and Interpreting Neural Networks for NLP , pp. 164–177. Association for Computational Linguistics, 2022. doi: 10.18653/v1/2022.blackboxnlp-1.14. URL https://aclanthology.org/2022. blackboxnlp-1.14/ .Dawei Li, Yuguang Yao, Zhen Tan, Huan Liu, and Ruocheng Guo. ToolPRMBench: Evaluating and advancing process reward models for tool-using agents. In Findings of the Association for Computational Linguistics: ACL 2026 , pp. 12378–12391. Association for Computational Linguistics, 2026. doi: 10.18653/v1/2026.findings-acl.602. URL 
+
+https://aclanthology.org/2026.findings-acl.602/ .Jiale Liu, Huajun Xi, Shaokun Zhang, Yifan Zeng, Tianwei Yue, Chi Wang, Jian Kang, Qingyun Wu, and Huazheng Wang. Who&When Pro: Can LLMs really attribute failures in AI agents?, 2026. URL https://arxiv.org/ abs/2607.09996 .Zhiwei Liu, Weiran Yao, Jianguo Zhang, Rithesh Murthy, Liangwei Yang, Zuxin Liu, Tian Lan, Ming Zhu, Juntao Tan, Shirley Kokane, Thai Hoang, Juan Carlos Niebles, Shelby Heinecke, Huan Wang, Silvio Savarese, and Caiming Xiong. PRACT: Optimizing principled reasoning and acting of LLM agent. In Proceedings of the 28th Conference on Computational Natural Language Learning , pp. 442–446. Association for Computational Linguistics, 2024. doi: 10.18653/v1/2024.conll-1.33. URL https://aclanthology.org/2024.conll-1.33/ .Xing Han L` u, Amirhossein Kazemnejad, Nicholas Meade, Arkil Patel, Dongchan Shin, Alejandra Zambrano, Karolina Sta´ nczak, Peter Shaw, Christopher J. Pal, and Siva Reddy. AgentRewardBench: Evaluating automatic evaluations of web agent trajectories. In Second Conference on Language Modeling , 2025. URL https://openreview. net/forum?id=fQcUZMPIvu .Ming Ma, Jue Zhang, Fangkai Yang, Yu Kang, Qingwei Lin, Saravan Rajmohan, and Dongmei Zhang. DoVer: Intervention-driven auto debugging for LLM multi-agent systems, 2025. URL https://arxiv.org/abs/ 2512.06749 . arXiv preprint, revised January 2026. 11 Mike A. Merrill, Alexander G. Shaw, Nicholas Carlini, Boxuan Li, Harsh Raj, et al. Terminal-Bench: Benchmarking agents on hard, realistic tasks in command line interfaces, 2026. URL https://arxiv.org/abs/2601. 11868 .Moonshot AI. Kimi K2.6: Advancing open-source coding, April 2026. URL https://www.kimi.ai/blog/ kimi-k2-6 . Accessed September 17, 2026. OpenAI. Introducing GPT-5.5, April 2026a. URL https://openai.com/index/ introducing-gpt-5-5/ . Accessed September 17, 2026. OpenAI. GPT-5.5 Model: Pricing, 2026b. URL https://developers.openai.com/api/docs/models/ gpt-5.5 . Accessed September 9, 2026. Jincheng Ren, Siwei Wu, Yizhi Li, Kang Zhu, Shu Xu, Boyu Feng, Ruibin Yuan, Wei Zhang, Riza Batista-Navarro, Jian Yang, and Chenghua Lin. A self-evolving framework for efficient terminal agents via observational context compression, 2026. URL https://arxiv.org/abs/2604.19572 .Weijie Shi, Yanxi Chen, Zexi Li, Xuchen Pan, Yuchang Sun, Jiajie Xu, Xiaofang Zhou, and Yaliang Li. R3L: Reflect-then-retry reinforcement learning with language-guided exploration, pivotal credit, and positive amplification, 2026. URL https://arxiv.org/abs/2601.03715 .Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. Reflexion: Language agents with verbal reinforcement learning. In Advances in Neural Information Processing Systems , volume 36, pp. 8634–8652, 2023. URL https://proceedings.neurips.cc/paper_files/paper/2023/hash/ 1b44b878bb782e6954cd888628510e90-Abstract-Conference.html .Yuan Sui and Bryan Hooi. Conversation for non-verifiable learning: Self-evolving LLMs through meta-evaluation. In 
+
+Proceedings of the 43rd International Conference on Machine Learning , volume 306 of Proceedings of Machine Learning Research , 2026. URL https://arxiv.org/abs/2601.21464 .Shangyin Tan, Kevin Lin, Koushik Sen, and Matei A. Zaharia. Recovery-Bench: Evaluating agentic recovery from mistakes. In NeurIPS 2025 Workshop on Evaluating the Evolving LLM Lifecycle: Benchmarks, Emergent Abilities, and Scaling , 2025. URL https://openreview.net/forum?id=8FZRnDgDxq .Zhengyang Tang, Ziniu Li, Zhenyang Xiao, Tian Ding, Ruoyu Sun, Benyou Wang, Dayiheng Liu, Fei Huang, Tianyu Liu, Bowen Yu, and Junyang Lin. RealCritic: Towards effectiveness-driven evaluation of language model critiques, 2025. URL https://arxiv.org/abs/2501.14492 .Tongyi DeepResearch Team et al. Tongyi DeepResearch technical report. arXiv preprint arXiv:2510.24701 , 2025. URL https://arxiv.org/abs/2510.24701 .Chenyu Wang, Yunbo Lyu, Junda He, Zhou Yang, Chenxing Zhong, Yaniv Harel, and David Lo. Fail-Fast, Restart-Smart: Early failure prediction and restart for SWE agentic tasks, 2026. URL https://arxiv.org/abs/ 2608.03222 .Yuan-An Xiao, Pengfei Gao, Chao Peng, and Yingfei Xiong. Reducing cost of LLM agents with trajectory reduction. 
+
+Proceedings of the ACM on Software Engineering , 3(FSE):1241–1263, 2026. doi: 10.1145/3797084. URL https: //doi.org/10.1145/3797084 .Tianbao Xie, Danyang Zhang, Jixuan Chen, Xiaochuan Li, Siheng Zhao, Ruisheng Cao, Toh Jing Hua, Zhoujun Cheng, Dongchan Shin, Fangyu Lei, Yitao Liu, Yiheng Xu, Shuyan Zhou, Silvio Savarese, Caiming Xiong, Victor Zhong, and Tao Yu. OSWorld: Benchmarking multimodal agents for open-ended tasks in real computer environ-ments. arXiv preprint arXiv:2404.07972 , 2024. URL https://arxiv.org/abs/2404.07972 .John Yang, Carlos E. Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan, and Ofir Press. SWE-agent: Agent-computer interfaces enable automated software engineering. arXiv preprint arXiv:2405.15793 ,2024. URL https://arxiv.org/abs/2405.15793 .Shunyu Yao, Noah Shinn, Pedram Razavi, and Karthik Narasimhan. τ -bench: A benchmark for tool-agent-user interaction in real-world domains. In The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview.net/forum?id=roNSXZpUDN .12 Tianshu Yu, Chao Xiang, Mingchuan Yang, Pei Ke, Bosi Wen, Cunxiang Wang, Jiale Cheng, Li Zhang, Xinyu Mu, Chuxiong Sun, and Minlie Huang. Training language model to critique for better refinement. In Findings of the Association for Computational Linguistics: ACL 2025 , pp. 26760–26804. Association for Computational Linguistics, 2025. doi: 10.18653/v1/2025.findings-acl.1373. URL https://aclanthology.org/2025. findings-acl.1373/ .Yuwen Zhai, Runze Li, Liang Wang, Nian Shi, Liwu Xu, Wei Zhang, Ran Lin, Bo Xu, and Benlei Cui. GUIDE: Interpretable GUI agent evaluation via hierarchical diagnosis, 2026. URL https://arxiv.org/abs/2604. 04399 .Shaokun Zhang, Ming Yin, Jieyu Zhang, Jiale Liu, Zhiguang Han, Jingyang Zhang, Beibin Li, Chi Wang, Huazheng Wang, Yiran Chen, and Qingyun Wu. Which agent causes task failures and when? on automated failure attribution of LLM multi-agent systems. In Proceedings of the 42nd International Conference on Machine Learning , volume 267 of Proceedings of Machine Learning Research , pp. 76583–76599. PMLR, 2025. URL 
+
+https://proceedings.mlr.press/v267/zhang25cq.html .Andrew Zhao, Daniel Huang, Quentin Xu, Matthieu Lin, Yong-Jin Liu, and Gao Huang. ExpeL: LLM agents are expe-riential learners. Proceedings of the AAAI Conference on Artificial Intelligence , 38(17):19632–19642, 2024. doi: 10. 1609/aaai.v38i17.29936. URL https://ojs.aaai.org/index.php/AAAI/article/view/29936 .Shuyan Zhou, Frank F. Xu, Hao Zhu, Xuhui Zhou, Robert Lo, Abishek Sridhar, Xianyi Cheng, Tianyue Ou, Yonatan Bisk, Daniel Fried, Uri Alon, and Graham Neubig. WebArena: A realistic web environment for building au-tonomous agents. arXiv preprint arXiv:2307.13854 , 2023. URL https://arxiv.org/abs/2307.13854 .Kunlun Zhu, Zijia Liu, Bingxuan Li, Muxin Tian, Yingxuan Yang, Jiaxun Zhang, Pengrui Han, Qipeng Xie, Fuyang Cui, Weijia Zhang, Xiaoteng Ma, Xiaodong Yu, Gowtham Ramesh, Jialian Wu, Zicheng Liu, Pan Lu, James Zou, and Jiaxuan You. Where LLM agents fail and how they can learn from failures, 2025. URL https://arxiv. org/abs/2509.25370 .Kunlun Zhu, Xuyan Ye, Zhiguang Han, Yuchen Zhao, Bingxuan Li, Weijia Zhang, Muxin Tian, Xiangru Tang, Pan Lu, James Zou, Jiaxuan You, and Heng Ji. AgentDebugX: An open-source toolkit for failure observability, attribution, and recovery in LLM agents, 2026. URL https://arxiv.org/abs/2607.18754 .13 A EXPERIMENTAL CONFIGURATION AND ACCOUNTING 
+
+A.1 FEEDBACK CONFIGURATION AND BUDGET 
+
+All generated-feedback conditions use Gemini 3 Flash Preview (API model identifier: 
+
+gemini-3-flash-preview ). DENSE builds its initial subtask tree from the full trajectory, scoring ac-tions before producing subtask summaries. It then compresses consecutive attempts under the same parent, reconciles issue states from children to parents, and organizes the final feedback around unresolved issues. Tree feedback is limited to 180 KiB within a total feedback budget of 200 KiB. Other methods use the same total budget. When shortening feedback, DENSE operates on complete semantic blocks to avoid cutting through evidence. Appendix E presents the prompt roles, input views, and instructions used to construct and deliver these feedback representations. A.2 DENSE A BLATION DETAILS 
+
+The ablations in Section 4.4 use GPT-5.5 with high reasoning effort and Gemini 3 Flash Preview as the feedback model. The hierarchical control keeps the full-trajectory tree builder and its score-then-summarize procedure; only the subsequent shortcut and reconciliation stages are removed. The single-root control instead makes one logical analysis call over the task and all recorded action–observation text, requesting completion status, evidence, lessons, and next steps. Both use only the task and visible trajectory, without post-hoc reward or verifier output. The analysis output limit is 8,192 tokens. One single-root analysis ( dna-assembly , repetition 3) required a 16,384-token limit to obtain a valid response with the same prompt. Retries address unscored analysis or execution failures; the first valid execution result is retained, including zero and partial rewards. All four conditions have complete coverage of the same 267 task–repetition pairs. Token cost in Table 3 counts recipient execution only, using the accounting in Appendix A.3; feedback generation is excluded. All 1,068 results have recorded usage. Of these, 64 report completed calls only: 27 for run0, 13 without shortcut/reconcile, 13 without hierarchy, and 11 for DENSE. Unfinished calls are not included in those records, so the table reports observed token use. Historical verifier logs for torch-pipeline-parallelism contain port binding conflicts in ten scored runs across the four conditions, including two DENSE runs. We retain those recorded results in the main table and check sensitivity by excluding all three repetitions of this task from every condition. On the remaining 264 pairs, strict pass rates are 69.32% for run0, 72.73% without shortcut/reconcile, 73.48% for the single-root summary, and 76.14% for full DENSE. The DENSE gaps are 3.41 and 2.65 pp, respectively. A.3 RECIPIENT TOKEN ACCOUNTING 
+
+Recipient tokens sum uncached input, cache-read input, cache-creation input, and output. Relative change is (T g /T 0 −
+
+1) , reported as a percentage, where T 0 is the mean in the displayed baseline row and T g is the method mean. Both average repetitions within tasks and then give applicable tasks equal weight. Recipient usage is recorded for all 7,308 outcomes: 5,526 records report execution totals and 1,782 sum completed calls only. The latter omit unfinished calls, and unknown usage is not replaced with zero. A.4 FEEDBACK REUSE AND COST ATTRIBUTION 
+
+Feedback-generation tokens are reported separately for the feedback used by each subsequent execution; repeated executions may reuse that feedback. Combined execution and feedback-generation tokens therefore describe the computation attributed to each result. They do not add the initial execution again or reconstruct total experimental spending. For three-result task costs, tokens are summed within each task and then averaged across tasks, giving three times the per-execution mean. 
+
+B SUPPLEMENTARY EVALUATION AND COST ANALYSIS 
+
+We report task coverage and repeated-run consistency, followed by a priced cost breakdown for GPT-5.5. Aggregation and feedback attribution follow Appendix A. 14 B.1 REPEATED -A TTEMPT EVALUATION 
+
+To distinguish task coverage from consistency across repeated attempts, we use pass@ k and pass k (Yao et al., 2025). For a given condition, let ct be the number of strict successes among k attempts on task t, with N applicable tasks. Then 
+
+pass@ k = |{ t : ct > 0}| 
+
+N , pass k = |{ t : ct = k}| 
+
+N . (5) The first measures the fraction of tasks solved at least once; the second requires success in every attempt. We use 
+
+k = 3 and report both as percentages. Table 5: Task coverage and consistency: pass@3 / pass 3 (%). MiniMax, GPT, and Kimi each use 89 tasks, and DeepSeek uses 81, with three results per task. †Privileged reference. Each metric is ranked separately: bold / underline mark the highest / second-highest values, excluding VF; ties share a mark.                                         
+
+> Method MiniMax-M2.7 DeepSeek V4 Pro GPT-5.5 Kimi K2.6 Baseline 56.18 / 33.71 64.20 / 37.04 77.53 / 57.30 57.30 / 23.60 Advisor 59.55 / 20.22 70.37 / 37.04 87.64 / 52.81 60.67 / 30.34 Traj-only 59.55 / 16.85 74.07 / 54.32 82.02 / 61.80 60.67 / 33.71 All-at-once 60.67 / 25.84 77.78 / 43.21 84.27 / 60.67 62.92 / 32.58 Step-by-step 53.93 / 29.21 79.01 / 50.62 85.39 / 61.80 61.80 / 33.71
+> DENSE (ours) 66.29 /39.33 80.25 / 53.09 86.52 / 64.04 67.42 /34.83
+> Verifier Feedback †66.29 / 22.47 80.25 / 54.32 93.26 / 73.03 70.79 / 37.08
+
+On MiniMax, GPT, and Kimi, DENSE exceeds Traj-only, All-at-once, and Step-by-step in both metrics (Table 5). On DeepSeek, DENSE has the highest pass@3 among these conditions, but its pass 3 falls slightly below Traj-only. On GPT, Advisor reaches a slightly higher pass@3 than DENSE with a lower pass 3. Relative to the initial execu-tion, DENSE raises the fraction of tasks solved at least once from 56.18%, 64.20%, 77.53%, and 57.30% to 66.29%, 80.25%, 86.52%, and 67.42% across the four recipients. This broader coverage shows that extracting historical ex-perience helps find successful paths on more tasks, connecting exploration to successful delivery. Figure 9 visualizes these results, and Figures 13–14 relate them to the token use of three attempts. B.2 ESTIMATED FEEDBACK AND RERUN COSTS FOR GPT-5.5 We estimate GPT-5.5 execution and Gemini 3 Flash Preview feedback costs using standard base text rates. Input/output prices per million tokens are $5/$30 for GPT-5.5 (OpenAI, 2026b) and $0.50/$3 for Gemini (Google, 2026). Input and output usage are priced separately and added. These standardized estimates use uncached rates, without long-context surcharges or unrecorded usage; actual charges may differ. Table 6: Mean estimated USD costs over 89 tasks with three repetitions each. Baseline is the initial GPT-5.5 execution; other rows show the GPT-5.5 rerun, Gemini feedback, and their sum. ∆ is the sum’s percentage change from baseline, computed before rounding. Dashes mean no feedback generation. Bold / underline mark the best / second-best values: lower cost and higher pass rate are better; feedback is ranked among generators.                              
+
+> Method Execution ($) Generator ($) Total ($) / ∆Pass (%) Baseline 1.8085 —1.8085 68.54 Advisor 1.7067 0.0024 1.7091 / -5.5% 69.29 Traj-only 1.2596 —1.2596 / -30.4% 72.28 All-at-once 1.1565 0.0138 1.1704 / -35.3% 73.03 Step-by-step 1.5947 0.1207 1.7154 / -5.2% 73.03
+> DENSE (ours) 1.0075 0.1396 1.1470 / -36.6% 75.66
+
+DENSE feedback costs $0.14, or 7.7% of the $1.81 baseline and 13.9% of its $1.01 rerun. Feedback plus rerun costs $1.15, 36.6% below baseline , while strict pass rate increases from 68.54% to 75.66%. In this configuration, a small additional feedback cost accompanies lower rerun spending and higher task success. Even with feedback generation 15 included, the estimated cost of this rerun remains below the initial-execution reference. Figure 11 visualizes this decomposition with an explicit run0 baseline; its gray segments represent the feedback generator. The table attributes one feedback generation to each rerun; reused feedback incurs no new generation cost. Including the initial execution gives $2.96 for the complete DENSE workflow. 
+
+C ANATOMY OF DENSE F EEDBACK 
+
+C.1 FEEDBACK INTERFACE AND READING GUIDE 
+
+DENSE presents an execution as a hierarchy of task progress, reusable evidence, and remaining problems. Whereas Section 2 describes its construction, this appendix examines the artifact delivered to the recipient. The feedback begins with the fresh-environment reminder reproduced in Appendix E: files and processes mentioned in the report belong to the previous attempt, and required outputs must be recreated. The report then gives a root summary, nested tasks, compressed attempts, and selected action–observation evidence. Table 7 summarizes how to read these components. Task completion and shortcut outcome describe different scopes. A shortcut can succeed at recovering a local path while its parent task remains incomplete. Moreover, complete is a judgment supported by the historical trajectory, not a statement that the hidden verifier passed. Numeric action scores used during construction are omitted from the selected final feedback. Table 7: Reading the recipient-visible DENSE artifact. Field names follow the emitted report; the explanation de-scribes their role rather than adding information to the recipient’s input.                 
+
+> Visible component Interpretation Root summary ,state , and
+> completion-scope
+> Overall historical progress and the scope of the completion judgment. Nested task blocks Subtask boundaries, summaries, and completion states.
+> shortcut ,outcome , and source A compressed group of attempts, its local result, and source nodes.
+> dead-end /working-path Unproductive attempts and useful procedures or intermediate results.
+> open-issue /evidence A remaining problem and the historical evidence supporting it.
+> key-action ,tool-call , and
+> observation
+> Selected executable details and their observed consequences.
+
+C.2 HIERARCHY , S HORTCUTS , AND UNRESOLVED ISSUES 
+
+The largest-eigenval task requires a dominant eigenpair solver for small real matrices, including cases with complex eigenpairs, that outperforms a NumPy reference. We inspect Kimi K2.6, repeat 2. The initial execution established timing baselines and compared analytical formulas, iterative methods, and library calls. Some local ap-proaches were useful, but manually reconstructing complex eigenvectors from LAPACK’s real-valued representation left a performance bottleneck for larger sizes. Figure 5 relates the source phases, reconciled tree, and delivered feedback. The baseline-and-constraints branch, n30, is complete; the solver-optimization branch, n34, remains incomplete. Under n34, shortcut 5 combines n31–n33 with a partial outcome, retaining both useful computation paths and the unresolved reconstruction overhead. The complete branch is rendered compactly: its internal shortcut 0 is not displayed separately, although the selected baseline action a2 remains visible. The incomplete branch exposes its issue and supporting actions, including a28. Thus, the reconciled tree and the final feedback are related representations with different levels of detail. 16 (a) Source actions a1–a2 
+
+Establish timing baselines and mathematical constraints 
+
+a3–a29 
+
+Compare solver paths and retain useful results; diagnose reconstruction overhead and continue prob-ing. 
+
+(b) Reconciled tree (c) Rendered feedback (schematic) n29 / n35: incomplete 
+
+Root task / benchmark and strategy analysis 
+
+n30: complete 
+
+Baselines and con-straints a1–a2 
+
+n34: incomplete 
+
+Solver optimization a3–a29 
+
+shortcut 0 
+
+succeeded Sources: n0, n1 
+
+shortcut 5 
+
+partial Sources: n31, n32, n33 
+
+> n29 and n35 are grouped here for space; action leaves and other evidence are omitted.
+
+Completed branch: compact 
+
+Task summary and selected evidence 
+
+a2 .No separate shortcut 0 block. 
+
+Unresolved branch: expanded 
+
+Task-level open issue: Python complex-vector reconstruction Partial shortcut: dead-end / working-path / open-issue Retained actions include a28 .
+
+Read as historical evidence 
+
+Local completion is not a verifier verdict. 
+
+Figure 5: Structure and rendering for largest-eigenval , Kimi K2.6, repeat 2. This is a simplified view of the actual artifact, with source IDs retained and node descriptions shortened. Colors and explicit state labels distinguish completed content from unresolved content. The right panel paraphrases the rendered organization; Figure 6 provides the original wording. The excerpt in Figure 6 shows how these distinctions appear in the input itself. An open issue states the bottleneck at the task level, while the partial shortcut records both unsuccessful approaches and reusable results. Evidence identifiers connect this synthesis to the retained actions. These identifiers are references within the source analysis; a1, a2, and so on enumerate serialized actions, each of which may contain multiple tool invocations. They are not counts of shell commands or elapsed time.                                
+
+> DENSE feedback excerpt: largest-eigenval
+> <shortcut-tree state="incomplete" [...] completion-scope="trajectory_local" [...]> [...] <task state="incomplete" [...]> [...] <task state="complete" [...]> <key-action source="a2" reason="critic-selected"> [...] </key-action> </task> <task state="incomplete" [...]> <open-issue evidence="n27">Python-level overhead for manual complex eigenvector reconstruction (extracting pairs from real columns) makes the implementation slower than np.linalg.eig for 6x6 to 10x10 matrices.</open-issue>
+> ,→
+> ,→
+> ,→
+
+17 DENSE feedback excerpt: largest-eigenval (continued)                                                   
+
+> <shortcut outcome="partial" source="n31,n32,n33"> <dead-end>Pure-Python iterative methods (power/inverse iteration) and manual complex eigenvector reconstruction for matrices &gt; 4x4, which introduces enough Python-level overhead to negate the speed gains from bypassing high-level NumPy/SciPy wrappers.</dead-end>
+> ,→
+> ,→
+> ,→
+> <working-path>Implement a2x2 analytical solver using the quadratic formula (n9) and utilize direct LAPACK dgeev calls to bypass NumPy wrapper overhead for 4x4 matrices (n27).</working-path>
+> ,→
+> ,→
+> [...] <key-action source="a28" reason="critic-selected"> [...] </key-action> [...] </shortcut> </task> </task> </shortcut-tree>
+
+Figure 6: Selected original spans of the delivered feedback. Indentation and wrapping are adjusted for readability; 
+
+[...] explicitly marks omitted attributes, blocks, or action contents. The retained wording is unchanged. The excerpt is abbreviated markup, not a replacement feedback template. C.3 LOCAL RECOVERY AND REMAINING OBLIGATIONS 
+
+The gpt2-codegolf case illustrates why completion must be scoped to a subtask. In GPT-5.5 repeat 0, the orig-inal attempt implemented a compact C inference program, but generated repeated tokens. One local detour had already been recovered: unavailable inspection tools were replaced with available commands. The corresponding 
+
+shortcut 1 is marked succeeded , yet its parent n13 is incomplete because the checkpoint layout is still unveri-fied. A separate shortcut covering implementation and inference remains failed .The feedback explicitly preserves the distinction: “The specific internal layout and ordering of the GPT-2 weights within the binary checkpoint file are not yet verified, and the current implementation’s assumptions are failing.” Suc-cessful inspection and compilation therefore remain useful intermediate results without closing the inference problem. Appendix D examines how the recipient subsequently uses this information. 
+
+D FEEDBACK AND SUBSEQUENT AGENT BEHAVIOR 
+
+D.1 MATCHED CASES AND INFORMATION VIEWS 
+
+We compare the information supplied by each feedback condition with the recipient’s subsequent tool actions. Each comparison fixes the task, recipient, repetition, and source run0; feedback is consumed in a fresh run1 under the protocol in Section 3. We examine Advisor, Traj-only, All-at-once, Step-by-step, and DENSE. In these five-condition comparisons, verifier results are used only to evaluate the completed executions. Section D.4 separately examines Verifier Feedback as a privileged-information condition. Table 13 reports all three repetitions. These views differ in more than the amount of context available to the extractor. Global access can still produce local action judgments; a prefix judgment can use outcomes of earlier actions; and a recipient can read the observations reproduced in a flat feedback table. We therefore distinguish facts that are present, connections explicitly made by the extractor, and remaining goals made actionable by the feedback. D.2 SHARED EVIDENCE , D IFFERENT FEEDBACK 
+
+In password-recovery , Kimi K2.6 repeat 0, the task is to recover a 23-character string beginning with 8XD and ending with W54 , and write a candidate to /app/recovered passwords.txt . The source trajectory already contains two fragments from a data image: 8XDP5Q2RT9Z and K7VB3BV4WW54 . Their lengths are 11 and 12; 18 Table 8: Input views and information processing in the five compared conditions. The Step-by-step feedback in these cases identifies its view as causal prefix ; the restriction applies to each scoring call.          
+
+> Arm Extractor input and unit Information delivered to the recipient Advisor Task instruction only; task-level advice. General strategy, risks, and a completion checklist. Traj-only Serialized source trajectory; no added analysis. Chronological actions and observations to interpret and relate. All-at-once One joint analysis of the full trajectory. Action-level assessments and rationales alongside the trajectory. Step-by-step One decision-time prefix per target action, excluding its result and later events. Action-level assessments with a “Known at the time” basis. The delivered table also contains the source observations. DENSE (ours) Nested subtasks, grouped attempts, and issue reconciliation. Task states, reusable paths, unresolved issues, and selected evidence.
+
+concatenating them yields a candidate satisfying the stated length and format. The initial execution nevertheless continued inspecting archive structures and byte offsets and did not create the required output file. Table 9 compares how this shared situation is expressed. Traj-only preserves the fragments as observations. Both flat extractors discuss useful evidence and endorse further inspection at particular steps. In Step-by-step, the basis for OA table row 23 explicitly names both fragments; their presence is not unique to DENSE. Advisor also explicitly requires writing the output, but cannot connect that requirement to evidence from an attempt it has not observed. Table 9: Feedback excerpts for the same password-recovery run0, with code formatting normalized. OA row numbers refer to the feedback’s action–observation table. The interpretation column is our analysis, not additional recipient input.    
+
+> Arm / source Retained feedback span Information expressed Advisor Strategy 5 “Format the discovered matches (one per line) and write them to /app/recovered passwords.txt.” Explicit delivery requirement, without the discovered fragments. Traj-only Observation 22
+> PASSWORD=8XDP5Q2RT9Z
+> . . . K7VB3BV4WW54
+> Both fragments are available; no extractor adds a synthesis. All-at-once Reasoning 29 “Utilizing byte offsets to locate strings is a high-quality forensic approach that helps pinpoint the exact location of the target data.” A positive assessment of locating byte offsets within the search. Step-by-step Reasoning 29 “Using grep -boa to find offsets is the correct forensic step to then examine the raw bytes around that location and reconstruct the full 23-character password.” Prefix evidence motivates further byte inspection to reconstruct the string. DENSE Root issue, n26 “The identified password ’8XDP5Q2RT9ZK7VB3BV4WW54’ must be written to /app/recovered passwords.txt.” A concrete assembled candidate is bound to the outstanding deliverable.
+
+DENSE’s root summary explicitly assembles the candidate and explains that the task remains incomplete because it has not been written out. Its tree separates unsuccessful reconnaissance from successful fragment discovery while retaining the delivery obligation above that local success. The salient change is thus a task-level synthesis: what the available fragments jointly support, and what still has to be done. A generic inherited search issue also remains in this artifact; the example does not imply that reconciliation removes every irrelevant issue. Nor do positive flat action labels assert that the whole task has succeeded. D.3 FROM FEEDBACK TO SUBSEQUENT ACTIONS 
+
+Table 10 records the subsequent execution. DENSE’s recipient lists the fresh environment, reruns strings on the known image, then writes and reads back the assembled candidate. The run uses three tool invocations and passes both output-file and password-match checks. The four comparison runs use 25–47 invocations and leave the required file absent. 19 Table 10: Observed behavior in password-recovery , Kimi K2.6, repeat 0. Call indices count tool invocations in recorded order; a call can contain several shell operations, and parallel calls are counted separately. “File” means the required output exists at verification.                      
+
+> Arm Recorded action excerpts Calls File Reward Advisor Searches filenames (2); inspects image context (15); continues to archive-directory signatures (47). 47 No 0Traj-only Searches for a full contiguous match (3); carves and inspects archives; attempts a loopback device (25). 25 No 0All-at-once Scans known image patterns (2); inspects archives and offsets; prints the assembled candidate and length 23 (26). 26 No 0Step-by-step Searches full patterns (1–3); inspects fragments, extracts archives, and parses the central directory (35). 35 No 0DENSE (ours) Lists the environment (1); rechecks fragments with strings (2); writes the candidate and reads it back (3). 3Yes 1
+
+The All-at-once trace provides a useful qualification: its final invocation prints the same assembled candidate and confirms its length as 23. This recipient can infer the answer, but the recorded run ends without the required file. The contrast concerns the timing of the transition from investigation to delivery, not an absolute inability of the other feedback conditions to reconstruct the string. DENSE’s explicit remaining obligation corresponds to that transition occurring immediately after a short check in the fresh environment. The trace establishes this correspondence; it does not reveal the recipient’s internal attention or isolate the effect of the issue’s position. 
+
+Carrying forward an unfinished optimization. In largest-eigenval , the retained reconstruction bottle-neck corresponds to a subsequent implementation using scipy.linalg.eig with overwrite a=True and 
+
+check finite=False . The recipient selects the largest-magnitude eigenvalue and its corresponding vector. This implementation follows from more than the issue summary: the feedback already retains an a29 experiment with SciPy and overwrite a=True , whose observation records termination with exit code 143. The additional 
+
+check finite=False setting is absent from the feedback and appears in run1. The recipient therefore completes and extends an available experimental direction rather than receiving a finished patch. The flat feedback also contains overhead-related evidence and library comparisons. In the representative run, DENSE passes 27/27 parameterized checks, All-at-once 26/27, and Step-by-step 25/27. Only DENSE meets the strict pass criterion in this repetition. These results support the observed implementation outcome; the performance checks remain sensitive to timing variation. D.4 MINI MAX FEEDBACK DEGRADATION ANALYSIS 
+
+Privileged outcome information does not guarantee that a recipient will reconstruct a successful solution in a fresh environment. On MiniMax-M2.7, DENSE achieves a strict pass rate of 52.43%, compared with 44.94% for Verifier Feedback (VF), a gap of +7 .49 pp computed before rounding. We first decompose this difference over all 89 tasks and three repetitions, then examine one task whose delivered feedback, tool calls, and verifier outputs expose a concrete failure mode. D.4.1 RETAINING SUCCESS AND REPAIRING FAILURES 
+
+Of the 267 source executions, 119 strictly succeed and 148 do not. We classify a subsequent execution as retaining success when both run0 and run1 succeed, regressing when only run0 succeeds, and repairing when only run1 suc-ceeds. These are paired outcome descriptions; run1 must recreate the solution under the fresh-environment protocol, so a regression need not involve editing an existing artifact. VF repairs more unsuccessful sources than DENSE (38 versus 30), but loses success on many more previously suc-cessful sources (37 versus 9). Consequently, DENSE’s advantage is 28 additional retained successes offset by 8 fewer repairs, yielding 20 additional successes overall. Among the 119 initially successful executions, DENSE’s regression rate is 7.56%, compared with VF’s 31.09%. This lower regression rate shows greater stability when reusing historical experience to recreate successful outcomes in a fresh environment. We also count actual tool-use records in the recipient transcripts. Of VF’s 37 regressions, 32 contain no tool calls; DENSE has no zero-tool execution among its 267 runs. Traj-only also exhibits this behavior: 27 of its 36 regressions 20 Table 11: MiniMax outcome transitions relative to the shared source run0. Retained and regressed partition the 119 successful sources. Repaired counts successes among the 148 unsuccessful sources. Net gain is repaired minus regressed. Each method has 267 subsequent executions.                     
+
+> Method Retained Regressed Repaired Net gain Successes Traj-only 83 36 20 −16 103
+> DENSE (ours) 110 930 +21 140 VF 82 37 38 +1 120
+
+contain no tool calls. The failure pattern therefore extends beyond privileged feedback. Zero tool use is an observable diagnostic, not a sufficient explanation of every run: a response may summarize historical work, provide an answer only in text, or emit tool-like text without invoking a tool. The following case establishes the more specific mechanism directly. D.4.2 CASE : R EPORTING A HISTORICAL CSV AS A CURRENT DELIVERABLE 
+
+Task and shared history. In log-summary-date-ranges , the recipient must count ERROR, WARNING, and INFO entries across five date ranges, using 2025-08-12 as the reference date, and write the 15 resulting rows and a header to /app/summary.csv . All three run0 executions succeed. We inspect repeat 0, whose source run creates a Python script, processes 164 log files, and passes both verifier checks: file existence and CSV structure/counts. VF includes this source trajectory, reward 1.0, and the passing test output. Its trajectory portion is identical to the one in Traj-only. VF, Traj-only, and DENSE share the following outer instruction, verified in the prompts actually delivered to the recipient:   
+
+> This rerun starts in a fresh isolated environment. [. . . ] Recreate every required deliverable in the current environment. Reuse the approach or content, not previous filesystem state.
+
+The task instruction also appears after the feedback. VF’s failure cannot therefore be explained by an absent instruction to recreate the output. 
+
+VF ends with a completion claim and no execution. The VF recipient makes zero tool calls and returns a final response stating:   
+
+> I’ve successfully analyzed the log files and created the /app/summary.csv file with severity counts for all requested date ranges. [. . . ] Both tests passed, confirming the CSV file was created with the correct structure and counts.
+
+The response repeats the historical counts, including 370 ERROR, 463 WARNING, and 1,433 INFO entries for the reference day. However, its current execution has neither written nor inspected the file. The subsequent verifier reports 
+
+File /app/summary.csv does not exist ; the structure/counts check also fails when opening that path. The execution fails the strict pass criterion, with 0/2 checks passing. The run ends normally with a final response rather than timing out. This is an observed confusion between historical completion and the present deliverable: the successful test report describes run0, while the claimed file must exist in run1. 
+
+DENSE replays the retained construction procedure. DENSE’s feedback also describes a successful historical attempt. Its root is marked trajectory-local-complete , with the scope note: “Complete means supported by the historical trajectory only; no reward or verifier output confirmed benchmark correctness.” A successful shortcut retains the working path and key action a3 : the complete command that creates and runs /app/analyze logs.py ,including its CSV-writing code. The renderer additionally asks the recipient to recreate required artifacts from retained evidence in the current environment. The DENSE recipient makes four tool calls: it lists log filenames, counts the files, creates and executes the analysis script, and reads back /app/summary.csv . The third call’s command exactly matches the retained a3 command after decoding XML entities. The fourth call returns the header and all 15 data rows. Both verifier checks then pass, so the execution strictly passes. Here, the reusable evidence is converted into an executed construction procedure with a current artifact. 21 Table 12: All three repetitions of log-summary-date-ranges on MiniMax. Tool calls are counted from actual transcript records, excluding historical commands inside prompts and tool-like text in responses. Run0 is the source reference. Repetition indices follow the recorded 0, 1, 2 convention.                                
+
+> Strict pass (0/1) Tool calls Condition 012012Baseline 111545Traj-only 111445
+> DENSE (ours) 1114410 VF 010040
+
+D.4.3 CASE INTERPRETATION AND LIMITS 
+
+The VF response is consistent with historical passing-test feedback reinforcing a premature completion judgment, although confidence was not measured. In the inspected run, VF repeats a completion claim while DENSE re-executes the retained construction procedure. The latter also explicitly scopes completion to the historical trajectory. Traj-only succeeds in all three repetitions, and VF succeeds in repeat 1 after four tool calls. VF also repairs more failures across the full MiniMax sample. This case was selected after observing outcomes. Three repetitions and transcript correspondence do not isolate the effects of passing-test text, completion scoping, compression, or evidence selection. Privileged verification therefore does not guarantee high feedback utility in a fresh execution: correct historical information must still produce a current solution. D.5 COMPLEMENTARY OUTCOMES AND OVERALL INTERPRETATION 
+
+For gpt2-codegolf , the recipient investigates checkpoint offsets and changes the mapping from logical layers to physical weight blocks to {0,1,4,5,6,7,8,9,10,11,2,3 }, together with corrections to embedding and final LayerNorm offsets. The resulting 3,578-byte C program passes the verifier. The feedback identifies unverified layout assumptions and repeated token output; it does not supply this mapping. Step-by-step also succeeds in this repetition, using 11 tool calls compared with DENSE’s 24. This case illustrates a useful representation of nested progress, while showing that another feedback view can support a successful and shorter execution. Table 13: Three-repeat outcomes. Entries report strict pass rate (%), with strict passes out of three in parentheses. The process analysis uses password-recovery repeat 0, largest-eigenval repeat 2, and gpt2-codegolf 
+
+repeat 0. Within each case, bold / underline mark the highest / second-highest rates, including ties.                    
+
+> Task / recipient Advisor Traj-only All-at-once Step-by-step DENSE (ours)
+> password-recovery
+> Kimi K2.6 0.0 (0/3) 0.0 (0/3) 0.0 (0/3) 0.0 (0/3) 66.7 (2/3)
+> largest-eigenval
+> Kimi K2.6 0.0 (0/3) 33.3 (1/3) 33.3 (1/3) 33.3 (1/3) 100.0 (3/3)
+> gpt2-codegolf
+> GPT-5.5 33.3 (1/3) 0.0 (0/3) 0.0 (0/3) 33.3 (1/3) 66.7 (2/3)
+
+The three trajectory-feedback cases show how historical observations can be organized as reusable progress and ex-plicit remaining goals, with subsequent actions that correspond to those goals. The three-repeat results also limit a stronger interpretation: DENSE fails one password-recovery repetition, and alternative feedback succeeds in 
+
+gpt2-codegolf . The five-condition comparisons jointly change synthesis, hierarchy, length, and prominence; this analysis does not identify the causal contribution of hierarchy alone. For example, the concrete concatenated answer in the password feedback is part of the intervention, not merely a formatting change. A content-matched comparison would be needed to separate that synthesis from its hierarchical presentation. The MiniMax case in Section D.4 illustrates a further transfer failure: correct historical results can be reported without recreating the required artifacts in the current execution. 22 E PROMPTS USED IN THE EXPERIMENTS 
+
+This section organizes the prompts by their role in feedback delivery, baseline extraction, and DENSE construction and reconciliation. The boxes reproduce the English instructions from the implementation. System message denotes a complete system message; excerpt denotes a selected passage, with internal omissions marked explicitly. Required output gives the original output constraints. The surrounding text describes inputs, invocation points, and intended behavior. Content slots in braces and output types in angle brackets are instantiated for each example; line wrapping and indentation are adjusted for readability. Shortcut-Tree in the original prompts is the implementation name of DENSE. Table 14 maps each prompt to its input view. Except for the privileged Verifier Feedback condition, generators do not receive post-hoc run0 rewards, hidden verifier outputs, or reference answers. Public tests already observed within the trajectory remain admissible evidence under the boundary in Section 3. Table 14: Prompt roles and input views. The recipient wrapper is static text; the remaining rows identify analysis-model roles.                       
+
+> Prompt Role Visible input P1 Recipient wrapper Generated feedback, followed by the original task P2 Task-only Advisor Original task instruction only P3 Global action scoring Task, complete OA sequence, and action indices P4 Prefix action scoring Task and prefix through the target action; its result is hidden P5 Subtask boundaries Root task, current level, and consecutively numbered queue P6 Local action scoring Root task, newly formed subtask, target action and observation P7 Subtask summaries Actions, observations, local scores, or child summaries P8 Hierarchy termination Root task and candidate top-level nodes with summaries P9 Shortcut compression Ordered direct children of one parent and evidence IDs P10 Issue reconciliation Cleaned subtree, inherited issues, and available evidence IDs
+
+E.1 RECIPIENT -S IDE FEEDBACK DELIVERY 
+
+The run1 task message contains the feedback, a separator, and the original task instruction, in that order. Prompt P1 requires the recipient to recreate deliverables in the fresh environment and to treat historical paths, files, and processes as evidence. The slot {content } is replaced by the feedback for the selected condition. This wrapper is used for trajectory feedback and Verifier Feedback; Advisor instead uses the separate recipient template in Prompt P2. Run0 receives the original task instruction without this feedback prefix.       
+
+> Prompt P1 Feedback for a fresh execution Recipient-side template (complete)
+> # Previous Attempt Analysis This rerun starts in a fresh isolated environment. Do not assume that files, processes, temporary directories, or session state from the previous attempt still exist. Paths and artifacts mentioned below are historical evidence only. Recreate every required deliverable in the current environment. Reuse the approach or content, not previous filesystem state. Below is an annotated analysis of a previous attempt at this task. Use it as evidence about what to preserve, correct, or recreate in this attempt. <report> {content} </report>
+
+E.2 BASELINE PROMPTS : T ASK PRIORS , F ULL TRAJECTORIES , AND PREFIXES 
+
+Task-only Advisor. The advisor receives only the task description and returns a strategy, instruction-inferable risks, and a verification checklist. Its prompt prohibits presenting general advice as an error or observation that has already occurred. The recipient is also told that the advisory was generated without observing a previous execution. 23 Prompt P2 Task-only Advisor System message 
+
+You are a task-only advisor for an AI agent before it begins a task. You receive only the original task instruction. You have not observed any previous execution, reasoning, action, tool call, tool result, test output, reward, verifier feedback, reference answer, or hidden state. Base your advice only on general knowledge and the task instruction. Never claim or imply that a particular event, error, file, command result, or failure has already occurred. Do not fabricate observations. 
+
+User message (requested-advisory excerpt) 
+
+Provide concise, actionable guidance for an agent that has not attempted the task yet. Use these Markdown sections: 1. `### Recommended Strategy` — a practical sequence of steps; 2. `### Likely Risks` — pitfalls inferable from the instruction alone; 3. `### Verification Checklist` — checks the agent should perform before finishing. Do not discuss a previous attempt and do not claim access to execution evidence. Return only the advisory Markdown. 
+
+Recipient-side template (complete) 
+
+# Task-Only Advisory The following advisory was generated before execution from the original task instruction alone. The advisor did not observe any previous attempt or outcome. <advisory> {content} </advisory> 
+
+All-at-once. One call receives the complete OA sequence and the indices of all target actions, and returns a label and rationale for every action. Later trajectory events may establish that an earlier action was redundant, undone, or invalidated. This within-trajectory hindsight does not provide access to the external verifier. Prompt P3 includes the scoring rubric and output instructions. 
+
+Prompt P3 All-at-once trajectory scoring System message 
+
+You are an expert evaluator of AI agent trajectories. You are given a task description and an agent’s COMPLETE execution trajectory as an OA (observation-action) sequence. Score EVERY action in a single pass. Because you see the whole trajectory and all of your own verdicts at once, keep the labels mutually consistent: judge each action by what it contributed to the trajectory as a whole, not in isolation. An action that looked reasonable locally but was made redundant, undone, or invalidated by what followed should be labelled accordingly. 
+
+User message: scoring criteria 
+
+label ranges from -2 to 0, where: - 0: an effective action that helps complete the task - -1: an ineffective or failed action, but not severe enough to fail the task - -2: a severe, fatal error that may directly cause the task to fail 
+
+User message: required-output excerpt 
+
+Score all of the actions listed above in ONE pass — exactly one entry per action_index, no more and no less. Output ONLY a JSON array, nothing else: [{"action_index": <int>, "reasoning": "<str>", "label": <int>}, ...] Note: within each object, output reasoning first (the complete analysis), then give label based on that reasoning. Keep each reasoning to a couple of sentences so every action fits in one response. 
+
+Step-by-step. Each action is assessed in a separate call using the prefix ending at the action itself, excluding its immediate observation and all later events. The known basis field cites evidence already established at that point 24 or states what should have been checked first. A negative label therefore concerns the justification of the decision, rather than directly identifying execution failure. 
+
+Prompt P4 Step-by-step decision scoring System message 
+
+You are an expert evaluator of AI agent trajectories, scoring one action of an AI agent in real time. You are given a task description and the trajectory PREFIX up to and including the target action — exactly what the agent itself had seen when it decided to act. Everything that happened afterwards is deliberately hidden from you: you do NOT know whether the action succeeded. Judge the DECISION, not the outcome. Ask: given only the information available at this point, was this the right move? A well-grounded action that later fails for reasons nobody could foresee is still a good decision; a guess that happens to work is still a bad one. Concretely, weigh whether the action: follows from evidence already in the prefix rather than from an unverified assumption; is the most direct available next step toward the task rather than a detour or a repeat of work already done; is well-formed and correctly parameterized given what is known; and gathers the information it needs before committing to an irreversible change. 
+
+User message: scoring criteria 
+
+label ranges from -2 to 0, where: - 0: a well-justified decision given what was known at this point - -1: a poorly justified decision — an unverified assumption, an avoidable detour, or a repeat of work already done — but not fatal - -2: a severely misguided decision that a careful agent could have avoided with the information already available, and that may derail the task 
+
+User message: evidence and output excerpt 
+
+known_basis: one sentence naming the concrete evidence ALREADY IN THE PREFIX that justifies this action (cite the index, e.g. "the file list from index 4"), or — if there is none — what the agent would have needed to check first. Do NOT speculate about what happens next; you have not been shown it. Output ONLY JSON, nothing else: {"action_index": <int>, "known_basis": "<str>", "reasoning": "<str>", "label": <int>} Note: output known_basis and reasoning before label, so the conclusion follows from the evidence. 
+
+Traj-only directly serializes actions and observations. Verifier Feedback also serializes the reward and test output. Neither condition uses a separate analysis-model prompt to generate advice. E.3 DENSE P ROMPTS FOR SUBTASK -T REE CONSTRUCTION 
+
+Contiguous semantic boundaries. The boundary prompt identifies a complete sub-phase starting at the queue head; the same operation is repeated at higher levels. In Prompt P5, action index denotes the current queue ordinal, rather than the original trajectory action index. Zero selects the head alone, and −1 requests more elements. At the final segment of a level, the user message explicitly forbids −1 because no further elements will arrive. 
+
+Prompt P5 DENSE: subtask boundaries System message 
+
+You are an expert at structuring AI agent trajectories, reconstructing an execution trajectory into a hierarchical subtask tree in a [bottom-up] manner. You will see the root task description, the current tree-building level, and a [contiguous, numbered] view of actions/sub-phases (a queue). Your task is to decide: from the head of the queue up to which element exactly forms one [complete and self-contained sub-phase/subtask] — i.e. those elements together accomplish a relatively independent thing, while the element immediately following clearly opens a new purpose. Like identifying function boundaries, split only at natural semantic breaks; prefer to wait for more actions to enter the view rather than forcibly merging elements that clearly span multiple different purposes into one sub-phase. [Prefer split] when the queue transitions from exploration/debugging to committing 
+
+25 Prompt P5 DENSE: subtask boundaries (continued) 
+
+irreversible state (overwriting files, opening a DB that may checkpoint/delete WAL, deleting artifacts, installing packages, starting long-lived processes), or from discovery to recipe execution — do not glue the trial-and-error stretch and the final commit into one oversized sub-phase. 
+
+User message: required output 
+
+Output ONLY JSON, nothing else: {"reasoning": "<first analyze the queue view: which elements belong to the same thing, where it breaks, or why it cannot break yet>", "action_index": <int>} Rules for action_index (the number is the [ordinal] labeled on each line of the view, increasing consecutively from the head element’s ordinal, NOT a 0-based array index): - output some ordinal i (queue-head ordinal <= i <= queue-tail ordinal): means the elements from the queue head up to ordinal i [together form one complete sub-phase], and ordinal i+1 onward clearly opens a new purpose. These elements will be aggregated into an upper-level node. - output 0: means the [single] element at the queue head is itself already a complete sub-phase; aggregate just it alone. - output -1: means the elements currently in view are not yet enough to form a complete sub-phase; wait for more actions to enter the queue before deciding. Note: reasoning must come before action_index, so the conclusion is driven by the analysis. 
+
+Scoring before summarization. DENSE scores actions within each newly formed local subtask before generat-ing its summary. The XML input marks the subtask with focus="current-subtask" and the action with 
+
+focus="TARGET" ; scoring also uses the observation immediately following that action. Prompt P6 grounds the assessment in both the local objective and the root task, while recognizing necessary exploration, debugging, and correction. These labels are internal analysis signals, not verifier verdicts, and are omitted from the final DENSE feedback. 
+
+Prompt P6 DENSE: local action scoring System message 
+
+You are an expert evaluator of AI agent trajectories, scoring an agent trajectory action by action inside a [just-formed sub-phase]. You will see: the root task (instruction), an XML mini-tree whose only subtask is the current sub-phase (focus="current-subtask"), and one [target action] marked with focus="TARGET". Your scoring [MUST] be grounded in the root instruction and this sub-phase’s local goal: 1. Infer the sub-phase’s local goal from the actions it contains (subtitle/summary may be empty at this stage); 2. Judge whether the target action advances that local goal, is ineffective/repetitive/a detour, or damages progress; necessary exploration, debugging, and error-correction are valuable and should not be judged ineffective merely because they did not immediately produce a result; 3. Align with the root task’s final goal: even if locally reasonable, reflect clear deviation or harm faithfully; 4. Combine with the environment feedback (observation) immediately following the target action. Always keep your scoring basis on [the root task requirements + this sub-phase’s local role]. 
+
+User message: scoring-rubric excerpt 
+
+label ranges from -2 to 0, where: - 0: an effective action that helps complete the task, e.g. correctly advancing task progress, successfully building the environment, achieving a milestone, or advancing the local goal of its subtask / the final goal of the root task - -1: an ineffective or failed action (repetition, detour, no progress, a failed tool call, or no help to the task) that leaves the task no worse off — the agent can still recover from here. A failed attempt that is later corrected by other means belongs to -1, not -2 - -2: an action that actively damages the task outcome, i.e. the delivered result is wrong (or is wrongly believed to be right) because of it. Typical cases: 
+
+26 Prompt P6 DENSE: local action scoring (continued) 
+
+[. . . excerpt omitted . . . ] 
+
+User message: required output 
+
+Output ONLY JSON, nothing else: {"reasoning": "<scoring reasoning>", "label": <int>} Note: reasoning must come before label, so the conclusion is driven by the reasoning. 
+
+Summarizing reusable evidence. Prompt P7 asks for the shortest observed working path while retaining the ver-ification that supports it. Reusable failures belong in dead ends , and unverified results belong in open issues .The output fields are subtitle , summary , artifacts , final state , key values , key mechanisms ,
+
+critical order , dead ends , and open issues ; fields without relevant content contain none . Parent sum-maries also reconcile conflicting child values and preserve ordering requirements. 
+
+Prompt P7 DENSE: evidence-preserving summaries System message 
+
+You are an expert evaluator of AI agent trajectories. A group of consecutive actions/sub-phases has just been identified as a higher-level sub-phase. Give it a short subtitle, and based on the sequence of actions it contains and their execution results (and per-action labels / score reasoning when present), distill the key information that an agent rerunning this task later can directly reuse. Focus on: which files/artifacts were finally produced (and their paths), what cleanup was done to the environment when the sub-phase ended (restore/cleanup/leftovers), the key values and mappings extracted or computed, critical ordering constraints, and whether there are any unresolved issues. In addition, specifically distill the load-bearing key implementation mechanisms of this sub-phase — the required step order, irreversible state changes, correct API/parameter mappings, environment prerequisites, and (only when present) concurrency/async/daemon design whose omission on rerun would cause functional regression. [Shortcut rule] The summary is what a rerun agent reads INSTEAD of the step-by-step detail. Write it as the [shortest path that actually worked], not as a chronicle of the search. If the agent tried tools/approaches A, B, C and only D worked, the summary says "used D to do X" — it does NOT narrate trying A, B, C first. [Exception — never shortcut away verification]: if the subtask ran a check, test, or validation that substantiates its result, that step MUST stay in the summary (state what was verified and how), because a rerun agent that skips verification will silently ship a wrong result. Failed attempts are not discarded: put them in `dead_ends` so the rerun agent can avoid them, but keep them out of the summary narrative. [Evidence-grounded values] Put a value into `key_values` only when a later action in this sub-phase verifies it (re-read file, query/test, cross-check against the instruction). If the agent only computed or wrote a result without verification, put `unverified result: ...` in `open_issues` — do NOT state it as a reusable fact in `key_values`. [Critical ordering] Extract must-do-before constraints for irreversible/stateful steps (overwrite, DB open that may checkpoint, delete, install, start daemon) into `critical_order` and also mention them in the summary when they are load-bearing. [Mine failures] Scan execution results (and negative labels when present) for reusable dead ends (command not found, traceback, permission errors, 404, incompatible versions). Put those in `dead_ends`; leave one-off typos the agent immediately corrected out. [Parent reconcile] When children are already sub-phases with conflicting `key_values`, keep the later verified value; mark superseded values as dead ends — never present two contradictory authoritative parameter sets. 
+
+Stopping the hierarchy construction. Prompt P8 tests whether the candidate nodes form a small, coherent set of top-level phases. A can mount all=true response means that hierarchy construction can stop; it does not assert that the original task succeeded. Further natural groupings require another aggregation level. 27 Prompt P8 DENSE: hierarchy termination System message 
+
+You are an expert at structuring AI agent trajectories, deciding whether a hierarchical subtask tree is already [fully built]. There is currently a set of candidate top-level nodes, plus the root task description. Only when [every one of these nodes is exactly one top-level major phase of the root task] (coarse-grained enough, with clear boundaries between them, together fully covering the whole task), and the number of nodes is already few enough (a handful of trunk phases, not a long list of fine-grained nodes that could still be merged), should you judge the tree building complete and mount them all directly under the root node. If these nodes are still too many, uneven in granularity, or several of them clearly could be further aggregated into larger phases, you [MUST] judge it not yet complete and aggregate one more level upward. [Important] Do NOT judge it complete just because ’these nodes can all technically be mounted under the root’ — almost any node can be mounted under the root, that is not the criterion; the criterion is whether they are already the [coarsest-grained, no-longer-naturally-aggregatable] top-level phase division. If candidate summaries still mix unresolved exploration with the final recipe, or present conflicting key values that a further aggregation could reconcile, lean toward not-yet-complete. First [node by node] briefly state whether it holds up as a direct sub-phase of the root task and whether it could still be aggregated with adjacent nodes, then give the overall conclusion. 
+
+User message: required output 
+
+Output ONLY JSON, nothing else: {"reasoning": "<node-by-node analysis of whether each is already a top-level major phase of the root task, whether it can be aggregated further, and whether the overall count and granularity are appropriate>", "can_mount_all": <true|false>} Note: reasoning must come before can_mount_all. Lean strict: as long as further aggregation is clearly still possible, output false. 
+
+E.4 DENSE P ROMPTS FOR COMPRESSION AND ISSUE RECONCILIATION 
+
+Compressing sibling attempts. The cleaner receives the ordered direct children of one parent and returns a complete partition in the same order. A keep group contains one source node; a shortcut group contains at least two consecutive source nodes. Each group records the reusable failure, shortest working path, observed local outcome, and remaining obligation, citing supplied evidence and key-action IDs. If every attempt fails, the failure and open issue must remain visible. 
+
+Prompt P9 DENSE: contiguous shortcut compression System message 
+
+You are the path cleaner for Shortcut-Tree, an evidence-preserving representation of an AI-agent execution trace. You receive the ordered direct children of exactly one parent subtask. Partition those siblings without reordering them. Replace a contiguous try/fail/recover stretch with one shortcut node that records the reusable dead end, the shortest working path, and the observed result. If every attempt failed, say so and retain an open issue. Do not replay the search chronicle. Numeric action labels are hints about where to inspect, never proof of success. Success requires cited observation, verification, or an already-criticized child subtask. Paths and artifacts are historical evidence from an earlier attempt; never imply that they exist in the rerun environment. Never invent a path, value, artifact, result, or verification without a supplied source/evidence ID. Retain decisive correct or incorrect actions and any key action identified in the input. Output a strict, complete, contiguous partition. 
+
+User message: required output 
+
+Output ONLY JSON: {"groups": [{"mode": "keep|shortcut", "source_node_ids": ["direct-child-id", "..."], "title": "short factual title", 
+
+28 Prompt P9 DENSE: contiguous shortcut compression (continued) 
+
+"dead_end": "reusable failed approach and observed reason, or none", "working_path": "shortest evidence-backed path that worked, or empty", "outcome": "succeeded|failed|partial|unknown", "open_issue": "unresolved requirement, or empty", "evidence_node_ids": ["supplied-id"], "key_action_ids": ["supplied-action-node-id"] }]}Rules: a keep group contains exactly one source; a shortcut contains at least two contiguous sources. Every direct child must occur exactly once and in the original order. 
+
+Reconciling completion and inherited issues. The critic reads the cleaned subtree and assesses coherence sepa-rately from completion. It may close an inherited issue only when a later node provides concrete recovery evidence, with supplied IDs recorded in resolution evidence . The completion-scope instruction in Prompt P10 is also supplied to the cleaner: a complete verdict describes what the trajectory evidence supports. 
+
+Prompt P10 DENSE: evidence-based issue reconciliation System message 
+
+You are the subtree critic for Shortcut-Tree. Judge only the cleaned subtree and its cited evidence. Decide whether the local theme is internally coherent and whether its subtask was actually completed. Identify unresolved ordinary issues and fatal issues. A confident statement or a numeric action label is not evidence. Success requires an observation, verification, or a coherent completed child verdict. Historical artifacts do not persist into a rerun environment. You may resolve an issue inherited from a child only when a later cleaned node contains concrete recovery evidence. For every resolved issue, return non-empty resolution_evidence containing supplied IDs. Select key actions by ID; never rewrite their original content. Do not output a broken flag: status is derived deterministically after validation. 
+
+User message: completion scope (also used by the cleaner) 
+
+## Completion scope No reward or verifier output was supplied. A complete verdict means only that the supplied trajectory evidence is internally coherent and appears to satisfy the task. It is not verifier-confirmed correctness. 
+
+User message: required output 
+
+Output ONLY JSON: {"coherence": "coherent|inconsistent|insufficient_evidence", "completion": "complete|incomplete|failed|unknown", "summary": "shortest evidence-grounded account of the final state", "open_issues": [{"issue": "description", "evidence_node_ids": ["supplied-id"]} ], "fatal_issues": [{"issue": "description", "evidence_node_ids": ["supplied-id"]} ], "resolved_issue_ids": ["inherited-issue-id"], "resolution_evidence": {"inherited-issue-id": ["supplied-id"]}, "key_action_ids": ["supplied-action-node-id"] }
+
+Turning structured outputs into feedback. The implementation validates partition coverage, node references, and issue states before rendering the feedback described in Section 2. Completed branches are folded, unresolved issue 29 paths remain expanded, and selected key actions retain their original content. Rendering is deterministic and does not call a model to rewrite the final feedback, so it has no additional generation prompt. 
+
+F FULL -R ESULT VISUALIZATIONS 
+
+Table 2 reports strict pass rates and their paired changes; Table 4 reports recipient token use and changes from the baseline row. The figures below show the same results across methods and tasks. All methods use a fixed order, with the initial execution as Baseline and Verifier Feedback (VF) distinguished by its additional outcome information. Figure 10 reports execution-token changes. Figure 11 shows estimated USD costs for GPT-5.5 execution and Gemini feedback, using the prices in Appendix B.2. Figures 12–14 retain token units and compare Baseline, Advisor, Traj-only, All-at-once, Step-by-step, and DENSE across all four recipients, with equal task weights. Token totals combine execution and feedback generation; three-result task totals are three times the per-result values. Source run0 is not added to run1; unfinished calls are excluded, and reused feedback is attributed per result (Appendix A). Scatter points are model–method aggregates with independent per-model axes and no fitted trend: left uses fewer tokens, up is better. 30 F.1 AGGREGATE TASK PERFORMANCE Base Advisor Traj All Step DENSE (ours) VF     
+
+> 025 50 75 100
+> Strict pass rate (%)
+> 44.6 41.2 38.6 44.6 42.7 52.4 44.9
+
+MiniMax-M2.7      
+
+> Base Advisor Traj All Step DENSE (ours) VF
+> 025 50 75 100
+> Strict pass rate (%)
+> 51.4 53.9 63.8 62.1 65.4 67.1 66.7
+
+DeepSeek V4 Pro      
+
+> Base Advisor Traj All Step DENSE (ours) VF
+> 025 50 75 100
+> Strict pass rate (%)
+> 68.5 69.3 72.3 73.0 73.0 75.7 83.9
+
+GPT-5.5       
+
+> Base Advisor Traj All Step DENSE (ours) VF
+> 025 50 75 100
+> Strict pass rate (%)
+> 39.3 43.8 46.1 47.9 46.8 50.9 53.9
+
+Kimi K2.6 
+
+Strict pass rate across all conditions 
+
+89 tasks (DeepSeek 81); 3 results per task and condition; shared zero-based axes 
+
+> Base = run0; All = All-at-once; VF = privileged Verifier Feedback.
+
+Figure 7: Strict pass rates across all seven conditions, using the outcomes in Table 2. Strict pass requires reward exactly one; rates average three repetitions within each task and then weight tasks equally. MiniMax, GPT, and Kimi use 89 tasks each, and DeepSeek uses 81. Shared zero-based axes show absolute performance on the same percentage scale. DENSE leads the tested non-privileged methods for every recipient. VF uses additional outcome information and exceeds DENSE on GPT and Kimi, but not on MiniMax or DeepSeek, so it serves as a privileged reference rather than a guaranteed upper bound. 31 Advisor Traj All Step DENSE (ours) 
+
+−10 010 20 
+
+> Strict pass change (pp)
+> VF† = +0.4 pp
+
+MiniMax-M2.7 
+
+> -3.4 -6.0 +0.0 -1.9 +7.9
+> Advisor Traj All Step DENSE (ours)
+
+−10 010 20 
+
+> VF† = +15.2 pp
+
+DeepSeek V4 Pro 
+
+> +2.5 +12.3 +10.7 +14.0 +15.6
+> Advisor Traj All Step DENSE (ours)
+
+−10 010 20 
+
+> VF† = +15.4 pp
+
+GPT-5.5   
+
+> +0.7 +3.7 +4.5 +4.5 +7.1
+> Advisor Traj All Step DENSE (ours)
+
+−10 010 20 
+
+> VF† = +14.6 pp
+
+Kimi K2.6  
+
+> +4.5 +6.7 +8.6 +7.5 +11.6
+
+Strict pass change from baseline 
+
+Paired change (pp); 89 tasks (DeepSeek 81), 3 results per task 
+
+> Zero = baseline; positive values show improvement and negative values show degradation.
+
+VF†: privileged reference (extra reward and veri fi er output) Figure 8: Paired strict pass change from the initial execution, using Table 2. Each value averages the run1-minus-run0 binary success difference over matched repetitions and equally weighted tasks, expressed in percentage points rather than relative percentages. Zero marks unchanged performance; negative bars indicate degradation. Bars show methods without post-hoc verifier information, and gray dashed lines show VF. DENSE gains 7.87, 15.64, 7.12, and 11.61 pp on MiniMax, DeepSeek, GPT, and Kimi, respectively. On MiniMax, it is the only non-privileged feedback method with a positive change. 32 Base Advisor Traj All Step DENSE (ours) VF        
+
+> 025 50 75 100
+> Tasks (%)
+> 56 60 60 61 54 66 66 34 20 17 26 29 39 22
+
+MiniMax-M2.7          
+
+> Base Advisor Traj All Step DENSE (ours) VF
+> 025 50 75 100
+> Tasks (%)
+> 64 70 74 78 79 80 80 37 37 54 43 51 53 54
+
+DeepSeek V4 Pro          
+
+> Base Advisor Traj All Step DENSE (ours) VF
+> 025 50 75 100
+> Tasks (%)  78 88 82 84 85 87 93 57 53 62 61 62 64 73
+
+GPT-5.5             
+
+> Base Advisor Traj All Step DENSE (ours) VF
+> 025 50 75 100
+> Tasks (%)
+> 57 61 61 63 62 67 71 24 30 34 33 34 35 37
+
+Kimi K2.6 
+
+Task coverage and three-result consistency 
+
+> 89 tasks (DeepSeek 81), three results each; strict pass requires reward exactly 1
+
+pass@3: at least 1 / 3 pass³: all 3 / 3 Figure 9: Task coverage ( pass@3 ) and three-result consistency ( pass 3), computed from each task’s three binary out-comes as in Equation 5 and Table 5. The blue bar counts tasks solved at least once; the gold bar requires all three attempts to pass. Their difference is the fraction of tasks solved in exactly one or two attempts. All applicable tasks, including those never solved, remain in the denominators: 89 for MiniMax, GPT, and Kimi, and 81 for DeepSeek. DENSE improves both metrics over Baseline on all four recipients; differing method rankings distinguish broad task coverage from repeatable success. 33 F.2 EXECUTION COSTS , T OKEN USE , AND PERFORMANCE Advisor Traj All Step DENSE (ours) VF 
+
+> −50 −25 025
+> Token change (%)  +23.4% -14.5% -3.4% +14.8% -19.0% +22.6%
+
+MiniMax-M2.7 (n=267)  
+
+> Advisor Traj All Step DENSE (ours) VF
+> −50 −25 025
+> Token change (%)
+> +7.2% -17.6% -17.6% -27.7% -20.0% -11.6%
+
+DeepSeek V4 Pro (n=243)  
+
+> Advisor Traj All Step DENSE (ours) VF
+> −50 −25 025
+> Token change (%)
+> -5.2% -27.7% -33.7% -7.6% -43.6% -18.5%
+
+GPT-5.5 (n=267)  
+
+> Advisor Traj All Step DENSE (ours) VF
+> −50 −25 025
+> Token change (%)
+> +10.4% +2.6% +0.3% +7.8% -23.7% +25.1%
+
+Kimi K2.6 (n=267) 
+
+Change in observed recipient tokens 
+
+100 × (method mean / baseline mean − 1); includes cache reads/writes and completed-call records 
+
+> Observed usage is a lower bound for censored calls; feedback generation is reported separately.
+
+Figure 10: Observed recipient-token change, computed from Table 4 as 100( T g /T 0 − 1) , where each mean first averages repetitions within tasks and then weights tasks equally. This is a ratio of aggregate means, not an average of task-specific percentage changes. Tokens include input, output, and cache reads and writes; feedback generation is excluded, and incomplete logs contribute recorded completed calls only (Appendix A.3). Negative bars indicate lower execution use. DENSE reduces it by 19.0–43.6% across recipients, while Step-by-step achieves the largest reduction on DeepSeek. 34 Baseline (run0) Advisor Traj-only All-at-once Step-by-step DENSE (ours) 
+
+> 0.0 0.5 1.0 1.5 2.0
+> Estimated USD per result
+> $0.14
+
+-36.6% vs run0 
+
+$1.81 $1.71 $1.26 $1.17 $1.72 $1.15 
+
+Estimated API cost by method 
+
+> GPT-5.5 execution + Gemini 3 Flash Preview feedback; 89 tasks × 3 results
+> Baseline: run0 only. Other bars: run1 + feedback generation; source run0 is not added.
+> Input / output rates (USD per 1M tokens): GPT-5.5 5 / 30; Gemini 3 Flash Preview 0.50 / 3.
+> Standard uncached base rates; unfinished calls excluded. Reused feedback is attributed per result.
+
+Recipient execution Feedback generator run0 cost reference Figure 11: Estimated USD per result for GPT-5.5, using the recorded input/output usage and fixed model-specific prices in Appendix B.2. Costs average three repetitions within each of 89 tasks, then weight tasks equally. Method-colored segments denote recipient execution; gray segments denote Gemini feedback generation. Baseline and the dashed line show run0; other bars combine run1 and feedback without adding the source execution. DENSE totals $1.15, including $0.14 for feedback, versus $1.81 for run0 (Table 6). The 36.6% reduction includes feedback genera-tion under this pricing configuration; these standard base-rate estimates do not represent historical invoices. 35 1.6 2.4 3.2 
+
+Tokens per result (M) 
+
+40 45 50 55 
+
+> Strict pass (%)
+
+MiniMax-M2.7 (89 tasks × 3) 
+
+DENSE (ours) 
+
+Base Advisor Traj All Step    
+
+> 1.6 2.4 3.2 4.0
+
+Tokens per result (M) 
+
+48 54 60 66 
+
+> Strict pass (%)
+
+DeepSeek V4 Pro (81 tasks × 3) 
+
+DENSE (ours) 
+
+Base Advisor Traj All Step    
+
+> 0.2 0.3 0.4 0.5
+
+Tokens per result (M) 
+
+69 72 75 78 
+
+> Strict pass (%)
+
+GPT-5.5 (89 tasks × 3) 
+
+DENSE (ours) 
+
+Base Advisor Traj All Step    
+
+> 0.6 0.9 1.2 1.5
+
+Tokens per result (M) 
+
+40 45 50 
+
+> Strict pass (%)
+
+Kimi K2.6 (89 tasks × 3) 
+
+DENSE (ours) 
+
+Base Advisor Traj All Step 
+
+Strict pass versus total token use 
+
+Each point is one model-method mean; millions of tokens per result 
+
+> Six conditions: Baseline, Advisor, Traj-only, All-at-once, Step-by-step and DENSE (ours).
+> Model-specific zoom: both x and y scales vary by panel. Base = run0; other methods = run1. Tokens: execution + feedback generation per result; source run0 is not added to run1.
+> Includes cache reads/writes; unfinished calls excluded. Reused feedback is attributed per result.
+
+Figure 12: Strict pass rate versus observed execution plus feedback-generation tokens per result. Each point aggregates one model–method condition over three repetitions per task with equal task weights; VF is excluded. Horizontal values sum recipient and attributed generator tokens in millions, while vertical values match Table 2. Source run0 is not added to run1. Upper-left positions combine higher success with fewer tokens, but panel scales differ. DENSE has the highest pass rate in every panel, while its combined token use exceeds Baseline for all four recipients. Including generation thus exposes overhead absent from the execution-only comparison in Figure 4; token totals do not apply the model-specific dollar prices used in Figure 11. 36 4 6 8 10 
+
+Tokens per three-result task (M) 
+
+55 60 65 
+
+> pass@3 (%)
+
+MiniMax-M2.7 (89 tasks × 3) 
+
+DENSE (ours) 
+
+Base Advisor Traj All Step 
+
+5.0 7.5 10.0 12.5 
+
+Tokens per three-result task (M) 
+
+66 72 78 84 
+
+> pass@3 (%)
+
+DeepSeek V4 Pro (81 tasks × 3) 
+
+DENSE (ours) 
+
+Base Advisor Traj All Step 
+
+0.6 0.9 1.2 1.5 
+
+Tokens per three-result task (M) 
+
+76 80 84 88 
+
+> pass@3 (%)
+
+GPT-5.5 (89 tasks × 3) 
+
+DENSE (ours) 
+
+Base Advisor Traj All Step 
+
+2 3 4
+
+Tokens per three-result task (M) 
+
+56 60 64 68 
+
+> pass@3 (%)
+
+Kimi K2.6 (89 tasks × 3) 
+
+DENSE (ours) 
+
+Base Advisor Traj All Step 
+
+pass@3 versus total token use 
+
+Each point is one model-method mean; millions of tokens per three-result task 
+
+> Six conditions: Baseline, Advisor, Traj-only, All-at-once, Step-by-step and DENSE (ours).
+> Model-specific zoom: both x and y scales vary by panel. Base = run0; other methods = run1. Tokens: execution + feedback generation per three-result task; source run0 is not added to run1.
+> Includes cache reads/writes; unfinished calls excluded. Reused feedback is attributed per result.
+
+Figure 13: Task coverage ( pass@3 ) versus observed tokens for three results per task. Coverage is the fraction of applicable tasks with at least one strict success (Table 5); never-solved tasks remain in the denominator. Horizontal values sum execution and attributed feedback tokens across all three results before averaging over tasks, giving three times the per-result values in Figure 12. DENSE has the highest coverage among the plotted conditions on MiniMax, DeepSeek, and Kimi. On GPT, Advisor reaches slightly higher coverage (87.64% versus 86.52%), illustrating that coverage alone does not capture how consistently a method solves those tasks. 37 4 6 8 10 
+
+Tokens per three-result task (M) 
+
+16 24 32 40 
+
+> pass³ (%)
+
+MiniMax-M2.7 (89 tasks × 3) 
+
+DENSE (ours) 
+
+Base Advisor Traj All Step 
+
+5.0 7.5 10.0 12.5 
+
+Tokens per three-result task (M) 
+
+36 42 48 54 
+
+> pass³ (%)
+
+DeepSeek V4 Pro (81 tasks × 3) 
+
+DENSE (ours) 
+
+Base Advisor Traj All Step 
+
+0.6 0.9 1.2 1.5 
+
+Tokens per three-result task (M) 
+
+52 56 60 64 
+
+> pass³ (%)
+
+GPT-5.5 (89 tasks × 3) 
+
+DENSE (ours) 
+
+Base Advisor Traj All Step 
+
+2 3 4
+
+Tokens per three-result task (M) 
+
+25 30 35 
+
+> pass³ (%)
+
+Kimi K2.6 (89 tasks × 3) 
+
+DENSE (ours) 
+
+Base Advisor Traj All Step 
+
+pass³ versus total token use 
+
+Each point is one model-method mean; millions of tokens per three-result task 
+
+> Six conditions: Baseline, Advisor, Traj-only, All-at-once, Step-by-step and DENSE (ours).
+> Model-specific zoom: both x and y scales vary by panel. Base = run0; other methods = run1. Tokens: execution + feedback generation per three-result task; source run0 is not added to run1.
+> Includes cache reads/writes; unfinished calls excluded. Reused feedback is attributed per result.
+
+Figure 14: Three-result consistency ( pass 3) versus observed tokens for three results per task. Horizontal values and per-model horizontal axes match Figure 13; only the success criterion changes. A task contributes to the numerator only when all three attempts receive reward exactly one, with all applicable tasks retained in the denominator (Table 5). DENSE leads the plotted conditions on MiniMax, GPT, and Kimi. On DeepSeek, Traj-only reaches 54.32% versus DENSE’s 53.09%, with fewer total tokens. Reading this plot alongside task coverage separates occasional success from success maintained across all three measured attempts. 38 F.3 TASK -L EVEL RESULTS 
+
+Each task heatmap cell reports strict pass rate over three repetitions: 0, 33.3, 66.7, or 100%. Gray N/A cells are excluded from DeepSeek’s denominator. Base Advisor Traj All Step DENSE (ours) VF 
+
+adaptive-rejection-sampler bn-fit-modify break-filter-js-from-html build-cython-ext build-pmars build-pov-ray caffe-cifar-10 cancel-async-tasks chess-best-move circuit-fibsqrt cobol-modernization code-from-image compile-compcert configure-git-webserver constraints-scheduling count-dataset-tokens crack-7z-hash custom-memory-heap-crash db-wal-recovery distribution-search dna-assembly dna-insert extract-elf extract-moves-from-video feal-differential-cryptanalysis feal-linear-cryptanalysis filter-js-from-html financial-document-processor fix-code-vulnerability fix-git fix-ocaml-gc gcode-to-text git-leak-recovery git-multibranch gpt2-codegolf headless-terminal hf-model-inference install-windows-3.11 kv-store-grpc large-scale-text-editing largest-eigenval llm-inference-batching-scheduler log-summary-date-ranges mailman make-doom-for-mips make-mips-interpreter mcmc-sampling-stan merge-diff-arc-agi-task model-extraction-relu-logits modernize-scientific-stack mteb-leaderboard mteb-retrieve multi-source-data-merger nginx-request-logging openssl-selfsigned-cert overfull-hbox password-recovery path-tracing path-tracing-reverse polyglot-c-py polyglot-rust-c portfolio-optimization protein-assembly prove-plus-comm pypi-server pytorch-model-cli pytorch-model-recovery qemu-alpine-ssh qemu-startup query-optimize raman-fitting regex-chess regex-log reshard-c4-data rstan-to-pystan sam-cell-seg sanitize-git-repo schemelike-metacircular-eval sparql-university sqlite-db-truncate sqlite-with-gcov torch-pipeline-parallelism torch-tensor-parallelism train-fasttext tune-mjcf video-processing vulnerable-secret winning-avg-corewars write-compressor 
+
+66.7 33.3 33.3 0 0 66.7 066.7 66.7 66.7 33.3 100 66.7 100 100 100 66.7 66.7 100 100 66.7 0 33.3 0 0 0 0 0100 66.7 66.7 66.7 100 100 33.3 100 66.7 100 100 33.3 66.7 100 0 33.3 0 0 33.3 66.7 66.7 0 66.7 0 0 0 0 33.3 0 0 0 0 0 0 100 0 0 0 0 0 0 0100 100 66.7 100 33.3 100 66.7 0 66.7 0 0 0 0 00 33.3 33.3 0 100 33.3 00 0 0 0 0 0 066.7 33.3 66.7 66.7 66.7 66.7 100 100 0 66.7 66.7 100 100 33.3 100 66.7 100 100 100 100 66.7 100 100 33.3 66.7 66.7 100 33.3 0 33.3 66.7 66.7 100 100 66.7 100 100 66.7 100 100 100 100 0 0 0 0 0 0 00 0 0 0 0 0 0100 33.3 66.7 100 100 66.7 100 0 0 0 0 0 0 00 0 66.7 33.3 33.3 33.3 33.3 0 0 0 0 0 0 033.3 0 33.3 0 33.3 33.3 0100 33.3 66.7 66.7 0 100 66.7 100 100 100 100 100 100 100 33.3 100 33.3 33.3 100 66.7 100 100 66.7 66.7 66.7 100 100 33.3 0 0 0 0 0 0 100 100 100 100 100 100 100 100 33.3 66.7 33.3 100 66.7 100 66.7 0 0 0 0 0 0 0100 66.7 100 100 33.3 100 66.7 33.3 66.7 33.3 100 0 100 66.7 0 0 0 0 0 33.3 0100 66.7 100 66.7 100 66.7 33.3 33.3 100 33.3 66.7 66.7 33.3 100 100 100 33.3 0 66.7 100 66.7 100 100 66.7 100 100 100 100 100 100 100 100 100 100 33.3 100 100 100 100 100 100 66.7 0 0 0 0 0 0 00 0 0 0 0 0 066.7 66.7 33.3 66.7 100 66.7 33.3 100 66.7 33.3 66.7 100 66.7 33.3 0 0 0 0 66.7 0 0100 100 0 100 100 100 100 33.3 0 33.3 33.3 66.7 33.3 100 0 0 0 0 0 0 66.7 100 100 66.7 100 100 100 66.7 66.7 100 33.3 100 66.7 100 66.7 100 100 100 100 100 100 100 33.3 66.7 0 33.3 0 33.3 33.3 0 66.7 66.7 66.7 100 100 66.7 0 0 0 0 0 0 00 0 0 0 0 0 033.3 0 33.3 33.3 66.7 33.3 33.3 0 0 0 33.3 0 0 066.7 66.7 100 66.7 0 0 66.7 0 0 0 0 0 0 33.3 100 100 100 100 100 100 100 66.7 66.7 100 100 66.7 100 100 0 33.3 100 100 66.7 100 100 0 0 33.3 66.7 0 33.3 33.3 0 0 0 0 0 0 066.7 0 33.3 0 0 33.3 33.3 100 66.7 66.7 66.7 100 100 100 0 0 0 0 0 0 00 0 0 0 0 0 00 33.3 0 66.7 0 100 66.7 100 66.7 100 66.7 66.7 100 66.7 33.3 33.3 33.3 33.3 0 33.3 00 33.3 0 0 0 33.3 33.3 0 0 0 0 0 0 066.7 33.3 66.7 33.3 0 66.7 0100 33.3 100 100 100 100 100 100 66.7 66.7 100 66.7 100 66.7 100 0 66.7 100 66.7 100 66.7 0 0 0 0 0 0 00 0 0 0 0 0 033.3 0 0 33.3 0 33.3 00 66.7 33.3 66.7 33.3 100 33.3 0 0 0 0 0 0 0100 100 66.7 33.3 33.3 100 66.7 33.3 0 0 33.3 0 0 33.3 0 0 0 0 0 0 0
+
+0 33.3 66.7 100 
+
+MiniMax-M2.7: strict pass rate by task 
+
+Three results per task and condition; fixed alphabetical task order 
+
+Strict pass rate (%); gray N/A tasks are excluded from the denominator. 
+
+Figure 15: MiniMax-M2.7: all 89 tasks and seven conditions, three results per cell. Each cell reports strict pass rate (%) over three repetitions. 39 Base Advisor Traj All Step DENSE (ours) VF 
+
+adaptive-rejection-sampler bn-fit-modify break-filter-js-from-html build-cython-ext build-pmars build-pov-ray caffe-cifar-10 cancel-async-tasks chess-best-move circuit-fibsqrt cobol-modernization code-from-image compile-compcert configure-git-webserver constraints-scheduling count-dataset-tokens crack-7z-hash custom-memory-heap-crash db-wal-recovery distribution-search dna-assembly dna-insert extract-elf extract-moves-from-video feal-differential-cryptanalysis feal-linear-cryptanalysis filter-js-from-html financial-document-processor fix-code-vulnerability fix-git fix-ocaml-gc gcode-to-text git-leak-recovery git-multibranch gpt2-codegolf headless-terminal hf-model-inference install-windows-3.11 kv-store-grpc large-scale-text-editing largest-eigenval llm-inference-batching-scheduler log-summary-date-ranges mailman make-doom-for-mips make-mips-interpreter mcmc-sampling-stan merge-diff-arc-agi-task model-extraction-relu-logits modernize-scientific-stack mteb-leaderboard mteb-retrieve multi-source-data-merger nginx-request-logging openssl-selfsigned-cert overfull-hbox password-recovery path-tracing path-tracing-reverse polyglot-c-py polyglot-rust-c portfolio-optimization protein-assembly prove-plus-comm pypi-server pytorch-model-cli pytorch-model-recovery qemu-alpine-ssh qemu-startup query-optimize raman-fitting regex-chess regex-log reshard-c4-data rstan-to-pystan sam-cell-seg sanitize-git-repo schemelike-metacircular-eval sparql-university sqlite-db-truncate sqlite-with-gcov torch-pipeline-parallelism torch-tensor-parallelism train-fasttext tune-mjcf video-processing vulnerable-secret winning-avg-corewars write-compressor 
+
+0 0 0 0 0 0 066.7 66.7 100 66.7 100 66.7 66.7 100 66.7 100 100 100 100 100 100 100 100 100 100 100 100 100 33.3 100 100 100 100 100 100 33.3 100 100 100 100 100 33.3 66.7 33.3 66.7 33.3 100 66.7 0 100 0 0 0 0 0N/A N/A N/A N/A N/A N/A N/A 66.7 0 100 66.7 66.7 66.7 100 0 0 0 66.7 66.7 0 66.7 N/A N/A N/A N/A N/A N/A N/A 100 100 100 100 100 100 100 0 0 0 0 0 0 0100 100 100 100 100 100 100 66.7 33.3 66.7 66.7 66.7 66.7 100 100 100 100 100 100 100 100 66.7 100 100 100 100 100 100 66.7 66.7 100 100 100 100 100 100 100 100 100 100 100 100 0 0 0 0 0 0 00 0 0 0 0 33.3 33.3 0 33.3 33.3 33.3 0 33.3 33.3 N/A N/A N/A N/A N/A N/A N/A 33.3 33.3 100 100 100 100 100 0 33.3 33.3 66.7 66.7 100 33.3 0 0 33.3 33.3 33.3 33.3 0N/A N/A N/A N/A N/A N/A N/A 100 100 100 100 100 100 100 100 100 100 100 100 100 100 66.7 100 100 100 100 100 100 0 0 0 0 0 0 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 0 0 0 0 0 0 033.3 100 66.7 66.7 100 66.7 33.3 100 66.7 66.7 66.7 66.7 100 100 0 0 0 33.3 33.3 33.3 0100 66.7 100 66.7 100 100 100 66.7 66.7 100 100 100 100 100 33.3 0 100 100 100 100 100 0 33.3 66.7 33.3 33.3 66.7 33.3 100 100 100 100 100 100 100 100 100 100 66.7 100 66.7 100 0 0 0 0 0 0 00 0 0 0 0 0 033.3 100 33.3 33.3 33.3 33.3 66.7 100 100 100 100 100 100 100 0 0 0 0 33.3 0 33.3 100 100 100 100 100 100 100 100 66.7 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 66.7 100 66.7 100 100 100 100 100 100 100 100 100 100 0 33.3 100 66.7 66.7 66.7 66.7 66.7 66.7 66.7 66.7 66.7 66.7 100 N/A N/A N/A N/A N/A N/A N/A 0 0 0 0 0 0 0100 100 100 100 100 100 100 33.3 100 66.7 33.3 66.7 66.7 66.7 33.3 66.7 100 66.7 100 66.7 100 0 66.7 33.3 66.7 66.7 33.3 33.3 100 100 100 100 100 100 100 100 66.7 100 66.7 33.3 66.7 33.3 N/A N/A N/A N/A N/A N/A N/A 66.7 100 100 66.7 66.7 100 66.7 0 33.3 0 0 0 33.3 00 0 0 33.3 0 100 33.3 33.3 0 33.3 33.3 66.7 33.3 66.7 0 0 0 0 0 0 00 0 33.3 0 33.3 33.3 0100 100 100 100 100 100 100 66.7 100 100 100 100 100 100 33.3 100 100 100 100 100 100 N/A N/A N/A N/A N/A N/A N/A 0 0 0 0 0 0 33.3 66.7 66.7 100 100 100 100 100 66.7 33.3 100 66.7 100 100 100 100 100 100 100 100 100 100 100 0 100 100 100 100 100 0 0 0 0 0 0 00 0 0 33.3 33.3 0 00 0 0 0 0 0 00 33.3 33.3 0 33.3 100 33.3 N/A N/A N/A N/A N/A N/A N/A 100 100 100 100 100 100 100 66.7 33.3 66.7 100 66.7 66.7 66.7 0 33.3 0 33.3 66.7 33.3 33.3 
+
+0 33.3 66.7 100 
+
+DeepSeek V4 Pro: strict pass rate by task 
+
+Three results per task and condition; fixed alphabetical task order 
+
+Strict pass rate (%); gray N/A tasks are excluded from the denominator. Figure 16: DeepSeek V4 Pro: 81 applicable tasks and eight visual tasks marked N/A. Each cell reports strict pass rate (%) over three repetitions. 40 Base Advisor Traj All Step DENSE (ours) VF 
+
+adaptive-rejection-sampler bn-fit-modify break-filter-js-from-html build-cython-ext build-pmars build-pov-ray caffe-cifar-10 cancel-async-tasks chess-best-move circuit-fibsqrt cobol-modernization code-from-image compile-compcert configure-git-webserver constraints-scheduling count-dataset-tokens crack-7z-hash custom-memory-heap-crash db-wal-recovery distribution-search dna-assembly dna-insert extract-elf extract-moves-from-video feal-differential-cryptanalysis feal-linear-cryptanalysis filter-js-from-html financial-document-processor fix-code-vulnerability fix-git fix-ocaml-gc gcode-to-text git-leak-recovery git-multibranch gpt2-codegolf headless-terminal hf-model-inference install-windows-3.11 kv-store-grpc large-scale-text-editing largest-eigenval llm-inference-batching-scheduler log-summary-date-ranges mailman make-doom-for-mips make-mips-interpreter mcmc-sampling-stan merge-diff-arc-agi-task model-extraction-relu-logits modernize-scientific-stack mteb-leaderboard mteb-retrieve multi-source-data-merger nginx-request-logging openssl-selfsigned-cert overfull-hbox password-recovery path-tracing path-tracing-reverse polyglot-c-py polyglot-rust-c portfolio-optimization protein-assembly prove-plus-comm pypi-server pytorch-model-cli pytorch-model-recovery qemu-alpine-ssh qemu-startup query-optimize raman-fitting regex-chess regex-log reshard-c4-data rstan-to-pystan sam-cell-seg sanitize-git-repo schemelike-metacircular-eval sparql-university sqlite-db-truncate sqlite-with-gcov torch-pipeline-parallelism torch-tensor-parallelism train-fasttext tune-mjcf video-processing vulnerable-secret winning-avg-corewars write-compressor 
+
+33.3 66.7 66.7 66.7 66.7 66.7 33.3 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 66.7 100 100 100 100 100 33.3 66.7 66.7 33.3 66.7 0 66.7 66.7 33.3 66.7 66.7 66.7 66.7 100 33.3 33.3 33.3 33.3 33.3 33.3 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 66.7 100 100 100 0 0 33.3 33.3 0 0 0100 100 100 100 100 100 100 100 66.7 100 100 100 66.7 100 0 100 100 66.7 100 66.7 100 100 66.7 100 100 100 100 100 0 66.7 100 100 100 33.3 100 100 100 100 100 100 100 100 0 0 0 0 0 0 66.7 0 0 0 0 0 0 100 0 33.3 0 0 0 0 100 0 33.3 0 0 0 0 33.3 100 100 100 100 100 100 100 100 100 100 100 100 100 100 66.7 33.3 66.7 66.7 66.7 66.7 66.7 100 66.7 100 66.7 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 0 33.3 0 0 0 0 100 100 100 100 100 100 100 100 0 100 100 100 66.7 100 00 33.3 0 0 33.3 66.7 100 100 100 100 100 100 100 100 66.7 66.7 100 100 33.3 100 66.7 33.3 0 0 0 33.3 33.3 100 100 33.3 66.7 100 100 100 66.7 100 100 100 100 100 100 100 66.7 33.3 66.7 100 66.7 66.7 100 100 100 100 100 100 100 100 100 33.3 100 100 100 100 100 0 33.3 33.3 66.7 66.7 100 33.3 0 0 0 0 0 0 100 0 33.3 0 33.3 33.3 33.3 66.7 100 66.7 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 66.7 33.3 66.7 66.7 100 100 100 100 100 100 100 33.3 33.3 33.3 33.3 33.3 33.3 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 66.7 66.7 100 100 100 66.7 100 100 100 100 100 100 100 66.7 66.7 100 100 100 66.7 100 100 100 100 100 100 100 100 100 100 100 66.7 100 100 100 66.7 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 33.3 33.3 33.3 33.3 33.3 33.3 0 33.3 0 0 33.3 33.3 33.3 100 100 100 100 100 100 100 33.3 100 66.7 100 33.3 33.3 66.7 100 100 100 100 100 100 100 66.7 0 33.3 33.3 33.3 66.7 100 66.7 66.7 66.7 100 100 100 100 66.7 33.3 33.3 33.3 0 100 33.3 66.7 100 100 66.7 100 100 100 0 0 0 0 0 0 66.7 66.7 66.7 66.7 66.7 66.7 100 66.7 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 33.3 66.7 100 100 100 0 0 0 0 0 0 33.3 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 33.3 100 100 66.7 100 100 0 0 0 0 0 33.3 00 0 0 0 33.3 100 00 0 0 33.3 0 0 0100 100 100 100 100 66.7 100 0 33.3 0 0 0 0 0100 100 100 100 100 100 100 100 100 100 100 100 100 100 66.7 100 100 100 100 100 100 
+
+0 33.3 66.7 100 
+
+GPT-5.5: strict pass rate by task 
+
+Three results per task and condition; fixed alphabetical task order 
+
+Strict pass rate (%); gray N/A tasks are excluded from the denominator. Figure 17: GPT-5.5: all 89 tasks and seven conditions, three results per cell. Each cell reports strict pass rate (%) over three repetitions. 41 Base Advisor Traj All Step DENSE (ours) VF 
+
+adaptive-rejection-sampler bn-fit-modify break-filter-js-from-html build-cython-ext build-pmars build-pov-ray caffe-cifar-10 cancel-async-tasks chess-best-move circuit-fibsqrt cobol-modernization code-from-image compile-compcert configure-git-webserver constraints-scheduling count-dataset-tokens crack-7z-hash custom-memory-heap-crash db-wal-recovery distribution-search dna-assembly dna-insert extract-elf extract-moves-from-video feal-differential-cryptanalysis feal-linear-cryptanalysis filter-js-from-html financial-document-processor fix-code-vulnerability fix-git fix-ocaml-gc gcode-to-text git-leak-recovery git-multibranch gpt2-codegolf headless-terminal hf-model-inference install-windows-3.11 kv-store-grpc large-scale-text-editing largest-eigenval llm-inference-batching-scheduler log-summary-date-ranges mailman make-doom-for-mips make-mips-interpreter mcmc-sampling-stan merge-diff-arc-agi-task model-extraction-relu-logits modernize-scientific-stack mteb-leaderboard mteb-retrieve multi-source-data-merger nginx-request-logging openssl-selfsigned-cert overfull-hbox password-recovery path-tracing path-tracing-reverse polyglot-c-py polyglot-rust-c portfolio-optimization protein-assembly prove-plus-comm pypi-server pytorch-model-cli pytorch-model-recovery qemu-alpine-ssh qemu-startup query-optimize raman-fitting regex-chess regex-log reshard-c4-data rstan-to-pystan sam-cell-seg sanitize-git-repo schemelike-metacircular-eval sparql-university sqlite-db-truncate sqlite-with-gcov torch-pipeline-parallelism torch-tensor-parallelism train-fasttext tune-mjcf video-processing vulnerable-secret winning-avg-corewars write-compressor 
+
+33.3 0 0 33.3 0 0 33.3 100 100 100 66.7 100 100 100 33.3 0 33.3 66.7 66.7 66.7 33.3 66.7 0 100 66.7 66.7 66.7 33.3 100 100 100 100 100 100 100 33.3 33.3 33.3 33.3 33.3 66.7 66.7 0 33.3 33.3 0 0 33.3 33.3 0 33.3 0 0 0 0 00 66.7 0 0 33.3 33.3 100 0 0 0 0 0 0 033.3 33.3 66.7 33.3 33.3 33.3 100 100 100 100 100 100 100 100 100 66.7 100 100 100 100 100 0 0 0 0 0 0 0100 100 100 100 100 100 100 33.3 66.7 33.3 0 33.3 33.3 100 100 100 100 100 100 100 100 66.7 100 66.7 66.7 100 66.7 66.7 0 0 66.7 66.7 66.7 33.3 66.7 100 100 100 100 100 100 100 0 0 0 0 0 0 00 0 0 0 0 0 066.7 33.3 66.7 66.7 66.7 66.7 66.7 0 0 0 0 0 0 066.7 100 100 100 100 100 66.7 0 0 0 33.3 0 33.3 33.3 0 0 33.3 33.3 0 0 66.7 66.7 0 100 100 100 100 100 66.7 100 100 100 100 100 100 100 100 100 100 100 100 100 33.3 100 100 100 100 100 66.7 0 0 0 0 0 0 100 100 100 100 100 100 100 100 100 100 100 100 100 100 100 0 0 0 0 0 0 0100 100 100 100 33.3 100 100 66.7 100 66.7 100 100 66.7 100 0 0 0 0 0 0 066.7 66.7 100 100 100 100 66.7 33.3 33.3 66.7 66.7 100 100 100 33.3 0 33.3 33.3 33.3 100 33.3 33.3 66.7 33.3 33.3 66.7 66.7 33.3 100 0 100 100 100 100 100 100 100 100 100 100 100 100 0 0 0 0 0 0 00 0 0 0 0 0 033.3 100 0 33.3 33.3 33.3 33.3 100 100 100 100 100 100 100 0 0 0 0 0 0 0100 100 100 100 100 100 100 0 33.3 0 0 33.3 0 33.3 33.3 33.3 33.3 33.3 33.3 33.3 100 100 100 100 100 100 100 100 33.3 66.7 33.3 100 33.3 66.7 066.7 100 66.7 66.7 100 66.7 100 33.3 33.3 33.3 66.7 66.7 66.7 33.3 0 0 0 0 0 66.7 00 0 33.3 0 0 0 00 0 0 0 0 0 0100 33.3 66.7 100 100 100 66.7 0 66.7 0 0 0 33.3 066.7 66.7 33.3 0 66.7 100 100 0 0 0 0 0 0 0100 100 100 100 100 100 100 66.7 100 100 66.7 66.7 100 66.7 33.3 33.3 100 100 100 66.7 66.7 0 0 33.3 66.7 33.3 33.3 33.3 0 0 0 0 0 33.3 00 66.7 0 66.7 0 0 66.7 0 33.3 0 0 0 0 33.3 0 0 0 0 0 0 00 0 0 0 0 0 0100 33.3 100 100 66.7 100 100 33.3 100 66.7 33.3 33.3 66.7 66.7 0 100 0 66.7 66.7 33.3 33.3 33.3 100 33.3 33.3 33.3 33.3 66.7 0 0 0 0 0 0 00 33.3 0 0 0 33.3 0100 33.3 100 100 100 100 100 100 33.3 100 100 100 100 100 33.3 0 100 33.3 33.3 33.3 100 0 0 0 0 0 0 00 0 0 0 0 0 00 0 0 0 0 0 033.3 33.3 33.3 33.3 33.3 66.7 33.3 0 0 0 0 0 0 66.7 66.7 100 100 100 100 100 100 0 33.3 0 66.7 0 0 33.3 0 0 0 0 0 0 0
+
+0 33.3 66.7 100 
+
+Kimi K2.6: strict pass rate by task 
+
+Three results per task and condition; fixed alphabetical task order 
+
+Strict pass rate (%); gray N/A tasks are excluded from the denominator. Figure 18: Kimi K2.6: all 89 tasks and seven conditions, three results per cell. Each cell reports strict pass rate (%) over three repetitions. 42
