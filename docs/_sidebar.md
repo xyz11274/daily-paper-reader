@@ -1,6 +1,11 @@
 * <a class="dpr-sidebar-root-link" href="#/">首页</a>
 * <a class="dpr-sidebar-root-link dpr-sidebar-noactive-link" href="javascript:void(0)" data-dpr-hash="#/tutorial/README">使用教程</a>
 * Daily Papers
+  * 2026-09-23 <!--dpr-date:20260923-->
+    * 精读区
+      * <a class="dpr-sidebar-item-link dpr-sidebar-item-structured" href="#/202609/23/2609.26457v1-recursive-self-improvement-of-ai-research-agents" data-sidebar-item="{&quot;title&quot;: &quot;Recursive self-improvement of AI research agents&quot;, &quot;link&quot;: &quot;https://arxiv.org/abs/2609.26457v1-recursive-self-improvement-of-ai-research-agents&quot;, &quot;score&quot;: &quot;10.0&quot;, &quot;tags&quot;: [{&quot;kind&quot;: &quot;query&quot;, &quot;label&quot;: &quot;agent-evolve&quot;}], &quot;evidence&quot;: &quot;智能体改写自身代码的递归自我改进循环&quot;}">Recursive self-improvement of AI research agents</a>
+    * 速读区
+      * <a class="dpr-sidebar-item-link dpr-sidebar-item-structured" href="#/202609/23/2609.22055v1-benchmarking-world-models-for-continual-learning-on-compositional-tasks" data-sidebar-item="{&quot;title&quot;: &quot;Benchmarking World Models for Continual Learning on Compositional Tasks&quot;, &quot;link&quot;: &quot;https://arxiv.org/abs/2609.22055v1-benchmarking-world-models-for-continual-learning-on-compositional-tasks&quot;, &quot;score&quot;: &quot;7.0&quot;, &quot;tags&quot;: [{&quot;kind&quot;: &quot;query&quot;, &quot;label&quot;: &quot;agent-evolve&quot;}], &quot;evidence&quot;: &quot;智能体持续适应且不遗忘的持续学习基准&quot;}">Benchmarking World Models for Continual Learning on Compositional Tasks</a>
   * 2026-09-22 <!--dpr-date:20260922-->
     * 精读区
       * <a class="dpr-sidebar-item-link dpr-sidebar-item-structured" href="#/202609/22/2609.24289v1-ttse-a-two-track-online-self-evolution-framework" data-sidebar-item="{&quot;title&quot;: &quot;TTSE: A Two-Track Online Self-Evolution Framework&quot;, &quot;link&quot;: &quot;https://arxiv.org/abs/2609.24289v1-ttse-a-two-track-online-self-evolution-framework&quot;, &quot;score&quot;: &quot;10.0&quot;, &quot;tags&quot;: [{&quot;kind&quot;: &quot;query&quot;, &quot;label&quot;: &quot;agent-evolve&quot;}], &quot;evidence&quot;: &quot;面向交互环境LLM智能体的双轨在线自进化框架&quot;}">TTSE: A Two-Track Online Self-Evolution Framework</a>
