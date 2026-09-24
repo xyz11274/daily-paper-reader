@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-23</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-24</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 2 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 4 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>1</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>1</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>2</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-23 22:11:30 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-24 21:58:44 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读1篇、速读1篇，共2篇：满分论文《Recursive self-improvement of AI research agents》领衔，搭配7.0分的《Benchmarking World Models for Continual Learning on Compositional Tasks》。最值得关注的是AI研究智能体的递归自我改进，以及世界模型在组合任务持续学习上的评测基准。普通读者可先读满分那篇理解自我改进机制，再用速读篇了解持续学习评测怎么落地。</p>
+<p>今日精读两篇高分自进化智能体论文，医疗智能体 MedRSI 拿下满分。最值得看的是医疗智能体与机器人智能体的“递归自进化”思路，分别用临床对齐和证据门控来约束自我迭代。普通读者可先速读无人机网络与即时记忆两篇，理解智能体自主演化与记忆管理的落地场景。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">1 篇</strong>
+    <strong class="dpr-home-dashboard-count">2 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Recursive self-improvement of AI research agents">Recursive self-improvement of AI research agents</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MedRSI: Recursive Self-Improvement for Medical Agents via Clinically Aligned Self-Evolution">MedRSI: Recursive Self-Improvement for Medical Agents via Clinically Aligned Self-Evolution</span></li><li><span class="dpr-home-dashboard-paper-title" title="RegenHarness: A Robot Agent Harness with Evidence-Gated Recursive Self-Improvement">RegenHarness: A Robot Agent Harness with Evidence-Gated Recursive Self-Improvement</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">1 篇</strong>
+    <strong class="dpr-home-dashboard-count">2 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Benchmarking World Models for Continual Learning on Compositional Tasks">Benchmarking World Models for Continual Learning on Compositional Tasks</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Agentic AI Enabling Autonomous, Self-Organizing, and Evolving UAV Networks">Agentic AI Enabling Autonomous, Self-Organizing, and Evolving UAV Networks</span></li><li><span class="dpr-home-dashboard-paper-title" title="Just-in-Time Memory: Learning to Curate Task-Adaptive Memory for LLM Agents">Just-in-Time Memory: Learning to Curate Task-Adaptive Memory for LLM Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
 </section>
 </div>
 
