@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-24</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-25</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 4 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 5 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>3</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>2</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-24 21:58:44 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-25 22:17:26 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读两篇高分自进化智能体论文，医疗智能体 MedRSI 拿下满分。最值得看的是医疗智能体与机器人智能体的“递归自进化”思路，分别用临床对齐和证据门控来约束自我迭代。普通读者可先速读无人机网络与即时记忆两篇，理解智能体自主演化与记忆管理的落地场景。</p>
+<p>2026-09-25 日报：5 篇入选、3 篇精读，两篇 9.0 分之作把 LLM 智能体与机器人学习的&quot;自我进化&quot;推到台前。</p>
+<p>最值得看的方向是&quot;失败即训练数据&quot;——偏差引导的技能自进化（A Wrong Turn）与推理/行动/编码统一为可进化策略（RACaP）。</p>
+<p>普通读者建议先精读这两篇，再速览记忆跨族干扰与 Qwen-Planner-Agent，留意智能体记忆隔离和闭环规划的落地进展。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">2 篇</strong>
+    <strong class="dpr-home-dashboard-count">3 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MedRSI: Recursive Self-Improvement for Medical Agents via Clinically Aligned Self-Evolution">MedRSI: Recursive Self-Improvement for Medical Agents via Clinically Aligned Self-Evolution</span></li><li><span class="dpr-home-dashboard-paper-title" title="RegenHarness: A Robot Agent Harness with Evidence-Gated Recursive Self-Improvement">RegenHarness: A Robot Agent Harness with Evidence-Gated Recursive Self-Improvement</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="A Wrong Turn Does Not Ruin the Journey: Deviation-Guided Skill Self-Evolution for LLM Agents">A Wrong Turn Does Not Ruin the Journey: Deviation-Guided Skill Self-Evolution for LLM Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="RACaP: Agentic Reasoning, Acting, and Coding as Policies for Evolvable Robot Learning">RACaP: Agentic Reasoning, Acting, and Coding as Policies for Evolvable Robot Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Breaking the Environment Wall: Evolving LLM Agent Environments for Recursive Self-Improvement">Breaking the Environment Wall: Evolving LLM Agent Environments for Recursive Self-Improvement</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,7 +96,7 @@
     <strong class="dpr-home-dashboard-count">2 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Agentic AI Enabling Autonomous, Self-Organizing, and Evolving UAV Networks">Agentic AI Enabling Autonomous, Self-Organizing, and Evolving UAV Networks</span></li><li><span class="dpr-home-dashboard-paper-title" title="Just-in-Time Memory: Learning to Curate Task-Adaptive Memory for LLM Agents">Just-in-Time Memory: Learning to Curate Task-Adaptive Memory for LLM Agents</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Scope Before You Persist: Preventing Cross-Family Interference in Agent Memory">Scope Before You Persist: Preventing Cross-Family Interference in Agent Memory</span></li><li><span class="dpr-home-dashboard-paper-title" title="Qwen-Planner-Agent: A Closed-Loop AI-for-AI Framework for Real-World Mobile Planner Agents">Qwen-Planner-Agent: A Closed-Loop AI-for-AI Framework for Real-World Mobile Planner Agents</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
 </section>
