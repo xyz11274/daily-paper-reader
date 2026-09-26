@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-25</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-26</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 5 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 6 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>3</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>2</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>4</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-25 22:17:26 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-26 22:28:49 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,10 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-09-25 日报：5 篇入选、3 篇精读，两篇 9.0 分之作把 LLM 智能体与机器人学习的&quot;自我进化&quot;推到台前。</p>
-<p>最值得看的方向是&quot;失败即训练数据&quot;——偏差引导的技能自进化（A Wrong Turn）与推理/行动/编码统一为可进化策略（RACaP）。</p>
-<p>普通读者建议先精读这两篇，再速览记忆跨族干扰与 Qwen-Planner-Agent，留意智能体记忆隔离和闭环规划的落地进展。</p>
+<p>今日共生成 6 篇推荐（精读 2 篇，速读 4 篇）</p>
+<p>精读：《ME-Brain-1.0: Memory, Cognition and Action for Evolving Embodied Intelligence》（9.0/10）, 《Grow the Harness, Not the Context: From Strategy-Free Scaffolds to Reusable Specialist Agents》（8.0/10）</p>
+<p>速读：《Learning from Mixed-Quality Deployment Experience for Robot Manipulation》（7.0/10）, 《EvoTreeNAD: Genealogy-Guided Evolution for LLM-Driven Neural Architecture Discovery》（7.0/10）, 《HarnessPAI: An Evolving Harness for Physical AI》（7.0/10）</p>
+<p>这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -80,12 +81,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">2 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="A Wrong Turn Does Not Ruin the Journey: Deviation-Guided Skill Self-Evolution for LLM Agents">A Wrong Turn Does Not Ruin the Journey: Deviation-Guided Skill Self-Evolution for LLM Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="RACaP: Agentic Reasoning, Acting, and Coding as Policies for Evolvable Robot Learning">RACaP: Agentic Reasoning, Acting, and Coding as Policies for Evolvable Robot Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Breaking the Environment Wall: Evolving LLM Agent Environments for Recursive Self-Improvement">Breaking the Environment Wall: Evolving LLM Agent Environments for Recursive Self-Improvement</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ME-Brain-1.0: Memory, Cognition and Action for Evolving Embodied Intelligence">ME-Brain-1.0: Memory, Cognition and Action for Evolving Embodied Intelligence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Grow the Harness, Not the Context: From Strategy-Free Scaffolds to Reusable Specialist Agents">Grow the Harness, Not the Context: From Strategy-Free Scaffolds to Reusable Specialist Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -93,12 +94,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">2 篇</strong>
+    <strong class="dpr-home-dashboard-count">4 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Scope Before You Persist: Preventing Cross-Family Interference in Agent Memory">Scope Before You Persist: Preventing Cross-Family Interference in Agent Memory</span></li><li><span class="dpr-home-dashboard-paper-title" title="Qwen-Planner-Agent: A Closed-Loop AI-for-AI Framework for Real-World Mobile Planner Agents">Qwen-Planner-Agent: A Closed-Loop AI-for-AI Framework for Real-World Mobile Planner Agents</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Learning from Mixed-Quality Deployment Experience for Robot Manipulation">Learning from Mixed-Quality Deployment Experience for Robot Manipulation</span></li><li><span class="dpr-home-dashboard-paper-title" title="EvoTreeNAD: Genealogy-Guided Evolution for LLM-Driven Neural Architecture Discovery">EvoTreeNAD: Genealogy-Guided Evolution for LLM-Driven Neural Architecture Discovery</span></li><li><span class="dpr-home-dashboard-paper-title" title="HarnessPAI: An Evolving Harness for Physical AI">HarnessPAI: An Evolving Harness for Physical AI</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>4</strong></span></div>
 </section>
 </div>
 
