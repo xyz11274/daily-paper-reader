@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-26</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-27</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 6 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 2 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>4</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>2</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-26 22:28:49 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-27 21:38:32 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,10 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共生成 6 篇推荐（精读 2 篇，速读 4 篇）</p>
-<p>精读：《ME-Brain-1.0: Memory, Cognition and Action for Evolving Embodied Intelligence》（9.0/10）, 《Grow the Harness, Not the Context: From Strategy-Free Scaffolds to Reusable Specialist Agents》（8.0/10）</p>
-<p>速读：《Learning from Mixed-Quality Deployment Experience for Robot Manipulation》（7.0/10）, 《EvoTreeNAD: Genealogy-Guided Evolution for LLM-Driven Neural Architecture Discovery》（7.0/10）, 《HarnessPAI: An Evolving Harness for Physical AI》（7.0/10）</p>
-<p>这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。</p>
+<p>2026-09-27日报：今天成功速读2篇、精读0篇，聚焦智能体在时间序列预测与数据系统上的应用。</p>
+<p>最值得看的是7.0分的《When Tomorrow Becomes Today: Self-Evolving Policies for Agentic Time-Series Forecasting》，其次是6.0分的《Data Agents: Agentic Data Systems》。</p>
+<p>普通读者可先读7.0分这篇，理解“自演化策略”如何用于智能体时间序列预测，再按兴趣延伸数据智能体系统。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">2 篇</strong>
+    <strong class="dpr-home-dashboard-count">0 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ME-Brain-1.0: Memory, Cognition and Action for Evolving Embodied Intelligence">ME-Brain-1.0: Memory, Cognition and Action for Evolving Embodied Intelligence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Grow the Harness, Not the Context: From Strategy-Free Scaffolds to Reusable Specialist Agents">Grow the Harness, Not the Context: From Strategy-Free Scaffolds to Reusable Specialist Agents</span></li></ul>
+<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
+
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">4 篇</strong>
+    <strong class="dpr-home-dashboard-count">2 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Learning from Mixed-Quality Deployment Experience for Robot Manipulation">Learning from Mixed-Quality Deployment Experience for Robot Manipulation</span></li><li><span class="dpr-home-dashboard-paper-title" title="EvoTreeNAD: Genealogy-Guided Evolution for LLM-Driven Neural Architecture Discovery">EvoTreeNAD: Genealogy-Guided Evolution for LLM-Driven Neural Architecture Discovery</span></li><li><span class="dpr-home-dashboard-paper-title" title="HarnessPAI: An Evolving Harness for Physical AI">HarnessPAI: An Evolving Harness for Physical AI</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="When Tomorrow Becomes Today: Self-Evolving Policies for Agentic Time-Series Forecasting">When Tomorrow Becomes Today: Self-Evolving Policies for Agentic Time-Series Forecasting</span></li><li><span class="dpr-home-dashboard-paper-title" title="Data Agents: Agentic Data Systems">Data Agents: Agentic Data Systems</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>4</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
 </section>
 </div>
 
