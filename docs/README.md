@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-27</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-19 ~ 2026-09-28</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 2 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 23 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>2</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>12</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-27 21:38:32 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-28 09:52:46 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-09-27日报：今天成功速读2篇、精读0篇，聚焦智能体在时间序列预测与数据系统上的应用。</p>
-<p>最值得看的是7.0分的《When Tomorrow Becomes Today: Self-Evolving Policies for Agentic Time-Series Forecasting》，其次是6.0分的《Data Agents: Agentic Data Systems》。</p>
-<p>普通读者可先读7.0分这篇，理解“自演化策略”如何用于智能体时间序列预测，再按兴趣延伸数据智能体系统。</p>
+<p>2026-09-19至09-28日报完成23篇，精读12篇、速读11篇，聚焦多智能体协作与安全。最值得看的是两篇9.0分精读：自组织智能体团队协同推理，以及面向弹性多智能体生态的通用协作智能架构。普通读者可优先从这两篇入手，再结合速读中的去中心化探索与提示注入防御，理解多智能体系统的能力与风险。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -80,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">0 篇</strong>
+    <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Self-Organizing Agent Teams Learn to Reason Together">Self-Organizing Agent Teams Learn to Reason Together</span></li><li><span class="dpr-home-dashboard-paper-title" title="General Collaborative Intelligence: Architecting Cognition for Resilient Multi-Agent Ecosystems">General Collaborative Intelligence: Architecting Cognition for Resilient Multi-Agent Ecosystems</span></li><li><span class="dpr-home-dashboard-paper-title" title="TRACS: A Geometry-Aware Framework for Scalable Multi-Agent Path Finding in Warehouses">TRACS: A Geometry-Aware Framework for Scalable Multi-Agent Path Finding in Warehouses</span></li></ul>
   </div>
-
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>9</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -93,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">2 篇</strong>
+    <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="When Tomorrow Becomes Today: Self-Evolving Policies for Agentic Time-Series Forecasting">When Tomorrow Becomes Today: Self-Evolving Policies for Agentic Time-Series Forecasting</span></li><li><span class="dpr-home-dashboard-paper-title" title="Data Agents: Agentic Data Systems">Data Agents: Agentic Data Systems</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Decentralized Multi-Robot Exploration with Probabilistic Peer Intent and Multi-hop Plan Propagation">Decentralized Multi-Robot Exploration with Probabilistic Peer Intent and Multi-hop Plan Propagation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Single-Model Injection: A Threat Model and Defense Architecture for Prompt Injection in Multi-Agent Systems">Beyond Single-Model Injection: A Threat Model and Defense Architecture for Prompt Injection in Multi-Agent Systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="Paying for Space: Incentive-Aware Motion Planning for Multi-Agent Collision Avoidance">Paying for Space: Incentive-Aware Motion Planning for Multi-Agent Collision Avoidance</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>9</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
 </section>
 </div>
 
