@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Set, Tuple
 import fitz  # PyMuPDF
 import requests
 from llm import DeepSeekClient
+from llm_config import resolve_llm_config
 
 SCRIPT_DIR = os.path.dirname(__file__)
 ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
@@ -44,21 +45,19 @@ HOME_TEMPLATE_DIR = os.path.join(ROOT_DIR, "docs_init")
 TODAY_STR = str(os.getenv("DPR_RUN_DATE") or "").strip() or datetime.now(timezone.utc).strftime("%Y%m%d")
 RANGE_DATE_RE = re.compile(r"^(\d{8})-(\d{8})$")
 
-# LLM 配置（使用 llm.py 内的 DeepSeek 客户端）
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY") or os.getenv("SUMMARY_API_KEY")
-DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("SUMMARY_BASE_URL") or "https://ark.cn-beijing.volces.com/api/plan/v3"
-DEEPSEEK_MODEL = os.getenv("SUMMARY_MODEL") or os.getenv("DEEPSEEK_MODEL") or "deepseek-v4.1-flash"
+# 与查询扩充、评分及导读共用 SUMMARY_* 配置。
 STEP6_STRUCTURED_MAX_TOKENS = 16 * 1024
 STEP6_SUMMARY_MAX_TOKENS = 16 * 1024
 
 
 def create_llm_client() -> DeepSeekClient | None:
-    if not DEEPSEEK_API_KEY:
+    config = resolve_llm_config()
+    if not config.api_key:
         return None
     client = DeepSeekClient(
-        api_key=DEEPSEEK_API_KEY,
-        model=DEEPSEEK_MODEL,
-        base_url=DEEPSEEK_BASE_URL,
+        api_key=config.api_key,
+        model=config.model,
+        base_url=config.base_url,
     )
     client.kwargs["thinking"] = {"type": "disabled"}
     return client
@@ -585,7 +584,7 @@ def generate_deep_summary(
 ) -> str | None:
     active_client = client or LLM_CLIENT
     if active_client is None:
-        log("[WARN] 未配置 DEEPSEEK_API_KEY 或 SUMMARY_API_KEY，跳过精读总结。")
+        log("[WARN] 未配置 SUMMARY_API_KEY，跳过精读总结。")
         return None
     if not os.path.exists(md_file_path):
         return None

@@ -9,8 +9,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 try:
+    from llm_config import resolve_llm_config
     from source_config import get_source_backend, load_config_with_source_migration
 except Exception:  # pragma: no cover - 兼容 package 导入路径
+    from src.llm_config import resolve_llm_config
     from src.source_config import get_source_backend, load_config_with_source_migration
 
 try:
@@ -179,14 +181,6 @@ def save_json(path: str, data: Any) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def _read_env_text(*names: str) -> str:
-    for name in names:
-        value = str(os.getenv(name) or "").strip()
-        if value:
-            return value
-    return ""
-
-
 def score_to_stars(score: float) -> int:
     if score >= 0.9:
         return 5
@@ -281,20 +275,7 @@ def prepare_rerank_fallback(input_path: str, output_path: str) -> bool:
 
 def resolve_summary_step_env() -> dict[str, str]:
     env = os.environ.copy()
-    summary_api_key = _read_env_text("SUMMARY_API_KEY", "DEEPSEEK_API_KEY")
-    summary_base_url = _read_env_text("SUMMARY_BASE_URL", "DEEPSEEK_BASE_URL")
-    summary_model = _read_env_text("SUMMARY_MODEL", "DEEPSEEK_MODEL")
-
-    if summary_api_key:
-        env["SUMMARY_API_KEY"] = summary_api_key
-        env["DEEPSEEK_API_KEY"] = summary_api_key
-    if summary_base_url:
-        env["LLM_PRIMARY_BASE_URL"] = summary_base_url
-        env["SUMMARY_BASE_URL"] = summary_base_url
-        env["DEEPSEEK_BASE_URL"] = summary_base_url
-    if summary_model:
-        env["SUMMARY_MODEL"] = summary_model
-        env["DEEPSEEK_MODEL"] = summary_model
+    env.update(resolve_llm_config(env).as_env())
     return env
 
 

@@ -11,17 +11,13 @@ from typing import Any, Dict, List
 import yaml  # type: ignore
 
 from llm import DeepSeekClient
+from llm_config import resolve_llm_config
 
 SCRIPT_DIR = os.path.dirname(__file__)
 CONFIG_FILE = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "config.yaml"))
 
-MODEL_NAME = (
-  os.getenv("DEEPSEEK_REWRITE_MODEL")
-  or os.getenv("SUMMARY_MODEL")
-  or os.getenv("DEEPSEEK_MODEL")
-  or "deepseek-v4.1-flash"
-)
-BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("SUMMARY_BASE_URL") or "https://ark.cn-beijing.volces.com/api/plan/v3"
+MODEL_NAME = resolve_llm_config(purpose="rewrite").model
+BASE_URL = resolve_llm_config(purpose="rewrite").base_url
 
 def log(message: str) -> None:
   ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -146,9 +142,8 @@ def main() -> None:
     if not os.path.exists(CONFIG_FILE):
         raise FileNotFoundError(f"找不到 config.yaml：{CONFIG_FILE}")
 
-    api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("SUMMARY_API_KEY")
-    if not api_key:
-        raise RuntimeError("缺少 DEEPSEEK_API_KEY 或 SUMMARY_API_KEY 环境变量，无法调用 DeepSeek。")
+    llm_config = resolve_llm_config(purpose="rewrite")
+    api_key = llm_config.require_api_key()
 
     group_start("Step 0.0 - load config")
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -159,7 +154,7 @@ def main() -> None:
     keywords = subs.get("keywords") or []
     llm_queries = subs.get("llm_queries") or []
 
-    client = DeepSeekClient(api_key=api_key, model=MODEL_NAME, base_url=BASE_URL)
+    client = DeepSeekClient(api_key=api_key, model=llm_config.model, base_url=llm_config.base_url)
 
     related_schema = {
       "type": "object",

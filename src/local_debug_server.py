@@ -54,12 +54,8 @@ def build_secret_env(secret: dict[str, Any] | None) -> dict[str, str]:
     env: dict[str, str] = {}
     if summarized or first_chat:
         env["SUMMARY_API_KEY"] = api_key
-        env["DEEPSEEK_API_KEY"] = api_key
         env["SUMMARY_BASE_URL"] = base_url
-        env["DEEPSEEK_BASE_URL"] = base_url
-        env["LLM_PRIMARY_BASE_URL"] = base_url
         env["SUMMARY_MODEL"] = model
-        env["DEEPSEEK_MODEL"] = model
 
     reranker = secret.get("rerankerLLM") if isinstance(secret.get("rerankerLLM"), dict) else {}
     rerank_profile = norm_text(reranker.get("profile"))

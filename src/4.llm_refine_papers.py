@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List
 
 from llm import DeepSeekClient, resolve_max_output_tokens
+from llm_config import resolve_llm_config
 from subscription_plan import build_pipeline_inputs
 
 SCRIPT_DIR = os.path.dirname(__file__)
@@ -20,13 +21,8 @@ ARCHIVE_DIR = os.path.join(ROOT_DIR, "archive", TODAY_STR)
 RANKED_DIR = os.path.join(ARCHIVE_DIR, "rank")
 CONFIG_FILE = os.getenv("DPR_CONFIG_FILE") or os.path.join(ROOT_DIR, "config.yaml")
 
-DEFAULT_FILTER_MODEL = (
-    os.getenv("DEEPSEEK_FILTER_MODEL")
-    or os.getenv("SUMMARY_MODEL")
-    or os.getenv("DEEPSEEK_MODEL")
-    or "deepseek-v4.1-flash"
-)
-DEFAULT_DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("SUMMARY_BASE_URL") or "https://ark.cn-beijing.volces.com/api/plan/v3"
+DEFAULT_FILTER_MODEL = resolve_llm_config(purpose="filter").model
+DEFAULT_DEEPSEEK_BASE_URL = resolve_llm_config(purpose="filter").base_url
 DEFAULT_FILTER_CONCURRENCY = 4
 MAX_FILTER_RETRIES = 3
 
@@ -642,7 +638,7 @@ def recover_filter_results(
 
 
 def _make_filter_client(api_key: str, model: str, max_output_tokens: int) -> DeepSeekClient:
-    client = DeepSeekClient(api_key=api_key, model=model, base_url=DEFAULT_DEEPSEEK_BASE_URL)
+    client = DeepSeekClient(api_key=api_key, model=model, base_url=resolve_llm_config(purpose="filter").base_url)
     client.kwargs.update({"temperature": 0.1, "max_tokens": max_output_tokens})
     return client
 
@@ -793,9 +789,7 @@ def process_file(
         return
     paper_map = build_paper_map(papers)
 
-    api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("SUMMARY_API_KEY")
-    if not api_key:
-        raise RuntimeError("missing DEEPSEEK_API_KEY or SUMMARY_API_KEY")
+    api_key = resolve_llm_config(purpose="filter").require_api_key()
 
     group_start(f"Step 4 - llm refine {os.path.basename(input_path)}")
     log(

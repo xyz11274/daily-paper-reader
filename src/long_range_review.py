@@ -11,10 +11,12 @@ from pathlib import Path
 import re
 
 try:
+    from llm_config import resolve_llm_config
     from source_config import get_source_backend
     from subscription_plan import build_pipeline_inputs
     from supabase_source import match_papers_by_bm25, match_papers_by_embedding
 except ImportError:
+    from .llm_config import resolve_llm_config
     from .source_config import get_source_backend
     from .subscription_plan import build_pipeline_inputs
     from .supabase_source import match_papers_by_bm25, match_papers_by_embedding
@@ -359,8 +361,8 @@ def run_review(config, days, root, run_token):
         raise RuntimeError(
             "以下专题没有启用的关键词或语义查询：" + "、".join(missing_tags)
         )
-    if not os.getenv("DEEPSEEK_API_KEY"):
-        raise RuntimeError("专题回溯需要 DEEPSEEK_API_KEY")
+    llm_config = resolve_llm_config(purpose="filter")
+    llm_config.require_api_key()
     # 从固定运行标识推导日期，跨UTC午夜和重跑时不会使窗口漂移。
     end = datetime.strptime(run_token[-8:], "%Y%m%d").replace(
         tzinfo=timezone.utc
@@ -375,15 +377,11 @@ def run_review(config, days, root, run_token):
         from llm import DeepSeekClient
     except ImportError:
         from .llm import DeepSeekClient
-    model_name = (
-        os.getenv("DEEPSEEK_FILTER_MODEL")
-        or os.getenv("DEEPSEEK_MODEL")
-        or "deepseek-v4.1-flash"
-    )
-    base_url = os.getenv("DEEPSEEK_BASE_URL") or "https://ark.cn-beijing.volces.com/api/plan/v3"
+    model_name = llm_config.model
+    base_url = llm_config.base_url
 
     def client_factory():
-        client = DeepSeekClient(os.environ["DEEPSEEK_API_KEY"], model_name, base_url)
+        client = DeepSeekClient(llm_config.api_key, model_name, base_url)
         client.kwargs.update(
             temperature=0, max_tokens=6000, thinking={"type": "disabled"}
         )

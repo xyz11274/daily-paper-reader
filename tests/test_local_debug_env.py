@@ -38,9 +38,10 @@ class LocalDebugEnvTest(unittest.TestCase):
             }
         )
 
-        self.assertEqual(env["DEEPSEEK_API_KEY"], "sk-new-key")
         self.assertEqual(env["SUMMARY_API_KEY"], "sk-new-key")
-        self.assertEqual(env["DEEPSEEK_BASE_URL"], "https://api.deepseek.com")
+        self.assertEqual(env["SUMMARY_BASE_URL"], "https://api.deepseek.com")
+        self.assertEqual(env["SUMMARY_MODEL"], "deepseek-v4-flash")
+        self.assertFalse(any(key.startswith("DEEPSEEK_") for key in env))
         self.assertEqual(env["RERANK_PROFILE"], "public-zwwen-rerank")
         self.assertEqual(env["PUBLIC_RERANK_API_KEY"], "")
         self.assertEqual(env["PUBLIC_RERANK_API_BASE_URL"], "https://zwwen.online/rerank")

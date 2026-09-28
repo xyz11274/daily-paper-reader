@@ -68,11 +68,11 @@ class MainPipelineTest(unittest.TestCase):
         ):
             env = self.mod.resolve_summary_step_env()
 
-        self.assertEqual(env["DEEPSEEK_API_KEY"], "summary-key")
+        self.assertEqual(env["DEEPSEEK_API_KEY"], "base-key")
         self.assertEqual(env["SUMMARY_API_KEY"], "summary-key")
-        self.assertEqual(env["DEEPSEEK_BASE_URL"], "https://summary.example.com/v1")
-        self.assertEqual(env["LLM_PRIMARY_BASE_URL"], "https://summary.example.com/v1")
-        self.assertEqual(env["DEEPSEEK_MODEL"], "deepseek-v4-flash")
+        self.assertEqual(env["SUMMARY_BASE_URL"], "https://summary.example.com/v1")
+        self.assertNotIn("LLM_PRIMARY_BASE_URL", env)
+        self.assertEqual(env["SUMMARY_MODEL"], "deepseek-v4-flash")
 
     def test_main_runs_local_rerank_without_remote_rerank_base(self):
         with tempfile.TemporaryDirectory() as tmpdir:

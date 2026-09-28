@@ -7,6 +7,11 @@ from typing import List, Dict, Tuple, Any, Optional
 
 import requests
 
+try:
+    from llm_config import DEFAULT_BASE_URL, resolve_llm_config
+except ImportError:
+    from .llm_config import DEFAULT_BASE_URL, resolve_llm_config
+
 """
 统一的 LLM 客户端封装。
 
@@ -37,7 +42,7 @@ GLOBAL_TOKENS = {
 # 单次实验级别的全局时间统计（秒）
 GLOBAL_TIME_SECONDS: float = 0.0
 
-DEFAULT_DEEPSEEK_BASE_URL = "https://ark.cn-beijing.volces.com/api/plan/v3"
+DEFAULT_DEEPSEEK_BASE_URL = DEFAULT_BASE_URL
 
 
 def reset_global_tokens():
@@ -810,15 +815,12 @@ class ClientFactory:
         """
         基于环境变量创建具体客户端。
 
-        必填：
-        - LLM_MODEL：形如 'provider/model'。
-        选填：
-        - LLM_API_KEY：通用 API key（优先级高于各 provider 专用 key）
-        - LLM_BASE_URL：通用 base_url（优先级高于默认 base_url）
+        优先使用统一 SUMMARY_*；旧 LLM_* / DEEPSEEK_* 仅兼容已有调用。
         """
         model_env = (os.getenv('LLM_MODEL') or '').strip()
-        if not model_env:
-            raise ValueError("缺少必要环境变量: LLM_MODEL（格式为 'deepseek/model'）")
+        if not model_env or any((os.getenv('SUMMARY_' + field) or '').strip() for field in ('API_KEY', 'BASE_URL', 'MODEL')):
+            config = resolve_llm_config()
+            return DeepSeekClient(config.require_api_key(), config.model, config.base_url)
 
         provider, model = parse_provider_model(model_env)
         api_key = (os.getenv('LLM_API_KEY') or '').strip() or None

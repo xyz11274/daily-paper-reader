@@ -671,8 +671,6 @@
       const summarizedApiKey = normalizeText(safeOptions.summarizedApiKey || '');
       const summarizedBaseUrl = normalizeBaseUrlForStorage(safeOptions.summarizedBaseUrl || '');
       const summarizedModel = normalizeText(safeOptions.summarizedModel || '');
-      const filterModel = normalizeText(safeOptions.filterModel || summarizedModel);
-      const rewriteModel = normalizeText(safeOptions.rewriteModel || summarizedModel);
       const skipRerank = !!safeOptions.skipRerank;
       const localRerankModel = normalizeText(
         safeOptions.localRerankModel || 'Qwen/Qwen3-Reranker-0.6B',
@@ -697,16 +695,9 @@
         throw new Error('Reranker 配置不完整，无法写入 GitHub Secrets。');
       }
 
-      const secretNameSummKey = 'Summarized_LLM_API_KEY';
-      const secretNameSummUrl = 'Summarized_LLM_BASE_URL';
-      const secretNameSummModel = 'Summarized_LLM_MODEL';
       const secretNameSummaryApiKey = 'SUMMARY_API_KEY';
       const secretNameSummaryBaseUrl = 'SUMMARY_BASE_URL';
       const secretNameSummaryModel = 'SUMMARY_MODEL';
-      const secretNameDeepSeekKey = 'DEEPSEEK_API_KEY';
-      const secretNameDeepSeekBase = 'DEEPSEEK_BASE_URL';
-      const secretNameDeepSeekModel = 'DEEPSEEK_MODEL';
-      const secretNameLlmPrimaryBase = 'LLM_PRIMARY_BASE_URL';
       const secretNameSkipRerank = 'DPR_SKIP_RERANK';
       const secretNameLocalRerankModel = 'LOCAL_RERANK_MODEL';
       const secretNameRerankProfile = 'RERANK_PROFILE';
@@ -746,16 +737,9 @@
       };
 
       const secrets = [
-        { name: secretNameSummKey, value: summarizedApiKey },
-        { name: secretNameSummUrl, value: summarizedBaseUrl },
-        { name: secretNameSummModel, value: summarizedModel },
         { name: secretNameSummaryApiKey, value: summarizedApiKey },
         { name: secretNameSummaryBaseUrl, value: summarizedBaseUrl },
         { name: secretNameSummaryModel, value: summarizedModel },
-        { name: secretNameDeepSeekKey, value: summarizedApiKey },
-        { name: secretNameDeepSeekBase, value: summarizedBaseUrl },
-        { name: secretNameDeepSeekModel, value: summarizedModel },
-        { name: secretNameLlmPrimaryBase, value: summarizedBaseUrl },
         { name: secretNameSkipRerank, value: skipRerank ? 'true' : 'false' },
         { name: secretNameLocalRerankModel, value: localRerankModel },
         { name: secretNameRerankProfile, value: rerankerProfile },
@@ -1828,8 +1812,6 @@
                 summarizedApiKey: providerDraft.summaryApiKey,
                 summarizedBaseUrl: providerDraft.summaryBaseUrl,
                 summarizedModel: providerDraft.summaryModel,
-                filterModel: providerDraft.filterModel,
-                rewriteModel: providerDraft.rewriteModel,
                 skipRerank: providerDraft.skipRerank,
                 localRerankModel: 'Qwen/Qwen3-Reranker-0.6B',
                 rerankerProfile: providerDraft.reranker && providerDraft.reranker.profile,

@@ -142,7 +142,7 @@ class ConferenceWorkflowAndUiTest(unittest.TestCase):
         self.assertIn("ENV_PATH", server)
         self.assertIn("update_env_file", server)
         self.assertIn("build_secret_env", server)
-        self.assertIn("DEEPSEEK_API_KEY", server)
+        self.assertIn("SUMMARY_API_KEY", server)
         self.assertIn("SUMMARY_API_KEY", server)
         self.assertIn("config.yaml", server)
         self.assertIn("payload.get(\"config\")", server)

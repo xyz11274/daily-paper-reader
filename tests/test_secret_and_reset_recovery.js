@@ -26,7 +26,7 @@ function sandbox() {
 function secretSandbox() {
   const s = sandbox();
   const code = fs.readFileSync('app/secret.session.js', 'utf8')
-    .replace(/\}\)\(\);\s*$/, 'window.probe = {fetchStaticSecretPayload, pingChatModels, init, resolveRerankerConfig, RERANKER_PROFILES};})();');
+    .replace(/\}\)\(\);\s*$/, 'window.probe = {fetchStaticSecretPayload, pingChatModels, init, resolveRerankerConfig, RERANKER_PROFILES, saveSummarizeSecretsToGithub};})();');
   vm.runInContext(code, s.context);
   return s;
 }
@@ -173,8 +173,35 @@ async function testLegacyLocalRerankerMovesToCloud() {
   assert.equal(context.window.probe.RERANKER_PROFILES.some(p => p.provider==='local'),false);
 }
 
+async function testSavesOnlyOneSummarySecretGroup() {
+  const {context} = secretSandbox();
+  const writes = new Map();
+  context.window.sodium = {
+    ready: Promise.resolve(), base64_variants: {ORIGINAL: 1},
+    from_base64: x => x, from_string: x => x, crypto_box_seal: x => `encrypted:${x}`, to_base64: x => x,
+  };
+  context.fetch = async (url, options = {}) => {
+    if (url.endsWith('/user')) return response(200, {login: 'tester'});
+    if (url.endsWith('/public-key')) return response(200, {key: 'public-key', key_id: 'key-id'});
+    if (options.method === 'PUT') {
+      writes.set(url.split('/').pop(), JSON.parse(options.body).encrypted_value);
+      return response(204);
+    }
+    return response(404);
+  };
+  const ok = await context.window.probe.saveSummarizeSecretsToGithub('test-pat', {
+    summarizedApiKey: 'test-key', summarizedBaseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+    summarizedModel: 'deepseek-v4.1-flash',
+  });
+  assert.equal(ok, true);
+  assert.equal(writes.get('SUMMARY_API_KEY'), 'encrypted:test-key');
+  assert.equal(writes.get('SUMMARY_BASE_URL'), 'encrypted:https://ark.cn-beijing.volces.com/api/plan/v3');
+  assert.equal(writes.get('SUMMARY_MODEL'), 'encrypted:deepseek-v4.1-flash');
+  assert.equal([...writes.keys()].some(k => /^(DEEPSEEK_|Summarized_LLM_|LLM_PRIMARY_)/.test(k)), false);
+}
+
 (async () => {
-  for (const test of [testLegacyLocalRerankerMovesToCloud, testSecretReadFailuresAndRetry, testDeepSeekTimeoutAndHttpError, testSecretErrorUiPreservesPasswordAndCanRetry,
+  for (const test of [testSavesOnlyOneSummarySecretGroup, testLegacyLocalRerankerMovesToCloud, testSecretReadFailuresAndRetry, testDeepSeekTimeoutAndHttpError, testSecretErrorUiPreservesPasswordAndCanRetry,
     testResetWaitsForAcknowledgement, testWorkflowReturnsDispatchResultBeforeMonitoring]) {
     await test();
     console.log(test.name + ' passed');
