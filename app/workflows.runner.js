@@ -144,6 +144,18 @@ window.DPRWorkflowRunner = (function () {
       return { owner: githubPagesMatch[1], repo: githubPagesMatch[2] };
     }
 
+    // 自定义域名使用站点已保存的仓库信息。
+    for (const path of ['.repo-owner.json', 'docs/.repo-owner.json']) {
+      try {
+        const response = await fetch(path, { cache: 'no-store' });
+        if (!response.ok) continue;
+        const meta = await response.json();
+        if (meta && /^[\w.-]+$/.test(meta.owner || '') && /^[\w.-]+$/.test(meta.repo || '')) {
+          return { owner: meta.owner, repo: meta.repo };
+        }
+      } catch { /* 使用下方既有回退 */ }
+    }
+
     // 非 GitHub Pages URL：回退到「Token 对应的用户 + daily-paper-reader」作为默认目标仓库
     try {
       const userRes = await ghFetch(token, 'https://api.github.com/user');
@@ -1224,6 +1236,14 @@ window.DPRWorkflowRunner = (function () {
     runConferenceRetrieval(conference, years);
 
   return {
+    getQueryGenerationContext: async () => {
+      if (isLocalDebugPage()) return { localUrl: getLocalApiUrl('/api/local/query-candidates') };
+      const token = loadGithubToken();
+      if (!token) throw new Error('请先解锁密钥配置中的 GitHub Token，再生成检索词条。');
+      const context = await resolveRepoContext(token);
+      if (!context.owner || !context.repo) throw new Error('无法识别当前站点对应的 GitHub 仓库。');
+      return { ...context, token };
+    },
     __test: { buildQuickFetchRequest, buildStarterPackRequest, buildTopicResearchRequest, sanitizeResearchProfile },
     buildTopicResearchRequest,
     sanitizeResearchProfile,

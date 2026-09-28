@@ -406,6 +406,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/local/query-candidates":
+            return self._generate_query_candidates()
         if parsed.path == "/api/local/config":
             return self._save_local_config()
         if parsed.path == "/api/local/secret":
@@ -426,6 +428,38 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({"ok": True, "run": run})
         except Exception as exc:
             return self._json({"ok": False, "error": str(exc)}, status=400)
+
+    def _generate_query_candidates(self) -> None:
+        # 允许同一主机上不同端口的调试页面，拒绝任意外站消耗本地模型额度。
+        origin = self.headers.get("Origin")
+        if origin:
+            origin_host = urlparse(origin).hostname
+            server_host = urlparse("http://" + self.headers.get("Host", "")).hostname
+            loopback = {"localhost", "127.0.0.1", "::1"}
+            if origin_host != server_host and not {origin_host, server_host}.issubset(loopback):
+                return self._json({"ok": False, "error": "请从本地调试页面生成检索词条。"}, status=403)
+        try:
+            length = int(self.headers.get("Content-Length") or "0")
+            if not 0 < length <= 65536:
+                raise ValueError("invalid length")
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            prompt = payload.get("prompt")
+            if not isinstance(prompt, str) or not prompt.strip() or len(prompt.encode("utf-8")) > 24000:
+                raise ValueError("invalid prompt")
+        except (ValueError, AttributeError):
+            return self._json({"ok": False, "error": "检索需求为空或过长，请缩短后重试。"}, status=400)
+        try:
+            # 独立进程每次重读 .env；网页模型配置不会覆盖 SUMMARY_*。
+            process = subprocess.run(
+                [sys.executable, str(ROOT_DIR / "src" / "query_candidates.py"), "--local"],
+                input=prompt, capture_output=True, text=True, timeout=270, cwd=ROOT_DIR,
+            )
+            data = json.loads(process.stdout)
+            return self._json(data, status=200 if data.get("ok") else 502)
+        except subprocess.TimeoutExpired:
+            return self._json({"ok": False, "error": "模型生成超时，请稍后重试。"}, status=504)
+        except Exception:
+            return self._json({"ok": False, "error": "本地生成服务失败，请检查运行环境。"}, status=500)
 
     def _save_local_secret(self) -> None:
         try:

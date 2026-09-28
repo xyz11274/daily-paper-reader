@@ -608,134 +608,6 @@ window.SubscriptionsSmartQuery = (function () {
     (currentProfiles || []).find((profile) => getProfileKey(profile) === getProfileKey(profileId))
   );
 
-  const loadLlmConfig = () => {
-    const secret = window.decoded_secret_private || {};
-    const summarized = secret.summarizedLLM || {};
-    const baseUrl = normalizeText(summarized.baseUrl || '');
-    const apiKey = normalizeText(summarized.apiKey || '');
-    const model = normalizeText(summarized.model || '');
-    if (baseUrl && apiKey && model) return { baseUrl, apiKey, model };
-
-    const chatLLMs = Array.isArray(secret.chatLLMs) ? secret.chatLLMs : [];
-    if (chatLLMs.length > 0) {
-      const first = chatLLMs[0] || {};
-      const cBase = normalizeText(first.baseUrl || '');
-      const cKey = normalizeText(first.apiKey || '');
-      const models = Array.isArray(first.models) ? first.models : [];
-      const cModel = normalizeText(models[0] || '');
-      if (cBase && cKey && cModel) return { baseUrl: cBase, apiKey: cKey, model: cModel };
-    }
-    return null;
-  };
-
-  const extractLlmJsonText = (data) => {
-    const normalizeContentPart = (part) => {
-      if (typeof part === 'string') return normalizeText(part);
-      if (!part || typeof part !== 'object') return '';
-      return normalizeText(part.text || part.content || part.output_text || '');
-    };
-
-    const firstChoice = (((data || {}).choices || [])[0] || {});
-    const message = firstChoice.message || {};
-    const content = message.content;
-    if (typeof content === 'string') return content;
-    if (Array.isArray(content)) {
-      return content.map((p) => normalizeContentPart(p)).filter(Boolean).join('\n');
-    }
-    if (content && typeof content === 'object') {
-      return normalizeContentPart(content);
-    }
-
-    const topContent = (data || {}).content;
-    if (typeof topContent === 'string') return topContent;
-    if (Array.isArray(topContent)) {
-      return topContent.map((p) => normalizeContentPart(p)).filter(Boolean).join('\n');
-    }
-
-    const outputText = (data || {}).output_text;
-    if (typeof outputText === 'string') return outputText;
-    if (Array.isArray(outputText)) {
-      return outputText.map((p) => normalizeContentPart(p)).filter(Boolean).join('\n');
-    }
-    return '';
-  };
-
-  const stripJsonWrappers = (text) => {
-    let cleaned = normalizeText(text);
-    if (!cleaned) return '';
-    const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-    if (fenceMatch && fenceMatch[1] !== undefined) {
-      return normalizeText(fenceMatch[1]);
-    }
-    return normalizeText(cleaned);
-  };
-
-  const repairJsonSuffix = (text) => {
-    if (!text) return text;
-    const stack = [];
-    let inStr = false;
-    let escaped = false;
-    for (let i = 0; i < text.length; i++) {
-      const ch = text[i];
-      if (inStr) {
-        if (escaped) {
-          escaped = false;
-          continue;
-        }
-        if (ch === '\\') {
-          escaped = true;
-          continue;
-        }
-        if (ch === '"') {
-          inStr = false;
-        }
-        continue;
-      }
-      if (ch === '"') {
-        inStr = true;
-      } else if (ch === '{') {
-        stack.push('}');
-      } else if (ch === '[') {
-        stack.push(']');
-      } else if (ch === '}' || ch === ']') {
-        if (stack.length && stack[stack.length - 1] === ch) stack.pop();
-      }
-    }
-    let repaired = text;
-    if (inStr) repaired += '"';
-    if (stack.length) repaired += stack.reverse().join('');
-    repaired = repaired.replace(/,\s*([}\]])/g, '$1');
-    return repaired;
-  };
-
-  const loadJsonLenient = (text) => {
-    if (text && typeof text === 'object') return text;
-    const raw = stripJsonWrappers(text);
-    if (!raw) return {};
-    try {
-      return JSON.parse(raw);
-    } catch {
-      const candidates = [];
-      const rawObjectMatch = raw.match(/\{[\s\S]*\}/);
-      if (rawObjectMatch && rawObjectMatch[0]) {
-        candidates.push(rawObjectMatch[0]);
-      }
-      const rawArrayMatch = raw.match(/\[[\s\S]*\]/);
-      if (rawArrayMatch && rawArrayMatch[0]) {
-        candidates.push(rawArrayMatch[0]);
-      }
-
-      for (let i = 0; i < candidates.length; i++) {
-        try {
-          const repaired = repairJsonSuffix(candidates[i]);
-          const parsed = JSON.parse(repaired);
-          if (parsed && typeof parsed === 'object') return parsed;
-        } catch {}
-      }
-      throw new Error('模型返回不是合法 JSON');
-    }
-  };
-
   const normalizeGenerated = (payload) => {
     const resolvePayload = (value) => {
       if (!value) return {};
@@ -943,180 +815,16 @@ window.SubscriptionsSmartQuery = (function () {
   };
 
   const requestCandidatesByDesc = async (tag, desc) => {
-    const llm = loadLlmConfig();
-    if (!llm) {
-      throw new Error('未检测到可用大模型配置，请先完成密钥配置。');
+    if (!window.DPRQueryGeneration) {
+      throw new Error('词条生成组件尚未加载，请刷新页面后重试。');
     }
-    if (!llm.apiKey) {
-      throw new Error('未检测到可用 API Key，请先在密钥配置里填写摘要/Chat Token。');
-    }
-
-    const cfg = window.SubscriptionsManager.getDraftConfig ? window.SubscriptionsManager.getDraftConfig() : {};
-    const subs = (cfg && cfg.subscriptions) || {};
-    const template = defaultPromptTemplate;
-    const prompt = buildPromptFromTemplate(tag, desc, template);
-    const buildEndpoints = () => {
-      const out = [];
-      const pushUnique = (u) => {
-        if (u && !out.includes(u)) out.push(u);
-      };
-      const expandEndpoint = (base) => {
-        const src = normalizeText(base).replace(/\/+$/, '');
-        if (!src) return;
-        if (src.includes('/chat/completions')) {
-          pushUnique(src);
-          pushUnique(src.replace(/\/chat\/completions$/, '/v1/chat/completions'));
-          return;
-        }
-        if (/\/v\d+$/i.test(src)) {
-          pushUnique(`${src}/chat/completions`);
-          pushUnique(`${src}/v1/chat/completions`);
-          return;
-        }
-        pushUnique(`${src}/v1/chat/completions`);
-        pushUnique(`${src}/chat/completions`);
-      };
-
-      const raw = normalizeText(llm.baseUrl);
-      if (!raw) {
-        return out;
-      }
-      expandEndpoint(raw);
-      return out;
-    };
-    const endpoints = buildEndpoints();
-    if (!endpoints.length) {
-      throw new Error('LLM 配置缺少 baseUrl。');
-    }
-
-    const resolveJsonResponseMode = () => {
-      const utils = window.DPRLLMConfigUtils || {};
-      if (typeof utils.resolveJsonResponseMode === 'function') {
-        return utils.resolveJsonResponseMode({
-          baseUrl: llm.baseUrl,
-          model: llm.model,
-          preferSchema: false,
-        });
-      }
-      return 'json_object';
-    };
-    const jsonResponseMode = resolveJsonResponseMode();
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000);
-	    const requestPayload = ({ useResponseFormat = true } = {}) => {
-	      const payload = {
-	        model: llm.model,
-	        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a retrieval planning assistant and can only return valid JSON. '
-              + 'The response must be fully based on the current user input and must not reference prior conversation history.',
-          },
-          { role: 'user', content: prompt },
-	        ],
-	        temperature: 0.1,
-	      };
-	      const utils = window.DPRLLMConfigUtils || {};
-	      if (typeof utils.resolveMaxOutputTokens === 'function') {
-	        const maxTokens = utils.resolveMaxOutputTokens({
-	          baseUrl: llm.baseUrl,
-	          model: llm.model,
-	        });
-	        if (maxTokens) {
-	          payload.max_tokens = maxTokens;
-	        }
-	      }
-	      if (useResponseFormat && jsonResponseMode === 'json_object') {
-	        payload.response_format = { type: 'json_object' };
-	      }
-      return payload;
-    };
-
-    const textSafeFromError = (e) => {
-      if (!e) return '';
-      if (typeof e.message === 'string' && e.message) return e.message;
-      return '';
-    };
-
-    const doFetch = async (
-      endpoint,
-      options = { useResponseFormat: true, includeTools: true },
-    ) => {
-      const headers = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Authorization: `Bearer ${llm.apiKey}`,
-      };
-      return fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(requestPayload(options)),
-        signal: controller.signal,
-      });
-    };
-
-    let res = null;
-    let errorText = '';
-    let fetchError = '';
-    try {
-      for (let i = 0; i < endpoints.length; i++) {
-        const endpoint = endpoints[i];
-        try {
-          let current = null;
-          let txt = '';
-          current = await doFetch(endpoint, {
-            useResponseFormat: jsonResponseMode !== 'prompt_only',
-          });
-          if (current && !current.ok) {
-            txt = await current.text().catch(() => '');
-            if (current.status === 400 && /response[\s-]*format|json_object/i.test(txt)) {
-              current = await doFetch(endpoint, {
-                useResponseFormat: false,
-              });
-            }
-          }
-          if (current && !current.ok) {
-            txt = await current.text().catch(() => '');
-            if (current.status === 400 || current.status === 401 || current.status === 403) {
-              throw new Error(`HTTP ${current.status} ${txt || current.statusText}`);
-            }
-            if (current.status === 429 || current.status >= 500) {
-              errorText = txt;
-              continue;
-            }
-            errorText = txt;
-            break;
-          }
-
-          res = current;
-          break;
-        } catch (e) {
-          fetchError = textSafeFromError(e);
-          if (e && e.name === 'AbortError') {
-            throw new Error('生成超时，请稍后重试。');
-          }
-          if (i < endpoints.length - 1) {
-            // 网络类错误尝试下一个端点
-            continue;
-          }
-        }
-      }
-    } catch (e) {
-      clearTimeout(timeout);
-      throw e;
-    }
-    clearTimeout(timeout);
-    if (!res) {
-      if (fetchError) {
-        throw new Error(`模型服务请求失败：${fetchError}`);
-      }
-      throw new Error(errorText || '模型服务请求失败，请检查网络与密钥配置。');
-    }
-    const data = await res.json();
-    const content = extractLlmJsonText(data);
-    const parsed = loadJsonLenient(content);
+    const prompt = buildPromptFromTemplate(tag, desc, defaultPromptTemplate);
+    const requestModal = modalState;
+    const parsed = await window.DPRQueryGeneration.generate(prompt, (status) => {
+      if (modalState !== requestModal) return;
+      setMessage(status, '#666');
+      if (modalState && modalState.type === 'chat') setChatStatus(status, '#666');
+    });
     const candidates = normalizeGenerated(parsed);
     if (!candidates.keywords.length) {
       throw new Error('模型未返回可用英文候选，请调整描述后重试。');
@@ -2343,6 +2051,7 @@ window.SubscriptionsSmartQuery = (function () {
       return;
     }
 
+    const requestModal = modalState;
     modalState.pending = true;
     setSendBtnLoading(true);
     setChatStatus('正在生成候选，请稍候...', '#666');
@@ -2350,6 +2059,7 @@ window.SubscriptionsSmartQuery = (function () {
 
     try {
       const candidates = await requestCandidatesByDesc(finalTag, finalDesc);
+      if (modalState !== requestModal) return;
       const isFirstRound = !(Array.isArray(modalState.requestHistory) && modalState.requestHistory.length);
       const nextCandidates = parseCandidatesForState(candidates, false);
       const shouldMergeKeywords = !isFirstRound || hasRealCandidates(modalState.keywords);
@@ -2406,19 +2116,20 @@ window.SubscriptionsSmartQuery = (function () {
       setMessage(modalState.chatStatus, '#666');
       setChatStatus(modalState.chatStatus, '#666');
     } catch (e) {
+      if (modalState !== requestModal) return;
       console.error(e);
       const rawMsg = e && e.message ? String(e.message) : '未知错误';
       const hint =
         /Failed to fetch|NETWORK|network|ERR_TIMED_OUT|timed out/i.test(rawMsg) ||
         /模型服务请求失败/.test(rawMsg)
-          ? '请检查当前网络是否能访问模型网关，或稍后重试（可先切换/重选模型）。'
+          ? '请检查网络连接；云端任务状态可在仓库 Actions 中查看。'
           : '';
       const msg = `生成失败：${rawMsg}${hint ? `（${hint}）` : ''}`;
       setMessage(msg, '#c00');
       setChatStatus(msg, '#c00');
     } finally {
-      modalState.pending = false;
-      setSendBtnLoading(false);
+      requestModal.pending = false;
+      if (modalState === requestModal) setSendBtnLoading(false);
     }
   };
 
