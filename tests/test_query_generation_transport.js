@@ -6,8 +6,9 @@ const requestId = '12345678-1234-1234-1234-123456789abc';
 const name = `dpr-query-${requestId}`;
 const candidates = { keywords: [{ keyword: 'agent memory', query: 'agent memory' }], intent_queries: [] };
 const completed = { id: 42, head_sha: 'abc123', display_title: name, status: 'completed', conclusion: 'success' };
-const resultCheck = (result = { ok: true, request_id: requestId, candidates }) => ({
-  name, external_id: requestId, details_url: 'https://github.com/tester/papers/actions/runs/42',
+const resultCheck = (result = { ok: true, request_id: requestId, run_id: '42', candidates }) => ({
+  name, external_id: requestId, head_sha: completed.head_sha, status: 'completed',
+  details_url: 'https://github.com/tester/papers/actions/runs/42',
   conclusion: result.ok ? 'success' : 'failure', output: { text: JSON.stringify(result) },
 });
 const response = (data, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => data });
@@ -25,10 +26,29 @@ function harness(fetcher, context = { owner: 'tester', repo: 'papers', token: 't
     fetch: async (url, opts) => { calls.push({ url, opts }); return fetcher(url, opts, calls); },
   };
   vm.runInNewContext(fs.readFileSync('app/query-generation.js', 'utf8'), sandbox);
-  return { generate: sandbox.window.DPRQueryGeneration.generate, calls };
+  return { generate: sandbox.window.DPRQueryGeneration.generate, calls, elapsed: () => now };
+}
+
+function runFetcher(checks, run = completed) {
+  return async (url) => {
+    if (url.endsWith('/dispatches')) return response(null, 204);
+    if (url.includes('/runs?')) return response({ workflow_runs: [run] });
+    if (url.endsWith('/runs/42')) return response(run);
+    assert.match(url, /check-runs\?/);
+    return response({ check_runs: typeof checks === 'function' ? checks() : checks });
+  };
 }
 
 async function main() {
+  for (const details_url of [null, '', 'https://github.com/tester/papers/runs/999']) {
+    const rewritten = harness(runFetcher([{ ...resultCheck(), details_url }]));
+    assert.deepEqual(JSON.parse(JSON.stringify(await rewritten.generate('retrieval JSON'))), candidates);
+  }
+
+  // Existing results created before run_id was added remain readable.
+  const legacy = harness(runFetcher([{ ...resultCheck({ ok: true, request_id: requestId, candidates }), details_url: null }]));
+  assert.deepEqual(JSON.parse(JSON.stringify(await legacy.generate('retrieval JSON'))), candidates);
+
   let polls = 0;
   const h = harness(async (url, opts) => {
     assert.ok(url.startsWith('https://api.github.com/repos/tester/papers/'));
@@ -85,14 +105,45 @@ async function main() {
   await assert.rejects(timeout.generate('retrieval JSON'), /等待生成结果超时/);
   assert.equal(timeout.calls.filter((x) => x.opts.method === 'POST').length, 1);
 
-  const missing = harness(async (url) => {
+  const wrongRun = harness(runFetcher([resultCheck({ ok: true, request_id: requestId, run_id: '41', candidates })]));
+  await assert.rejects(wrongRun.generate('retrieval JSON'), /运行编号不匹配/);
+
+  for (const patch of [{ name: 'another-name' }, { external_id: 'another-request' }, { head_sha: 'another-commit' }]) {
+    const missing = harness(runFetcher([{ ...resultCheck(), ...patch }]));
+    await assert.rejects(missing.generate('retrieval JSON'), /未返回候选/);
+    assert.equal(missing.elapsed(), 65000, 'wait 60 seconds from first observing completion');
+    assert.equal(missing.calls.filter((x) => x.opts.method === 'POST').length, 1);
+  }
+
+  for (const result of [
+    { ok: true, request_id: 'wrong', run_id: '42', candidates },
+    { ok: false, request_id: requestId, run_id: '42', error: '模型生成失败' },
+    { ok: true, request_id: requestId, run_id: '42' },
+  ]) {
+    const invalid = harness(runFetcher([resultCheck(result)]));
+    await assert.rejects(invalid.generate('retrieval JSON'), /编号不匹配|模型生成失败|未收到候选/);
+  }
+  const failedCheck = harness(runFetcher([{ ...resultCheck(), conclusion: 'failure' }]));
+  await assert.rejects(failedCheck.generate('retrieval JSON'), /模型生成失败/);
+
+  // Completion can be visible well before the result check, including at the end of the total wait.
+  let delayedPolls = 0;
+  const delayed = harness(runFetcher(() => ++delayedPolls < 10 ? [] : [resultCheck()]));
+  const delayedProgress = [];
+  assert.deepEqual(JSON.parse(JSON.stringify(await delayed.generate('retrieval JSON', (s) => delayedProgress.push(s)))), candidates);
+  assert.equal(delayed.elapsed(), 50000);
+  assert.ok(delayedProgress.some((s) => s.includes('同步')));
+
+  let discoveryPolls = 0;
+  let lateCheckPolls = 0;
+  const late = harness(async (url) => {
     if (url.endsWith('/dispatches')) return response(null, 204);
-    if (url.includes('/runs?')) return response({ workflow_runs: [completed] });
+    if (url.includes('/runs?')) return response({ workflow_runs: ++discoveryPolls < 119 ? [] : [completed] });
     if (url.endsWith('/runs/42')) return response(completed);
-    // Even a check on the same commit is rejected if it belongs to another run.
-    return response({ check_runs: [{ ...resultCheck(), details_url: 'https://github.com/tester/papers/actions/runs/41' }] });
+    return response({ check_runs: ++lateCheckPolls < 10 ? [] : [resultCheck()] });
   });
-  await assert.rejects(missing.generate('retrieval JSON'), /未返回候选/);
+  assert.deepEqual(JSON.parse(JSON.stringify(await late.generate('retrieval JSON'))), candidates);
+  assert.ok(late.elapsed() > 600000, 'completion gets its own synchronization window');
   console.log('query generation transport tests passed');
 }
 

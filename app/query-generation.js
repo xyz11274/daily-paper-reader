@@ -79,8 +79,10 @@ window.DPRQueryGeneration = (function () {
     let runId = null;
     let failures = 0;
     let lastStatus = '';
-    let resultPolls = 0;
-    while (Date.now() < deadline) {
+    let resultDeadline = null;
+    let completedConclusion = null;
+    const missingResultError = () => new Error(`生成任务结束但未返回候选（${completedConclusion}），结果同步等待已超时。请查看 https://github.com/${owner}/${repo}/actions/runs/${runId}`);
+    while (Date.now() < (resultDeadline ?? deadline)) {
       await sleep(5000);
       let run;
       try {
@@ -92,24 +94,27 @@ window.DPRQueryGeneration = (function () {
           if (run) runId = run.id;
         }
         if (run && run.status === 'completed') {
+          // 完成后的结果可见性等待单独计时，不被前面的排队时间挤掉。
+          if (resultDeadline === null) resultDeadline = Date.now() + 60000;
+          completedConclusion = run.conclusion;
           const checks = await request(`${api}/commits/${encodeURIComponent(run.head_sha)}/check-runs?check_name=${encodeURIComponent(name)}&filter=all&per_page=100`, { headers });
           const check = (checks?.check_runs || []).find((item) => (
             item.name === name && item.external_id === requestId
-            && item.details_url === `https://github.com/${owner}/${repo}/actions/runs/${runId}`
+            && item.head_sha === run.head_sha && item.status === 'completed'
           ));
           if (check) {
             let result;
             try { result = JSON.parse(check.output?.text || '{}'); }
             catch { throw new Error('生成结果格式无效，请查看本次运行。'); }
             if (!result || result.request_id !== requestId) throw new Error('生成结果编号不匹配，请重试。');
+            // GitHub 会改写 details_url，不能用展示链接认领结果。
+            // 旧 Check 没有 run_id，仍按名称、请求编号和提交 SHA 读取。
+            if (result.run_id !== undefined && String(result.run_id) !== String(runId)) throw new Error('生成结果运行编号不匹配，请查看本次运行。');
             if (!result.ok || check.conclusion !== 'success') throw new Error(result.error || '模型生成失败，请查看本次运行。');
             if (!result.candidates) throw new Error('未收到候选词条，请重试。');
             return result.candidates;
           }
-          // Checks 和 Actions 的可见时间可能不同，短暂等待结果同步。
-          if (++resultPolls >= 3 || run.conclusion !== 'success') {
-            throw new Error(`生成任务结束但未返回候选（${run.conclusion}）。请查看 https://github.com/${owner}/${repo}/actions/runs/${runId}`);
-          }
+          if (Date.now() >= resultDeadline) throw missingResultError();
         }
         failures = 0;
       } catch (error) {
@@ -118,10 +123,13 @@ window.DPRQueryGeneration = (function () {
         if ([401, 403].includes(error.status)) throw new Error('无法读取生成结果，请检查 GitHub Token 的 Actions 和 Checks 读取权限。');
         throw error;
       }
-      const status = run?.status === 'in_progress' ? '正在生成候选，请保持页面打开…' : '生成任务排队中，请保持页面打开…';
+      const status = resultDeadline !== null
+        ? '任务已结束，正在同步候选结果，请保持页面打开…'
+        : run?.status === 'in_progress' ? '正在生成候选，请保持页面打开…' : '生成任务排队中，请保持页面打开…';
       if (status !== lastStatus) onProgress(status);
       lastStatus = status;
     }
+    if (resultDeadline !== null) throw missingResultError();
     throw new Error(`等待生成结果超时。任务可能仍在运行，请先查看 ${runId ? `https://github.com/${owner}/${repo}/actions/runs/${runId}` : actionsUrl}`);
   };
 

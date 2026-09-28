@@ -93,6 +93,7 @@ def test_action_returns_result_for_exact_request_without_secrets():
     assert payload["details_url"].endswith("/actions/runs/42")
     assert payload["conclusion"] == "success"
     assert json.loads(payload["output"]["text"])["candidates"] == CANDIDATES
+    assert json.loads(payload["output"]["text"])["run_id"] == "42"
     assert "test-summary-key" not in json.dumps(payload)
     assert "test-github-token" not in json.dumps(payload)
 
@@ -105,6 +106,7 @@ def test_failure_result_does_not_echo_raw_provider_error():
         assert query.run_action() == 1
     payload = post.call_args.kwargs["json"]
     assert payload["conclusion"] == "failure"
+    assert json.loads(payload["output"]["text"])["run_id"] == "42"
     assert "SUMMARY_API_KEY" in payload["output"]["text"]
     assert "test-summary-key" not in json.dumps(payload)
 

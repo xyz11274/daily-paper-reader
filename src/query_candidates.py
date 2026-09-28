@@ -92,6 +92,8 @@ def run_action() -> int:
         data = {"ok": False, "request_id": request_id, "error": str(exc)}
     except Exception:
         data = {"ok": False, "request_id": request_id, "error": "生成服务发生错误，请检查运行环境后重试。"}
+    # 使用自己的结果字段关联 Actions，details_url 可能被 GitHub 改写。
+    data["run_id"] = os.environ["GITHUB_RUN_ID"]
     run_url = f"https://github.com/{repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
     response = requests.post(
         f"https://api.github.com/repos/{repository}/check-runs",
