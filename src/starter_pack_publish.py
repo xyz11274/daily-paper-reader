@@ -244,8 +244,8 @@ def publish_pack(root, manifest, content_limit=100):
             for p in prepared
             if p.get("reading_status") != "complete"
         ]
-        model = os.getenv("DEEPSEEK_MODEL") or "deepseek-v4-flash"
-        endpoint = os.getenv("DEEPSEEK_BASE_URL") or "https://api.deepseek.com"
+        model = os.getenv("DEEPSEEK_MODEL") or "deepseek-v4.1-flash"
+        endpoint = os.getenv("DEEPSEEK_BASE_URL") or "https://ark.cn-beijing.volces.com/api/plan/v3"
         key = guide_cache_key(manifest["profile"], selected, model, endpoint)
         guide_path = root / ".local-runs/starter-pack-cache/guides" / (key + ".json")
         if guide_path.exists():
@@ -446,8 +446,8 @@ def _publish_selection(root, manifest, papers, record, folder, cached):
         },
     )
     if mode == "starter":
-        model = os.getenv("DEEPSEEK_MODEL") or "deepseek-v4-flash"
-        endpoint = os.getenv("DEEPSEEK_BASE_URL") or "https://api.deepseek.com"
+        model = os.getenv("DEEPSEEK_MODEL") or "deepseek-v4.1-flash"
+        endpoint = os.getenv("DEEPSEEK_BASE_URL") or "https://ark.cn-beijing.volces.com/api/plan/v3"
         key = guide_cache_key(manifest["profile"], papers, model, endpoint)
         record["guide_cache_key"] = key
         manifest["guide_cache_key"] = key

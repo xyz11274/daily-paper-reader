@@ -7,18 +7,17 @@
     root.DPRLLMConfigUtils = api;
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
-  const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
+  const DEFAULT_DEEPSEEK_BASE_URL = 'https://ark.cn-beijing.volces.com/api/plan/v3';
   const DEFAULT_DEEPSEEK_CHAT_MODELS = [
-    'deepseek-v4-flash',
-    'deepseek-v4-pro',
+    'deepseek-v4.1-flash',
   ];
   const DEEPSEEK_V4_MAX_OUTPUT_TOKENS = 393216;
   const DEEPSEEK_PRESETS = Object.freeze({
     deepseek: Object.freeze({
       key: 'deepseek',
-      label: 'DeepSeek 官方',
-      baseUrl: 'https://api.deepseek.com',
-      models: Object.freeze(['deepseek-v4-flash', 'deepseek-v4-pro']),
+      label: '火山引擎 · DeepSeek V4.1 Flash',
+      baseUrl: DEFAULT_DEEPSEEK_BASE_URL,
+      models: Object.freeze([...DEFAULT_DEEPSEEK_CHAT_MODELS]),
     }),
   });
 
@@ -149,11 +148,14 @@
 
   const isDeepSeekV4Model = (model) => {
     const normalizedModel = normalizeText(model || '').toLowerCase();
-    return normalizedModel === 'deepseek-v4-flash' || normalizedModel === 'deepseek-v4-pro';
+    return /^deepseek-v4(?:[.-]1)?-(?:flash|pro)(?:-|$)/.test(normalizedModel);
   };
 
   const resolveMaxOutputTokens = ({ baseUrl, model } = {}) => {
     const profile = inferChatApiProfile(baseUrl, model);
+    if (/^https:\/\/ark\.cn-beijing\.volces\.com(?:\/|$)/i.test(normalizeBaseUrlForStorage(baseUrl)) && isDeepSeekV4Model(model)) {
+      return 131072;
+    }
     if (profile === 'deepseek' && isDeepSeekV4Model(model)) {
       return DEEPSEEK_V4_MAX_OUTPUT_TOKENS;
     }
@@ -193,6 +195,7 @@
       ],
       temperature: 0,
       max_tokens: 256,
+      thinking: { type: 'disabled' },
     };
   };
 

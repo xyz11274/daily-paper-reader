@@ -12,14 +12,16 @@ gen = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gen)
 
 
+@pytest.mark.parametrize("prior_summary", ["", "\n\n---\n\n## 论文详细总结（自动生成）\n旧的半截总结\n"])
 def test_modern_paper_uses_daily_cards_and_preserves_route_and_notes(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, prior_summary
 ):
     route = "20250910-20260909/2510.17595v1"
     path = tmp_path / (route + ".md")
     path.parent.mkdir(parents=True)
     path.write_text(
-        "---\ntitle: ATSP\nevidence: 原专题评审理由\nselection_source: long-range\n---\n\n## Abstract\nAbstract\n\n## 我的笔记\n不能删除\n"
+        "---\ntitle: ATSP\nevidence: 原专题评审理由\nselection_source: long-range\n---\n\n## Abstract\nAbstract"
+        + prior_summary + "\n\n## 我的笔记\n不能删除\n"
     )
     paper = {
         "id": "2510.17595v1",
@@ -69,6 +71,7 @@ def test_modern_paper_uses_daily_cards_and_preserves_route_and_notes(
     assert meta["evidence"] == "非对称先验旅行商近似算法"
     assert "## 摘要\n中文摘要" in text and "不能删除" in text
     assert "论文详细总结（自动生成）" in text
+    assert "旧的半截总结" not in text
     translate.assert_called_once()
     glance.assert_called_once()
     deep.assert_called_once()

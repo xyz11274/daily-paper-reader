@@ -11,6 +11,31 @@ from llm import LLMClient
 
 
 class LlmBaseUrlTest(unittest.TestCase):
+    @patch("llm.requests.post")
+    def test_ark_plan_uses_v3_and_compatible_v41_parameters(self, mock_post):
+        mock_post.return_value = self._mock_response()
+        client = LLMClient(
+            api_key="test-key", model="deepseek-v4.1-flash",
+            base_url="https://ark.cn-beijing.volces.com/api/plan/v3",
+        )
+        client.chat([{"role": "user", "content": "hello"}])
+        self.assertEqual(mock_post.call_args.args[0], "https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions")
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["max_tokens"], 131072)
+        self.assertEqual(payload["thinking"], {"type": "disabled"})
+        self.assertNotIn("frequency_penalty", payload)
+        self.assertNotIn("presence_penalty", payload)
+
+    @patch("llm.requests.post")
+    def test_ark_keeps_explicit_thinking_and_small_output_budget(self, mock_post):
+        mock_post.return_value = self._mock_response()
+        client = LLMClient("test-key", "deepseek-v4-1-flash-260910", "https://ark.cn-beijing.volces.com/api/plan/v3")
+        client.kwargs.update(max_tokens=1024, thinking={"type": "enabled"})
+        client.chat([{"role": "user", "content": "hello"}])
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["max_tokens"], 1024)
+        self.assertEqual(payload["thinking"], {"type": "enabled"})
+
     def _mock_response(self):
         resp = MagicMock()
         resp.raise_for_status.return_value = None

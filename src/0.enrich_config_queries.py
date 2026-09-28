@@ -19,9 +19,9 @@ MODEL_NAME = (
   os.getenv("DEEPSEEK_REWRITE_MODEL")
   or os.getenv("SUMMARY_MODEL")
   or os.getenv("DEEPSEEK_MODEL")
-  or "deepseek-v4-flash"
+  or "deepseek-v4.1-flash"
 )
-BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("SUMMARY_BASE_URL") or "https://api.deepseek.com"
+BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("SUMMARY_BASE_URL") or "https://ark.cn-beijing.volces.com/api/plan/v3"
 
 def log(message: str) -> None:
   ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")

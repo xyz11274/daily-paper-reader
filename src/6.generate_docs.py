@@ -46,19 +46,22 @@ RANGE_DATE_RE = re.compile(r"^(\d{8})-(\d{8})$")
 
 # LLM 配置（使用 llm.py 内的 DeepSeek 客户端）
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY") or os.getenv("SUMMARY_API_KEY")
-DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("SUMMARY_BASE_URL") or "https://api.deepseek.com"
-DEEPSEEK_MODEL = os.getenv("SUMMARY_MODEL") or os.getenv("DEEPSEEK_MODEL") or "deepseek-v4-flash"
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("SUMMARY_BASE_URL") or "https://ark.cn-beijing.volces.com/api/plan/v3"
+DEEPSEEK_MODEL = os.getenv("SUMMARY_MODEL") or os.getenv("DEEPSEEK_MODEL") or "deepseek-v4.1-flash"
 STEP6_STRUCTURED_MAX_TOKENS = 16 * 1024
+STEP6_SUMMARY_MAX_TOKENS = 16 * 1024
 
 
 def create_llm_client() -> DeepSeekClient | None:
     if not DEEPSEEK_API_KEY:
         return None
-    return DeepSeekClient(
+    client = DeepSeekClient(
         api_key=DEEPSEEK_API_KEY,
         model=DEEPSEEK_MODEL,
         base_url=DEEPSEEK_BASE_URL,
     )
+    client.kwargs["thinking"] = {"type": "disabled"}
+    return client
 
 
 LLM_CLIENT = create_llm_client()
@@ -73,14 +76,20 @@ def call_llm_text(
     max_tokens: int,
     response_format: Dict[str, Any] | None = None,
 ) -> str:
-    client.kwargs.update(
-        {
-            "temperature": float(temperature),
-            "max_tokens": int(max_tokens),
-        }
-    )
-    resp = client.chat(messages=messages, response_format=response_format)
-    return (resp.get("content") or "").strip()
+    # 短简报重新生成完整答案，不能将 length 截断的半句话写入日报。
+    for attempt in range(3):
+        client.kwargs.update(temperature=float(temperature), max_tokens=int(max_tokens) * (2 ** attempt))
+        resp = client.chat(messages=messages, response_format=response_format)
+        if resp.get("refusal"):
+            raise ValueError("模型拒绝生成文本")
+        reason = resp.get("finish_reason")
+        content = (resp.get("content") or "").strip()
+        if reason == "stop" and content:
+            return content
+        if reason != "length":
+            raise ValueError(f"模型文本未完成：finish_reason={reason}")
+        log(f"[WARN] 文本输出达到 token 上限，尝试扩大额度（{attempt + 1}/3）")
+    raise ValueError("模型文本连续达到 token 上限，未发布截断内容")
 
 
 def call_llm_structured_json(
@@ -375,7 +384,23 @@ def extract_section_tail(md_text: str, heading: str) -> str:
     idx = md_text.rfind(key)
     if idx == -1:
         return ""
-    return md_text[idx + len(key) :].strip()
+    tail = md_text[idx + len(key) :]
+    return tail[:_auto_block_end(tail)].strip()
+
+
+AUTO_BLOCK_END = "<!-- DPR_AUTO_SUMMARY_END -->"
+
+
+def _auto_block_end(tail: str) -> int:
+    """保留自动块之后的手写笔记；旧块兼容结束标记与笔记标题。"""
+    marker = tail.find(AUTO_BLOCK_END)
+    if marker >= 0:
+        return marker
+    end = re.search(r"(?m)^（完）[ \t]*$", tail)
+    if end:
+        return end.end()
+    notes = re.search(r"(?mi)^#{1,2} (?:我的笔记|用户笔记|笔记|notes|user notes)[ \t]*$", tail)
+    return notes.start() if notes else len(tail)
 
 
 def strip_auto_sections(md_text: str) -> str:
@@ -497,11 +522,11 @@ def ensure_single_sentence_end(text: str) -> str:
 def upsert_auto_block(md_path: str, heading: str, content: str) -> None:
     """
     将自动生成内容写入 md：
-    - 若已存在同名 heading，则替换从该块开始到文件末尾
+    - 若已存在同名 heading，只替换自动块，保留后续笔记
     - 否则追加到文件末尾
     """
     key = f"## {heading}"
-    block = f"\n\n---\n\n{key}\n\n{content}".rstrip() + "\n"
+    block = f"\n\n---\n\n{key}\n\n{content}".rstrip() + f"\n{AUTO_BLOCK_END}\n"
 
     with open(md_path, "r", encoding="utf-8") as f:
         txt = f.read()
@@ -513,7 +538,11 @@ def upsert_auto_block(md_path: str, heading: str, content: str) -> None:
         start = txt.rfind("\n\n---\n\n", 0, idx)
         if start == -1:
             start = idx
-        new_txt = txt[:start].rstrip() + block
+        tail_start = idx + len(key)
+        end = tail_start + _auto_block_end(txt[tail_start:])
+        if txt[end:].startswith(AUTO_BLOCK_END):
+            end += len(AUTO_BLOCK_END)
+        new_txt = txt[:start].rstrip() + block + txt[end:]
 
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(new_txt)
@@ -541,6 +570,11 @@ def upsert_glance_block_in_text(md_text: str, glance: str) -> str:
         after = txt[abstract_idx:]
         return f"{before}\n\n## 速览\n{glance}\n\n---\n\n{after}"
     return (txt.rstrip() + f"\n\n## 速览\n{glance}\n").rstrip() + "\n"
+
+
+def is_complete_deep_summary(summary: str) -> bool:
+    # 结束标记必须独占一行；文中提及这个词不能冒充生成完成。
+    return bool(re.search(r"(?m)^（完）\s*$", summary or ""))
 
 
 def generate_deep_summary(
@@ -588,35 +622,38 @@ def generate_deep_summary(
     messages.append({"role": "user", "content": f"### 论文 Markdown 元数据 ###\n{paper_md_content}"})
     messages.append({"role": "user", "content": user_prompt})
 
-    last = ""
     for attempt in range(1, max_retries + 1):
         try:
-            summary = call_llm_text(active_client, messages, temperature=0.3, max_tokens=4096)
-            summary = (summary or "").strip()
-            if not summary:
-                continue
-            last = summary
-            if os.getenv("DPR_DEBUG_STEP6") == "1":
-                log(f"[DEBUG][STEP6] deep_summary attempt={attempt} len={len(summary)} tail={summary[-20:]!r}")
-            if "（完）" in summary:
-                return summary
-            # 续写一次：避免输出被截断
-            cont_messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": "你上一次的总结可能被截断了，请从中断处继续补全，不要重复已输出内容。"},
-                {"role": "user", "content": f"上一次输出如下：\n\n{summary}\n\n请继续补全，最后以一行“（完）”结束。"},
-            ]
-            cont = call_llm_text(active_client, cont_messages, temperature=0.3, max_tokens=2048)
-            cont = (cont or "").strip()
-            merged = f"{summary}\n\n{cont}".strip()
-            if os.getenv("DPR_DEBUG_STEP6") == "1":
-                log(f"[DEBUG][STEP6] deep_summary_cont attempt={attempt} len={len(cont)} merged_tail={merged[-20:]!r}")
-            if "（完）" in merged:
-                return merged
+            active_client.kwargs.update(
+                temperature=0.3, max_tokens=STEP6_SUMMARY_MAX_TOKENS,
+                thinking={"type": "disabled"},
+            )
+            conversation = list(messages)
+            parts = []
+            # 最多两次续写，每次保留论文全文与前序回答，防止脱离原文补写。
+            for continuation in range(3):
+                resp = active_client.chat(messages=conversation)
+                part = (resp.get("content") or "").strip()
+                reason = resp.get("finish_reason")
+                if resp.get("refusal") or reason not in ("stop", "length"):
+                    raise ValueError(f"精读输出未完成：finish_reason={reason}")
+                if not part:
+                    raise ValueError("精读输出为空")
+                parts.append(part)
+                summary = "\n\n".join(parts)
+                if reason == "stop" and summary.rstrip().endswith("\n（完）"):
+                    return summary
+                log(f"[WARN] 精读总结尚未完整结束，续写进度 {continuation}/2")
+                conversation = conversation + [
+                    {"role": "assistant", "content": part},
+                    {"role": "user", "content": "请依据原文从中断处继续补全剩余部分，不要重复已输出内容，最后单独一行输出“（完）”。"},
+                ]
         except Exception as e:
             log(f"[WARN] 精读总结失败（第 {attempt} 次）：{e}")
-            time.sleep(2 * attempt)
-    return last or None
+            if attempt < max_retries:
+                time.sleep(2 * attempt)
+    log("[WARN] 精读总结未完整生成，保留原文件，后续运行可重试。")
+    return None
 
 
 def generate_glance_overview(
@@ -1029,7 +1066,7 @@ def build_daily_brief_summary(
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.45,
-            max_tokens=768,
+            max_tokens=2048,
         )
         content = (content or "").strip()
         if content:
@@ -1763,13 +1800,13 @@ def ensure_reading_content(paper, section, md_path, txt_path, client, *, require
     if missing and require_complete:
         raise RuntimeError('论文内容未生成完整：' + ', '.join(missing))
 
-    if section == 'deep' and not extract_section_tail(text, '论文详细总结（自动生成）'):
+    if section == 'deep' and not is_complete_deep_summary(extract_section_tail(text, '论文详细总结（自动生成）')):
         ensure_text_content(paper.get('pdf_url') or paper.get('link') or '', txt_path)
         summary = generate_deep_summary(md_path, txt_path, client=client)
-        if not summary or '（完）' not in summary:
+        if not is_complete_deep_summary(summary):
             if require_complete:
                 raise RuntimeError('论文精读总结未完整生成')
-        if summary:
+        elif summary:
             upsert_auto_block(md_path, '论文详细总结（自动生成）', summary)
             with open(md_path, encoding='utf-8') as handle:
                 text = handle.read()
@@ -1981,7 +2018,7 @@ def process_paper(
         if section == "deep":
             # 精读区：检查是否已有详细总结
             tail = extract_section_tail(existing, "论文详细总结（自动生成）")
-            if tail:
+            if is_complete_deep_summary(tail):
                 return paper_id, title
 
             # 生成详细总结

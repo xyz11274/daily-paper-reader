@@ -2,6 +2,7 @@ import json
 import os
 import re
 import time
+from urllib.parse import urlparse
 from typing import List, Dict, Tuple, Any, Optional
 
 import requests
@@ -36,7 +37,7 @@ GLOBAL_TOKENS = {
 # 单次实验级别的全局时间统计（秒）
 GLOBAL_TIME_SECONDS: float = 0.0
 
-DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEFAULT_DEEPSEEK_BASE_URL = "https://ark.cn-beijing.volces.com/api/plan/v3"
 
 
 def reset_global_tokens():
@@ -540,8 +541,18 @@ class LLMClient:
         last_error: Exception | None = None
         for attempt_idx, req_base in enumerate(request_bases, start=1):
             request_url = self._build_chat_completions_url(req_base)
+            request_payload = dict(payload)
+            if (
+                urlparse(req_base).hostname == 'ark.cn-beijing.volces.com'
+                and model_name.lower().startswith(('deepseek-v4.1', 'deepseek-v4-1'))
+            ):
+                # 方舟 V4.1 不支持 penalty 参数，输出上限为 128K（包含思考）。
+                request_payload.pop('frequency_penalty', None)
+                request_payload.pop('presence_penalty', None)
+                request_payload['max_tokens'] = min(request_payload.get('max_tokens', 131072), 131072)
+                request_payload.setdefault('thinking', {'type': 'disabled'})
             try:
-                response = requests.post(request_url, headers=headers, json=payload, timeout=120)
+                response = requests.post(request_url, headers=headers, json=request_payload, timeout=120)
                 response.raise_for_status()
                 try:
                     response_data = response.json()

@@ -22,8 +22,8 @@ def review_candidates(
         model_key = [
             os.getenv("DEEPSEEK_FILTER_MODEL")
             or os.getenv("DEEPSEEK_MODEL")
-            or "deepseek-v4-flash",
-            os.getenv("DEEPSEEK_BASE_URL") or "https://api.deepseek.com",
+            or "deepseek-v4.1-flash",
+            os.getenv("DEEPSEEK_BASE_URL") or "https://ark.cn-beijing.volces.com/api/plan/v3",
         ]
     if client_factory is None:
 

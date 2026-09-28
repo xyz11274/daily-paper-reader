@@ -102,9 +102,9 @@ function testGetDeepSeekPreset() {
     getDeepSeekPreset('deepseek'),
     {
       key: 'deepseek',
-      label: 'DeepSeek 官方',
-      baseUrl: 'https://api.deepseek.com',
-      models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+      label: '火山引擎 · DeepSeek V4.1 Flash',
+      baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+      models: ['deepseek-v4.1-flash'],
     },
   );
   assert.equal(getDeepSeekPreset('other-a'), null);
@@ -229,6 +229,7 @@ function testBuildConnectivityTestPayload() {
       ],
       temperature: 0,
       max_tokens: 256,
+      thinking: { type: 'disabled' },
     },
   );
 
@@ -245,6 +246,7 @@ function testBuildConnectivityTestPayload() {
       ],
       temperature: 0,
       max_tokens: 256,
+      thinking: { type: 'disabled' },
     },
   );
 
@@ -262,5 +264,12 @@ testResolveMaxOutputTokens();
 testShouldUseXApiKeyHeader();
 testBuildStreamingChatPayload();
 testBuildConnectivityTestPayload();
+
+const arkBase = 'https://ark.cn-beijing.volces.com/api/plan/v3';
+assert.equal(buildChatCompletionsEndpoint(arkBase), `${arkBase}/chat/completions`);
+assert.equal(isDeepSeekV4Model('deepseek-v4.1-flash'), true);
+assert.equal(isDeepSeekV4Model('deepseek-v4-1-flash-260910'), true);
+assert.equal(resolveMaxOutputTokens({baseUrl: arkBase, model: 'deepseek-v4.1-flash'}), 131072);
+assert.equal(buildStreamingChatPayload({baseUrl: arkBase, model: 'deepseek-v4.1-flash', messages: []}).max_tokens, 131072);
 
 console.log('llm config utils tests passed');
