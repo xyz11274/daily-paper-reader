@@ -1,0 +1,971 @@
+Title: SkillFocus: Evolving Agent Skills via Capability Decomposition
+
+URL Source: https://arxiv.org/pdf/2609.34397v1
+
+Published Time: Tue, 29 Sep 2026 03:19:42 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# SkillFocus: Evolving Agent Skills via Capability Decomposition 
+
+Ning Wang 1 Zhiren Gong 2 Bingdong Li 1* Peng Yang 3 Aimin Zhou 1,4 
+
+> 1
+
+East China Normal University; 2Nanyang Technological University; 
+
+> 3
+
+Southern University of Science and Technology; 4Shanghai Innovation Institute 
+
+Abstract 
+
+Agent skill evolution seeks to improve reusable procedural guidance for large language model (LLM) agents through iterative revision. Ex-isting methods base each revision mainly on execution trajectories or feedback, leaving re-curring behavioral requirements across tasks implicit and tying revision to the behavior of the current skill. We introduce SkillFocus, which decomposes recurring task requirements into a capability space that remains fixed as the skill evolves, separating what tasks require from how the current skill behaves. SkillFo-cus maps current task outcomes to this space to identify the capability that leaves the most tasks unresolved, then uses that capability to determine what to revise and which evidence to use. Across four benchmarks spanning het-erogeneous tasks, SkillFocus achieves the best held-out accuracy on all four, outperforming the strongest competing result by 5.7 points on average while using 24% fewer evolution to-kens on average than the closest iterative base-line. Controlled studies further show that ca-pabilities derived from recurring task require-ments outperform task-semantic and execution-derived alternatives, while randomizing task– capability assignments reduces final accuracy by up to 20.2 points. Matching evidence to the selected capability increases candidate gain by 4.4 points under prioritized revision. 
+
+1 Introduction 
+
+Large language model (LLM) agents (Yao et al., 2023) can benefit from Agent Skills, reusable pro-cedural guidance for reasoning, tool use, and task execution (Anthropic, 2025; Li et al., 2026). Be-cause this guidance can be revised without updating model parameters, skill evolution seeks to improve a skill over repeated task executions (Wang et al., 2026b; Yang et al., 2026). When one skill is reused across heterogeneous tasks, however, its revisions 
+
+> *
+
+Corresponding author. Existing skill evolution Ours: Capability-space skill evolution        
+
+> Tasks Skill Execution Execution evidence Revision Updated skill Tasks Skill Execution Execution evidence Revision Updated skill
+> Capability space
+> 4/4 best test accuracy | 24% fewer evolution tokens
+
+Figure 1: Existing and capability-space skill evolu-tion. Both follow the same execution–revision loop. Existing methods base revisions on current execution evidence, whereas ours also derives a capability space from tasks before execution and uses it during revision. 
+
+must serve tasks that require different and often overlapping procedural requirements. The practi-cal challenge is therefore to improve one shared skill across heterogeneous tasks without treating every task as a separate revision problem. Existing skill-evolution methods derive revisions mainly from execution evidence: distilled trajec-tories (Ni et al., 2026), diagnosed failures (Wang et al., 2026a; Liu et al., 2026b), or scored rollouts (Yang et al., 2026). This evidence shows what the current skill did, but it changes as the skill changes and does not reveal which procedural re-quirements recur across tasks. Using tasks them-selves as revision units does not solve the problem either: one task may require several procedures, while the same procedure may appear in many dif-ferent tasks. Figure 1 illustrates this gap: execution evidence remains necessary for revision, yet it can-not tell which requirements the tasks share. A useful unit for skill revision should be finer than a task, yet remain meaningful as the skill changes. Two spreadsheet tasks with different goals, for instance, may both require checking the 1arXiv:2609.34397v1 [cs.AI] 28 Sep 2026 Task pool Capability induction                       
+
+> recurring requirements
+> Capability space
+> c1c2c3
+> i1110
+> i2011
+> i3101
+> i4010
+> Selection set
+> Specifications · inputs coverage diversity opportunity
+> Current skill
+> Training
+> Capability scores
+> unresolved task mass c1
+> c2
+> c3
+> Selected capability c *
+> Skill revision
+> Requirement to improve
+> c*Target requirement
+> Matched execution evidence
+> c*
+> Relevant behaviors
+> Skill change
+> Skill instructions
+> Candidate skill
+> Candidate validation
+> Selection Training
+> Accept: update · Reject: keep current skill
+
+Figure 2: Overview of SkillFocus. Before evolution, capability induction builds a fixed capability space (C, Q )
+
+from task specifications, from which the selection set is built. In each round, capability scores select c∗, which sets the requirement to improve and the matched execution evidence; the resulting candidate replaces the current skill only after selection and training validation. 
+
+populated range before writing, while one of them also requires formula construction and output ver-ification. We call such a recurring procedural re-quirement a capability when the skill can be revised to handle it better. Revising the skill can improve how well it handles a requirement without chang-ing what the task requires. This leads to our central question: can recurring requirements derived be-fore execution guide both what to revise and which execution evidence to use as the skill changes? We introduce SkillFocus, which identifies recur-ring procedural requirements from task specifica-tions before any execution and uses them to define a capability space that remains fixed as the skill changes (Figure 2). After each execution round, SkillFocus maps task outcomes to the capabilities and selects the capability with the most unresolved supporting tasks. The selected capability deter-mines what part of the skill to revise and which execution evidence to use for diagnosis and edit-ing. The resulting candidate is retained only after whole-skill validation. Across four benchmarks spanning heteroge-neous tasks, SkillFocus achieves the best held-out accuracy on all four, outperforming the strongest competing result by 5.7 points on average while using 24% fewer evolution tokens on average than the closest iterative baseline. Controlled compar-isons show that the gain depends on the capability space itself: task-semantic and execution-derived alternatives perform worse, and randomizing task– capability assignments reduces final accuracy by up to 20.2 points. Within fixed revision states, evi-dence matched to the selected capability also pro-duces stronger candidates. Both the capability de-composition and its use during revision contribute to the final gains. Our contributions are as follows: • We formulate skill evolution over a fixed capabil-ity space derived from recurring procedural re-quirements and reuse the same capabilities across revision rounds. • We introduce a revision process that selects a capability from current task outcomes and uses it to determine both what to revise and which execution evidence to use. • We show that SkillFocus improves final skill qual-ity and evolution efficiency across heterogeneous tasks, with controlled studies supporting both the capability decomposition and capability-matched evidence. 
+
+2 Related Work 
+
+Experience Reuse and Procedural Skills. 
+
+Experience-driven agents reuse interaction out-comes to improve later task execution (Zhang et al., 2025). Early work folds environment interaction, memory, and tool use into the execution loop itself (Yao et al., 2023; Sumers et al., 2024; Schick et al., 2023), while reflection-based methods carry ver-bal feedback or distilled lessons into subsequent attempts (Shinn et al., 2023; Madaan et al., 2023; Zhao et al., 2024; Wu et al., 2026). Other work keeps the same experience for later runs as exe-cutable skill libraries (Wang et al., 2024, 2026b), reusable workflows (Wang et al., 2025), procedural memory (Mi et al., 2026), or reasoning memories 2distilled from successes and failures (Ouyang et al., 2026); memory systems likewise store and retrieve past experience on demand (Xu et al., 2025; Kang et al., 2025; Yu et al., 2026; Xiong et al., 2026). 
+
+Skill Evolution from Execution Evidence. 
+
+Building on this idea, recent skill-evolution meth-ods repeatedly propose changes to a skill using evi-dence produced during task execution. Trace2Skill distills lessons from successful and failed trajec-tories into a transferable skill (Ni et al., 2026), SkillGrad turns trajectory diagnoses into textual update directions (Wang et al., 2026a), SkillOpt revises a retained skill from scored rollouts (Yang et al., 2026), which SkillOpt-Lite trims to a mini-mal loop validated on held-out samples (Shen et al., 2026), and SkillRevise applies trace-conditioned, execution-anchored edits (Liu et al., 2026b). Oth-ers repair recurring failures in batch, keep a change only after replay validation, or evolve the agent’s policy instead of a textual skill (Liu et al., 2026a; Chen et al., 2026; He and Yang, 2026; Zhang et al., 2024). Execution evidence is useful for diagnosing current failures, but it changes as the skill changes, whereas the procedural requirements imposed by the tasks do not. SkillFocus keeps these recurring requirements fixed across rounds and uses current execution evidence to decide which requirement to revise. 
+
+Text and Context Optimization. A broader line of work optimizes prompts, program instruc-tions, or persistent context in text space (Ram-nath et al., 2025). Instruction optimizers pro-pose and score candidates with an LLM (Yang et al., 2024; Zhou et al., 2023b), search discrete tokens or follow textual gradients (Shin et al., 2020; Pryzant et al., 2023), or evolve and select popula-tions of prompts (Fernando et al., 2024; Do et al., 2024; Agrawal et al., 2026); program optimizers jointly tune instructions and demonstrations across pipeline stages (Khattab et al., 2024; Opsahl-Ong et al., 2024; Chen et al., 2024); and gradient-style and context methods propagate language feedback through text variables or update a persistent play-book (Yuksekgonul et al., 2025; Zhang et al., 2026; Ye et al., 2026). These methods study how to im-prove mutable text given feedback. The setting studied here asks which recurring task requirement should guide each round of change to one shared skill. 
+
+3 Method 
+
+We use skill evolution for the full multi-round pro-cess of execution, revision, validation, and update. A skill revision is a proposed change to the cur-rent skill within one round; it yields a candidate skill, and a skill update replaces the current skill with a candidate that passes validation. SkillFo-cus first defines the capabilities that remain fixed during evolution (§3.2), then uses the changing task outcomes to choose a capability and propose a revision (§3.3), and finally decides whether the candidate replaces the current skill (§3.4). Figure 2 summarizes the design. 
+
+3.1 Problem Formulation 
+
+We study shared-skill evolution, where one muta-ble skill is reused across a task pool. Let A de-note the fixed non-skill components of the target agent, including the model, tools, and execution environment. Let S be the space of valid skills and St ∈ S the current skill at round t. Let 
+
+D = {τi}Ni=1 denote the task pool. For each task 
+
+τi, Yi(S) := Y (τi, S ) ∈ [0 , 1] denotes its normal-ized evaluation score when A executes the task with skill S, with larger values indicating better outcomes. Starting from an initial skill S0, which may be empty, round t may propose a candidate S′
+
+> t
+
+,and validation determines the next skill: 
+
+St+1 =
+
+(
+
+S′
+
+> t
+
+, if S′ 
+
+> t
+
+is accepted ,St, otherwise . (1) skill evolution runs for at most Tmax rounds and aims to improve task performance. Across rounds, the skill may change, while the task pool and all non-skill components of the agent remain fixed. 
+
+3.2 Capability Space 
+
+Before evolution, SkillFocus identifies procedural requirements from each task’s specification, input structure, and environment contract, without us-ing any execution outcome. We call a recurring procedural requirement a capability when revising the skill can improve how well it is handled. Re-quirements from different tasks are merged when the same reusable skill guidance can address them. Tasks that look similar need not share the same procedural requirement, whereas tasks assigned to the same capability do so by construction. Both conditions are needed. Reading requirements from task specifications prevents the capabilities from changing with the current skill, while requiring 3shared skill guidance means that revising the skill can improve how those requirements are handled. Let C = {cd}Kd=1 be the induced capabilities and 
+
+Q ∈ { 0, 1}N ×K the task–capability Matrix (Junker and Sijtsma, 2001; Wang et al., 2020), with 
+
+Qi,d =
+
+(
+
+1, τi requires cd,
+
+0, otherwise . (2) The entries record requirements, not outcomes. A task may require several capabilities, and one ca-pability may be shared by many tasks. We call the pair (C, Q ) the capability space . The tasks de-fine the requirements; revising the skill changes how well they are handled. We fix C and Q before evolution begins: task outcomes may change after each accepted skill update, while C and Q do not. Keeping the same capabilities across rounds lets successive skills be compared against the same task requirements. Appendix C details the extraction, consolidation, assignment, and support filtering procedures. 
+
+3.3 Capability-Guided Revision 
+
+Before the first round, the task pool is split into a training set Dtr , whose executions supply revision evidence, and a selection set Dsel , which during evolution is used only to check candidates (§3.4). In each round, SkillFocus uses current training out-comes to choose one capability, and then uses that capability to choose the evidence for revising the skill. 
+
+Choosing the Next Capability. Let Ot be the execution record of St on Dtr , and write yti := 
+
+Yi(St). Each capability has a support share πd =
+
+|D| −1 P 
+
+> τi∈D
+
+Qi,d , fixed with the capability space, and a current score on the training tasks that require it: 
+
+qtd =
+
+P 
+
+> τi∈Dtr
+
+Qi,d yti
+
+P 
+
+> τi∈Dtr
+
+Qi,d 
+
+. (3) We collect these as the capability scores qt =(qtd)Kd=1 . Neither coverage nor current score is suf-ficient alone. A rare capability may be poorly han-dled but affect few tasks, while a common capa-bility may already be well handled. SkillFocus therefore prioritizes their product, the unresolved task mass 
+
+mtd = πd
+
+ 1 − qtd
+
+ , (4) and selects 
+
+d⋆t = arg max  
+
+> d:cd∈U t
+
+mtd, c⋆t = cd⋆t . (5) The eligible capability set Ut contains the capabili-ties that a round can both act on and check: each has at least one diagnosable failure in Dtr , meaning a training execution that fails for a task-logic rea-son and not an environment fault (Appendix C.2), and at least one supporting task in Dsel .
+
+Matching Evidence to the Capability. The se-lected capability decides which execution evidence the revision sees. A trace records everything the agent did, and most of it is unrelated to any single requirement. Let Ht contain the revision attempts and outcomes from rounds before t. SkillFocus keeps only the training tasks with Qi,d ⋆t = 1 and assembles an evidence bundle Et from them: execu-tions that show how the requirement was handled, the skill content related to c⋆t , and the entries of Ht
+
+associated with c⋆t . Successful executions are set beside the failures whenever the record contains any. The round thus diagnoses one requirement from the executions that bear on it, instead of from all executions pooled together. 
+
+Proposing the Revision. Diagnosis turns this ev-idence into a skill revision. SkillFocus proposes a revision only when the evidence links the selected requirement, the observed executions, and editable skill content. The editor then adds, replaces, or removes skill content. Otherwise, SkillFocus ab-stains on that capability and considers the next one in Ut within the same round. Edits that copy task-specific entities are discarded before execution. 
+
+3.4 Candidate Validation Selection-Set Construction. The selection set is built once, before the first round, by greedy selec-tion over the task pool. Its priorities are ordered: capability coverage first, measured by the same support share πd that weights unresolved task mass in Equation 4; then diversity over predefined task features, namely task family, input structure, and environment contract labels; then improvement op-portunity, measured by the share of a task’s initial executions that fail for diagnosable reasons. Areserve of tasks solved by S0 keeps regressions visible, and at least one supporting task for every capability remains in the training set, so revision evidence remains available for that capability. The remaining tasks form the training set. Both sets remain fixed after construction. The selection set determines which capabilities have checking tasks and so can enter Ut, while the capability selected in a later round changes neither set. Algorithm C.2 4Algorithm 1 SkillFocus                                                                                                      
+
+> Require: Fixed agent components A, initial skill S0, task pool D, selection size M, horizon Tmax
+> Ensure: Final skill S
+> 1: Induce (C, Q )from task specifications, inputs, and envi-ronment contracts 2: S←S0,H ← ∅
+> 3: Execute Awith Son Dto obtain O0
+> 4: (Dsel , D tr )←CONSTRUCT SELECTION (C, Q, O 0, M )
+> 5: O←O0restricted to Dtr
+> 6: Compute capability scores qfrom Oand Q
+> 7: for t= 0 to Tmax −1do
+> 8: U ← U tfrom q
+> 9: repeat
+> 10: if U=∅then
+> 11: return S
+> 12: end if
+> 13: d⋆t←arg max d:cd∈U mtd;U ← U \ { cd⋆t}
+> 14: Collect evidence Etfor c⋆tfrom O,S, and H
+> 15: Diagnose, then propose S′
+> tor abstain 16: until a candidate S′
+> tis proposed 17: Evaluate S′
+> tagainst Son Dsel , then on Dtr
+> 18: if both paired changes are positive then
+> 19: S←S′
+> t; set Oto the training executions of S′
+> t
+> from validation; recompute q
+> 20: end if
+> 21: Append the revision records and outcome to H
+> 22: end for
+> 23: return S
+
+gives the procedure. 
+
+Whole-Skill Validation. Because capabilities overlap and each revision edits the shared skill, a revision aimed at one capability can change out-comes on tasks outside it. Checking the candidate only on the tasks of that capability could accept revisions that repair one requirement while degrad-ing others. SkillFocus evaluates every candidate as a whole instead. For X ∈ { Dsel , D tr }, the paired change is 
+
+∆X (S′, S ) := 1
+
+|X|
+
+X
+
+> τi∈X
+
+Yi(S′) − Yi(S) .
+
+(6) A candidate is retained only when both paired changes are positive: ACCEPT (S′) ⇐⇒ ∆Dsel (S′, S ) > 0
+
+∧ ∆Dtr (S′, S ) > 0. (7) The two checks serve different roles. selection execution traces are not supplied to candidate gen-eration, so the first check evaluates the candidate on tasks whose execution traces did not inform that revision. The training re-evaluation checks that the candidate produces a positive net change over the training set, which supplies revision evidence across rounds, and it provides the execution record for the next round. If the candidate is accepted, St+1 = S′
+
+> t
+
+, and its training executions from validation become Ot+1 ,from which the next capability scores qt+1 are com-puted. Otherwise, St+1 = St and Ot+1 = Ot. All capability attempts made in round t, together with the proposed revision and its validation outcome when a candidate is produced, are appended to 
+
+Ht+1 . A round ends once a candidate reaches vali-dation, and the loop returns the final skill after the evolution horizon, or earlier when no capability in 
+
+Ut yields a candidate. Algorithm 1 summarizes the loop. 
+
+4 Experiments 
+
+We organize our evaluation around three research questions (RQs): • Research Question 1 (RQ1): Does SkillFocus improve final skill quality and evolution effi-ciency? (§4.2) • Research Question 2 (RQ2): Does deriving capabilities from recurring task requirements improve skill evolution compared with task-semantic and execution-derived alternatives? (§4.3) • Research Question 3 (RQ3): Does selecting what to revise and which evidence to use with the same capability improve candidate quality? (§4.4) 
+
+4.1 Experimental Setup Benchmarks. We evaluate SkillFocus on four heterogeneous benchmarks. SearchQA provides search-oriented question answering tasks (Dunn et al., 2017). SpreadsheetBench (SSB) evaluates manipulation of real-world workbooks (Ma et al., 2024). LiveMathematicianBench (LiveMath) poses research-level mathematical reasoning as multiple-choice questions drawn from recent papers (He et al., 2026). IFBench measures generalization to verifiable instruction constraints (Pyatkin et al., 2025), extending the verifiable constraints of IFE-val (Zhou et al., 2023a). Each benchmark evolves its own shared skill, testing the same method across distinct task types. 
+
+Baselines. We compare against five baselines. No Skill runs the target model without procedural guidance; One-shot Skill writes a skill once without execution feedback; Trace2Skill (Ni et al., 2026) distills a skill from execution trajectories; Genetic-Pareto (GEPA) (Agrawal et al., 2026) mutates the 5Table 1: Test accuracy (%) of SkillFocus and baselines on four benchmarks. Bold and underlined values denote the best and second-best results, respectively; Avg.: unweighted mean over the four benchmarks. 
+
+Method SearchQA SpreadsheetBench LiveMath IFBench Avg. No Skill 64.5 21.8 14.4 67.8 42.1 One-shot Skill 70.7 34.0 30.6 80.6 54.0 Trace2Skill 73.7 30.7 39.5 76.3 55.1 GEPA 74.6 58.9 37.9 73.4 61.2 SkillOpt 76.1 62.1 41.1 73.9 63.3 
+
+SkillFocus 80.1 77.1 43.6 82.0 70.7 0 15 30 45 0816 24 32           
+
+> (a) SearchQA
+> 015 30 020 40 60
+> (b) SpreadsheetBench
+> 02.5 57.5 0612 18 24
+> (c) LiveMath
+> 01230816 24 32
+> (d) IFBench
+> Selection-set accuracy gain Cumulative evolution tokens (M)
+> SkillFocus SkillOpt accepted update
+
+Figure 3: Evolution trajectories of SkillFocus and SkillOpt. Each curve plots selection set accuracy gain over the initial skill in percentage points; markers show accepted updates, and horizontal segments are rejected candidates that consume tokens without changing the retained skill. 
+
+skill text through reflection and keeps candidates on a Pareto front; and SkillOpt (Yang et al., 2026) iteratively revises a retained skill from rollout evi-dence. 
+
+Protocol. Within each benchmark, all methods use the same evaluator, task pool, held-out test split, and DeepSeek-V4-Flash target model (DeepSeek-AI, 2026); the skill-optimization methods also share the initial skill and use the Generative Pre-trained Transformer model GPT-5.4 (OpenAI, 2026) for optimizer-side calls. Each method fol-lows its own candidate-selection procedure within the same non-test pool, and no method receives additional tasks. 
+
+Metrics. We report held-out test accuracy and cumulative evolution tokens, measuring final skill quality and optimization cost, respectively. Evolu-tion cost counts all inference tokens spent before the final skill is fixed; for SkillFocus, this includes capability induction and the initial executions used before iterative revision. The final test evaluation is not counted. Appendix B gives the full protocol, in-cluding data splits, optimization budgets, execution settings, and cost accounting. 
+
+4.2 Main Results 
+
+SkillFocus achieves the highest held-out test ac-curacy on all four benchmarks (Table 1). Its mar-gin over the strongest competing result on each benchmark ranges from 1.4 to 15.0 points and av-erages 5.7 points, with the widest margin over Skil-lOpt, the closest iterative baseline, on Spreadsheet-Bench. On IFBench, SkillFocus is the only iterative method that exceeds One-shot Skill, reaching 82.0 against 80.6. Sections 4.3 and 4.4 examine which parts of capability-guided revision produce this ad-vantage. SkillFocus reaches these accuracies while us-ing 24% fewer evolution tokens than SkillOpt on average, with the largest reduction on SearchQA (54.3%). Figure 3 shows that it reaches larger gains through fewer accepted revisions and, on the first three benchmarks, makes its last accepted revision earlier in the token budget. This is con-sistent with prioritizing the capability that leaves the most tasks unresolved, so one accepted revi-sion can move many tasks at once. Replacing the constructed selection set with a uniform random sample of the same size also lowers final test ac-curacy by 3.9–17.2 points (Appendix A.6). Taken together, SkillFocus produces a better final skill on every benchmark while using fewer evolution tokens than SkillOpt on average. 
+
+4.3 Analysis of the Capability Space 
+
+Tasks often require several capabilities, while dif-ferent capabilities cover different subsets of tasks. 6SearchQA                  
+
+> labels/task 4.18 ·coverage 100%
+> SpreadsheetBench
+> labels/task 2.46 ·coverage 99.2%
+> LiveMath
+> labels/task 5.11 ·coverage 100%
+> IFBench
+> labels/task 1.29 ·coverage 86.5%
+> SearchQA median J=0.022
+> SpreadsheetBench median J=0.000
+> LiveMath median J=0.167
+> IFBench median J=0.000
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> support-set Jaccard overlap
+> SearchQA SpreadsheetBench LiveMath 020 40 60 80 100
+> Final test accuracy (%)
+> task-semantic execution-derived SkillFocus
+> (a) Task–capability assignments
+> Capabilities Tasks  Task support ( nd)
+> (b) Capability support overlap
+> Capabilities Capabilities
+> (c) Final accuracy by capability source
+
+Figure 4: Task–capability assignments and their effect on final skill accuracy. (a) capabilities assigned to each task and the number of tasks per capability; (b) overlap between the task sets of different capabilities; (c) final skill accuracy when capabilities are derived from different sources. Panel annotations report labels per task, coverage, and median support overlap. 
+
+On SearchQA, SpreadsheetBench, and LiveMath, at least 86% of tasks require multiple capabilities, and 36% do so on IFBench (Figure 4a). The me-dian Jaccard overlap between the task sets of two capabilities stays at or below 0.17 on every bench-mark (Figure 4b). 
+
+Where capabilities come from changes the qual-ity of the evolved skill. Task-semantic grouping uses overall task similarity, whereas execution-derived grouping uses the outcomes of the initial skill. With the rest of the pipeline fixed, capabilities derived from procedural requirements outperform the former by 8.2–18.8 points and the latter by 6.6–12.9 points on all three evaluated benchmarks (Figure 4c), and which alternative comes second varies by benchmark. Unlike the execution-derived grouping, these requirements are defined by the tasks and stay the same as the skill changes. Which tasks share a capability matters. The ran-domized control preserves how many capabilities each task has and how many tasks each capabil-ity covers, but breaks which tasks are linked to which requirements, and final accuracy drops by 11.1–20.2 points (Table 5). The gain therefore comes from the exact task–capability assignments, not only from the number or size of the capability groups. Independent proposal views also recover simi-lar task–capability assignments on all four bench-marks, with an adjusted Rand index (ARI) of 0.883– 0.973 and normalized mutual information (NMI) of 0.953–0.989 (Appendix A.2). Together, these re-sults show that deriving capabilities from recurring task requirements yields better final skills than the task-semantic and execution-derived alternatives, and that the specific task–capability assignments are both consequential and reproducible. 
+
+4.4 Analysis of Capability-Guided Revision 
+
+We next test whether candidates improve when the revision target and its evidence refer to the same capability. We hold 15 historical revision states fixed and rerun candidate generation under a 2 × 2 crossover: the selected capability is either the highest-priority or a random non-top capability, and the evidence is either matched or mismatched to that capability (Table 2). Each condition thus starts from the same current skill and execution history; only the chosen capability and the evidence supplied to revision change. Candidates are strongest when SkillFocus re-vises the highest-priority capability using evidence from tasks that require that same capability. We compare candidates by the training gain ∆tr at the same historical state, since the training executions supply the revision evidence. Matched evidence 7Table 2: Focus–evidence crossover over 15 historical re-vision states, macro-averaged across SearchQA, Spread-sheetBench, and LiveMath. Accept: candidate accep-tance rate; ∆sel , ∆tr : paired candidate gains (points) on the selection and training sets.                
+
+> Condition Accept (%) ∆sel ∆tr
+> TM: Top + Matched 40.0 +4.10 +9.37
+> T¬M: Top + Mismatched 26.7 +3.62 +4.97 RM: Random + Matched 26.7 +2.28 +5.33 R¬M: Random + Mismatched 20.0 +2.09 +3.39
+
+raises ∆tr for both the highest-priority and a ran-dom capability, and top-priority selection raises it under both matched and mismatched evidence. Un-der top-priority selection, matched evidence adds 4.4 points; Top + Matched reaches the highest ∆tr 
+
+(+9 .37 ) and the highest acceptance rate (40.0%), so stronger candidates also pass validation more often. Whole-run ablations show the same pattern: re-moving capability-matched evidence, or removing both matched evidence and capability prioritiza-tion, lowers final skill accuracy on all three evalu-ated benchmarks (Appendix A.3). The crossover isolates candidate quality from the same starting state, while the whole-run ablations show that these per-round gains reach the final skill. Using one ca-pability to choose both what to revise and which evidence to read therefore improves the candidates a round produces, and those gains carry through to the final skill. 
+
+5 Conclusion 
+
+We presented SkillFocus, a framework for evolv-ing a shared Agent skill through a fixed capability space derived from recurring procedural require-ments. As the skill changes, SkillFocus uses cur-rent task outcomes to choose which capability to improve, and uses that same capability to select the execution evidence for revision. Across heteroge-neous benchmarks, SkillFocus produces stronger final skills at a lower average evolution cost, and controlled studies support both the capability space and its use to guide revision. More broadly, skill evolution can separate what tasks repeatedly re-quire from how the current skill behaves, keeping the former fixed and using the latter to decide what to improve and which evidence to revise from. 
+
+Limitations 
+
+SkillFocus assumes that recurring procedural re-quirements can be identified before evolution and that these requirements are addressable through skill revision. Because each revision changes the shared skill as a whole, improving one capability can also change behavior on other requirements; SkillFocus validates every candidate as a whole rather than confining an edit to its target. Our evaluation studies bounded evolution under one optimizer–target configuration; broader model fam-ilies and longer-horizon or cross-domain evolution remain future directions. 
+
+References 
+
+Lakshya A. Agrawal, Shangyin Tan, Dilara Soylu, Noah Ziems, Rishi Khare, Krista Opsahl-Ong, Arnav Singhvi, Herumb Shandilya, Michael J. Ryan, Meng Jiang, Christopher Potts, Koushik Sen, Alexandros G. Dimakis, Ion Stoica, Dan Klein, Matei Zaharia, and Omar Khattab. 2026. Gepa: Reflective prompt evo-lution can outperform reinforcement learning. In 
+
+International Conference on Learning Representa-tions .Anthropic. 2025. Equipping agents for the real world with agent skills. Anthropic Engineering. Kunfeng Chen, Qihuang Zhong, Juhua Liu, and Bo Du. 2026. Skillcat: Contrastive, assessment-augmented and topology-aware skill self-evolution for llm agents. 
+
+Preprint , arXiv:2606.13317. Yongchao Chen, Jacob Arkin, Yilun Hao, Yang Zhang, Nicholas Roy, and Chuchu Fan. 2024. PRompt op-timization in multi-step tasks (PROMST): Integrat-ing human feedback and heuristic-based sampling. In Proceedings of the 2024 Conference on Empiri-cal Methods in Natural Language Processing , pages 3859–3920. Association for Computational Linguis-tics. DeepSeek-AI. 2026. DeepSeek-V4: Towards highly efficient million-token context intelligence. Preprint ,arXiv:2606.19348. Xuan Long Do, Yiran Zhao, Hannah Brown, Yuxi Xie, James Xu Zhao, Nancy F. Chen, Kenji Kawaguchi, Michael Shieh, and Junxian He. 2024. Prompt opti-mization via adversarial in-context learning. In Pro-ceedings of the 62nd Annual Meeting of the Associa-tion for Computational Linguistics (Volume 1: Long Papers) , pages 7308–7327. Association for Compu-tational Linguistics. Yilun Du, Shuang Li, Antonio Torralba, Joshua B. Tenenbaum, and Igor Mordatch. 2024. Improving factuality and reasoning in language models through multiagent debate. In Proceedings of the 41st Inter-national Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research ,pages 11733–11763. PMLR. 
+
+8Matthew Dunn, Levent Sagun, Mike Higgins, V. Ugur Guney, Volkan Cirik, and Kyunghyun Cho. 2017. Searchqa: A new q&a dataset augmented with context from a search engine. Preprint ,arXiv:1704.05179. Chrisantha Fernando, Dylan Sunil Banarse, Henryk Michalewski, Simon Osindero, and Tim Rock-täschel. 2024. Promptbreeder: Self-referential self-improvement via prompt evolution. In Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pages 13481–13544. PMLR. Linyang He, Qiyao Yu, Hanze Dong, Baohao Liao, Xinxing Xu, Micah Goldblum, Jiang Bian, and Nima Mesgarani. 2026. Livemathematicianbench: A live benchmark for mathematician-level reasoning with proof sketches. In Conference on Language Model-ing (COLM) .Yu He and Weikai Yang. 2026. Skillcommit: Evolv-ing agent skills through behaviorally validated scope expansion. Preprint , arXiv:2608.15165. Brian W. Junker and Klaas Sijtsma. 2001. Cognitive assessment models with few assumptions, and con-nections with nonparametric item response theory. 
+
+Applied Psychological Measurement , 25(3):258–272. Jiazheng Kang, Mingming Ji, Zhe Zhao, and Ting Bai. 2025. Memory os of ai agent. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 25961–25970. Associa-tion for Computational Linguistics. Omar Khattab, Arnav Singhvi, Paridhi Maheshwari, Zhiyuan Zhang, Keshav Santhanam, Sri Vard-hamanan, Saiful Haq, Ashutosh Sharma, Thomas T. Joshi, Hanna Moazam, Heather Miller, Matei Za-haria, and Christopher Potts. 2024. Dspy: Compiling declarative language model calls into self-improving pipelines. In International Conference on Learning Representations .Xiangyi Li, Yimin Liu, Wenbo Chen, et al. 2026. Skills-bench: Benchmarking how well agent skills work across diverse tasks. Preprint , arXiv:2602.12670. Xingyan Liu, Xiyue Luo, Linyu Li, Ganghong Huang, Jianfeng Liu, and Honglin Qiao. 2026a. Skillforge: Forging domain-specific, self-evolving agent skills in cloud technical support. In Proceedings of the 49th International ACM SIGIR Conference on Research and Development in Information Retrieval , pages 4763–4768. Association for Computing Machinery. Also available as arXiv:2604.08618. Yuxuan Liu, Zhaochen Su, Lingyun Xie, Yuhao Zhang, Qing Zong, Jiahe Guo, Zhongwei Xie, Yiyan Ji, Yauwai Yim, Hongyu Luo, Xiyu Ren, Chenyu Ruan, Haoran Li, and Yangqiu Song. 2026b. Skillre-vise: Improving llm-authored agent skills via trace-conditioned skill revision. In Findings of the Associ-ation for Computational Linguistics: EMNLP 2026 .Zeyao Ma, Bohan Zhang, Jing Zhang, Jifan Yu, Xi-aokang Zhang, Xiaohan Zhang, Sijia Luo, Xi Wang, and Jie Tang. 2024. Spreadsheetbench: Towards challenging real world spreadsheet manipulation. In 
+
+Advances in Neural Information Processing Systems ,volume 37. Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, Shashank Gupta, Bodhisattwa Prasad Majumder, Katherine Hermann, Sean Welleck, Amir Yazdan-bakhsh, and Peter Clark. 2023. Self-refine: Iterative refinement with self-feedback. In Advances in Neu-ral Information Processing Systems , volume 36. Qirui Mi, Zhijian Ma, Mengyue Yang, Haoxuan Li, Yisen Wang, Haifeng Zhang, and Jun Wang. 2026. Procmem: Learning reusable procedural memory from experience via non-parametric ppo for llm agents. In Proceedings of the 43rd International Conference on Machine Learning . Also available as arXiv:2602.01869. Jingwei Ni, Yihao Liu, Xinpeng Liu, Yutao Sun, Mengyu Zhou, Pengyu Cheng, Dexin Wang, Er-chao Zhao, Xiaoxi Jiang, and Guanjun Jiang. 2026. Trace2skill: Distill trajectory-local lessons into trans-ferable agent skills. Preprint , arXiv:2603.25158. OpenAI. 2026. GPT-5.4 thinking system card. Krista Opsahl-Ong, Michael J. Ryan, Josh Purtell, David Broman, Christopher Potts, Matei Zaharia, and Omar Khattab. 2024. Optimizing instructions and demonstrations for multi-stage language model programs. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing ,pages 9340–9366. Association for Computational Linguistics. Siru Ouyang, Jun Yan, I-Hung Hsu, Yanfei Chen, Ke Jiang, Zifeng Wang, Rujun Han, Long T. Le, Samira Daruki, Xiangru Tang, Vishy Tirumalashetty, George Lee, Mahsan Rofouei, Hangfei Lin, Jiawei Han, Chen-Yu Lee, and Tomas Pfister. 2026. Reason-ingbank: Scaling agent self-evolving with reasoning memory. In International Conference on Learning Representations .Reid Pryzant, Dan Iter, Jerry Li, Yin Tat Lee, Chen-guang Zhu, and Michael Zeng. 2023. Automatic prompt optimization with “gradient descent” and beam search. In Proceedings of the 2023 Confer-ence on Empirical Methods in Natural Language Processing , pages 7957–7968. Association for Com-putational Linguistics. Valentina Pyatkin, Saumya Malik, Victoria Graf, Hamish Ivison, Shengyi Huang, Pradeep Dasigi, Nathan Lambert, and Hannaneh Hajishirzi. 2025. Generalizing verifiable instruction following. In Ad-vances in Neural Information Processing Systems (Datasets and Benchmarks Track) , volume 38. 
+
+9Kiran Ramnath, Kang Zhou, Sheng Guan, Soumya Sm-ruti Mishra, Xuan Qi, Zhengyuan Shen, Shuai Wang, Sangmin Woo, Sullam Jeoung, Yawei Wang, Haozhu Wang, Han Ding, Yuzhe Lu, Zhichao Xu, Yun Zhou, Balasubramaniam Srinivasan, Qiaojing Yan, Yueyan Chen, Haibo Ding, and Lin Lee Cheong. 2025. A systematic survey of automatic prompt optimization techniques. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Process-ing , pages 33078–33110. Association for Computa-tional Linguistics. Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Raileanu, Maria Lomeli, Eric Hambro, Luke Zettle-moyer, Nicola Cancedda, and Thomas Scialom. 2023. Toolformer: Language models can teach themselves to use tools. In Advances in Neural Information Pro-cessing Systems , volume 36. Yifei Shen, Bo Li, and Xinjie Zhang. 2026. Skillopt-lite: Better and faster agent self-evolution via one line of vibe. Preprint , arXiv:2607.03451. Taylor Shin, Yasaman Razeghi, Robert L. Logan IV, Eric Wallace, and Sameer Singh. 2020. Autoprompt: Eliciting knowledge from language models with au-tomatically generated prompts. In Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing , pages 4222–4235. Association for Computational Linguistics. Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. 2023. Re-flexion: Language agents with verbal reinforcement learning. In Advances in Neural Information Pro-cessing Systems , volume 36. Theodore R. Sumers, Shunyu Yao, Karthik Narasimhan, and Thomas L. Griffiths. 2024. Cognitive architec-tures for language agents. Transactions on Machine Learning Research .Fei Wang, Qi Liu, Enhong Chen, Zhenya Huang, Yuying Chen, Yu Yin, Zai Huang, and Shijin Wang. 2020. Neural cognitive diagnosis for intelligent education systems. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 34, pages 6153–6161. AAAI Press. Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Man-dlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and Anima Anandkumar. 2024. Voyager: An open-ended embodied agent with large language models. Trans-actions on Machine Learning Research .Hanyu Wang, Yifan Lan, Bochuan Cao, Lu Lin, and Jinghui Chen. 2026a. Skillgrad: Optimiz-ing agent skills like gradient descent. Preprint ,arXiv:2605.27760. Jiongxiao Wang, Qiaojing Yan, Yawei Wang, Yijun Tian, Soumya Smruti Mishra, Zhichao Xu, Megha Gandhi, Panpan Xu, and Lin Lee Cheong. 2026b. Re-inforcement learning for self-improving agent with skill library. In Proceedings of the 64th Annual Meet-ing of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 1529–1550. Associ-ation for Computational Linguistics. Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc V. Le, Ed H. Chi, Sharan Narang, Aakanksha Chowd-hery, and Denny Zhou. 2023. Self-consistency im-proves chain of thought reasoning in language mod-els. In International Conference on Learning Repre-sentations .Zora Zhiruo Wang, Jiayuan Mao, Daniel Fried, and Graham Neubig. 2025. Agent workflow memory. In 
+
+Proceedings of the 42nd International Conference on Machine Learning , volume 267 of Proceedings of Machine Learning Research , pages 63897–63911. PMLR. Rong Wu, Xiaoman Wang, Jianbiao Mei, Pinlong Cai, Daocheng Fu, Cheng Yang, Licheng Wen, Xuemeng Yang, Yufan Shen, Yuxin Wang, and Botian Shi. 2026. From interactions to principles: Experience-driven self-distillation for evolving llm agents. In Proceed-ings of the 43rd International Conference on Machine Learning . Also available as arXiv:2510.16079. Zidi Xiong, Yuping Lin, Wenya Xie, Pengfei He, Zirui Liu, Jiliang Tang, Himabindu Lakkaraju, and Zhen Xiang. 2026. How memory management impacts llm agents: An empirical study of experience-following behavior. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Vol-ume 1: Long Papers) , pages 623–645. Association for Computational Linguistics. Wujiang Xu, Zujie Liang, Kai Mei, Hang Gao, Juntao Tan, and Yongfeng Zhang. 2025. A-mem: Agen-tic memory for llm agents. In Advances in Neural Information Processing Systems , volume 38, pages 20004–20031. Neural Information Processing Sys-tems Foundation. Chengrun Yang, Xuezhi Wang, Yifeng Lu, Hanxiao Liu, Quoc V. Le, Denny Zhou, and Xinyun Chen. 2024. Large language models as optimizers. In Interna-tional Conference on Learning Representations .Yifan Yang, Ziyang Gong, Weiquan Huang, Qihao Yang, Ziwei Zhou, Zisu Huang, Yan Li, Xuemei Gao, Qi Dai, Bei Liu, Kai Qiu, Yuqing Yang, Dong-dong Chen, Xue Yang, and Chong Luo. 2026. Skil-lopt: Executive strategy for self-evolving agent skills. 
+
+Preprint , arXiv:2605.23904. Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. 2023. React: Synergizing reasoning and acting in language models. In International Conference on Learning Representations .Haoran Ye, Xuning He, Vincent Arak, Haonan Dong, and Guojie Song. 2026. Meta context engineering via agentic skill evolution. Preprint , arXiv:2601.21557. Yi Yu, Liuyi Yao, Yuexiang Xie, Qingquan Tan, Ji-aqi Feng, Yaliang Li, and Libing Wu. 2026. Agen-tic memory: Learning unified long-term and short-term memory management for large language model 
+
+10 agents. In Proceedings of the 64th Annual Meet-ing of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 21457–21483. Asso-ciation for Computational Linguistics. Mert Yuksekgonul, Federico Bianchi, Joseph Boen, Sheng Liu, Pan Lu, Zhi Huang, Carlos Guestrin, and James Zou. 2025. Optimizing generative ai by backpropagating language model feedback. Nature ,639(8055):609–616. Qizheng Zhang, Changran Hu, Shubhangi Upasani, Boyuan Ma, Fenglu Hong, Vamsidhar Kamanuru, Jay Rainton, Chen Wu, Mengmeng Ji, Hanchen Li, Ur-mish Thakker, James Zou, and Kunle Olukotun. 2026. Agentic context engineering: Evolving contexts for self-improving language models. In International Conference on Learning Representations .Wenqi Zhang, Ke Tang, Hai Wu, Mengna Wang, Yongliang Shen, Guiyang Hou, Zeqi Tan, Peng Li, Yueting Zhuang, and Weiming Lu. 2024. Agent-pro: Learning to evolve via policy-level reflection and optimization. In Proceedings of the 62nd Annual Meeting of the Association for Computational Lin-guistics (Volume 1: Long Papers) , pages 5348–5375. Association for Computational Linguistics. Zeyu Zhang, Quanyu Dai, Xiaohe Bo, Chen Ma, Rui Li, Xu Chen, Jieming Zhu, Zhenhua Dong, and Ji-Rong Wen. 2025. A survey on the memory mechanism of large language model-based agents. ACM Transac-tions on Information Systems , 43(6):155:1–155:47. Andrew Zhao, Daniel Huang, Quentin Xu, Matthieu Lin, Yong-Jin Liu, and Gao Huang. 2024. Expel: Llm agents are experiential learners. In Proceedings of the AAAI Conference on Artificial Intelligence ,volume 38, pages 19632–19642. Jeffrey Zhou, Tianjian Lu, Swaroop Mishra, Siddhartha Brahma, Sujoy Basu, Yi Luan, Denny Zhou, and Le Hou. 2023a. Instruction-following evaluation for large language models. Preprint , arXiv:2311.07911. Yongchao Zhou, Andrei Ioan Muresanu, Ziwen Han, Keiran Paster, Silviu Pitis, Harris Chan, and Jimmy Ba. 2023b. Large language models are human-level prompt engineers. In International Conference on Learning Representations .
+
+11 Appendix Overview 
+
+Appendix A expands the evidence for the two cen-tral claims of the paper: the capability space groups tasks in a structured and reproducible way that changes the evolved skill, and capability-guided revision improves candidate quality. Appendix B documents the evaluation protocol, fairness con-trols, and cost accounting. Appendix C details each stage of the method with its pseudocode, Ap-pendix D gives representative prompt interfaces, and Appendix E states how large language models are used. 
+
+A Extended Analysis 
+
+Beyond the two central claims, this section exam-ines how far a whole-skill revision reaches beyond its target tasks, how selection accuracy relates to held-out accuracy, where the evolution budget goes, and one complete revision chain. 
+
+A.1 Capability Structure and Functional Relevance 
+
+No fixed human taxonomy covers the induced capa-bilities, so we evaluate them by their structure, their stability across proposal views, and the skill they produce, instead of by a ground-truth clustering score. 
+
+Structure. A task usually requires several capa-bilities, and each capability covers a different num-ber of tasks. The mean number of active capabili-ties per task ranges from 1.29 on IFBench to 5.11 on LiveMath, while support ranges from small task subsets to requirements shared by the whole pool (Table 3). Figure 4 shows the same three facts as panels: which capabilities each task carries, how far their task sets overlap, and what the resulting skill scores. Table 4 gives representative behaviors grouped into capabilities. SpreadsheetBench combines a high-support formula-writing behavior with nar-rower matching and reference behaviors, while IF-Bench contains sparse requirements attached to smaller task subsets. A task may carry several ca-pabilities at once. 
+
+Functional relevance. Table 5 tests three alter-native explanations for the benefit of the capability space. Each alternative replaces one property of the frozen (C, Q ) while the downstream evolution pipeline stays fixed (Appendix B.5.3). 
+
+Not generic task grouping. The task-semantic decomposition groups tasks by their overall objec-tive, operation, and domain, reading the same task specifications and allowed the same number of ca-pabilities. It trails SkillFocus by 18.8, 8.2, and 17.8 points on SearchQA, SpreadsheetBench, and Live-Math. Tasks with similar surface semantics may share no behavior that one skill edit can change, and a task-semantic label keeps a task whole in-stead of splitting it into the separate requirements a revision can address. 
+
+Not execution-derived grouping. The execution-derived decomposition groups tasks by neutral sum-maries of how the initial skill behaved on the train-ing set. It is the stronger alternative on SearchQA and LiveMath, yet it still trails by 6.6, 11.0, and 12.9 points. Its groups describe how the initial skill behaved, so they keep pointing at that skill while later rounds change it, which is consistent with its lower endpoints. 
+
+Not matrix statistics alone. The randomized ca-pability assignment preserves the task and capabil-ity degree sequences of Q while breaking which task carries which requirement. It reduces accuracy by 11.1, 17.5, and 20.2 points, so which task carries which requirement, and not the degree sequences alone, drives the gain. Across the three controls, capabilities read from task specifications give the strongest final skill on every benchmark, and they are the only source that stays fixed while the skill changes. 
+
+A.2 Assignment Stability 
+
+We assess stability across three independent pro-posal calls that read the same task specifications and do not observe one another’s outputs. Af-ter aligning common behavioral-requirement refer-ences, we compare the resulting assignments using the adjusted Rand index (ARI) and normalized mu-tual information (NMI). The three views propose different numbers of capabilities, yet they assign tasks to them in much the same way on all four benchmarks (ARI .883– .973; NMI .953–.989; Table 6), so the assignments survive a change of proposal granularity and rest on no single view. 
+
+A.3 Capability-Guided Revision: Full Crossover Analysis 
+
+Choosing the capability to revise and the evidence to read from the same capability produces the strongest candidates. The crossover shows this 12 Table 3: Benchmark-level statistics of the frozen task–capability matrices. Tasks is the number of task records the matrix covers; K is the number of induced capabilities; Labels per task is the mean number of active capabilities per task; Support is the minimum–maximum number of supporting tasks; J is pairwise support-set Jaccard overlap; and Coverage is the fraction of covered tasks carrying at least one capability. 
+
+Benchmark Tasks K Labels per task Support Mean J Median J Coverage SearchQA 600 19 4.18 3–600 .055 .022 100% SpreadsheetBench 120 34 2.46 3–89 .018 .000 99.2% LiveMath 53 12 5.11 5–53 .202 .167 100% IFBench 89 21 1.29 3–18 .018 .000 86.5% 
+
+Table 4: Representative behavioral requirements and their task support. 
+
+Benchmark Representative behavioral requirement # Tasks SearchQA Return exactly one non-empty answer element containing only the final answer text, with no reasoning, citations, or extra prose. 600 SearchQA Use only the supplied question, documents, and metadata as evidence, avoiding outside knowledge, tools, and unsupported inference. 600 SearchQA Select an answer only when the same candidate satisfies all substantive clue constraints, rather than combining separate partial matches. 191 SearchQA Follow the relation expressed in the clue to extract the correct participant, such as an author, actor, founder, owner, or creator. 127 SpreadsheetBench Write the exact formula or formula-based expression required by the task directly in the specified answer cells. 89 SpreadsheetBench Generate each output with correct row-specific references, conditions, and source matches rather than positional assumptions. 31 SpreadsheetBench Identify and process rows by comparing the required keys, text, or filter conditions so only matching records contribute. 17 LiveMathematicianBench Base the answer only on the supplied prompt and choices, avoiding outside knowledge, retrieval, tools, and code execution. 53 LiveMathematicianBench Select the strongest claim supported by the prompt while rejecting weaker consequences and unsupported overstatements. 31 LiveMathematicianBench Preserve exact quantifier order, object scope, endpoint cases, and domain restrictions when comparing choices. 22 IFBench Use the structural conventions of the requested output genre, document form, or presentation format rather than generic prose. 18 IFBench Satisfy exact, minimum, maximum, distinctness, or repetition counts for specified lexical categories while avoiding unintended extras. 13 IFBench End every sentence or sentence-like line with an emoji when the instruction requires it. 3
+
+Table 5: Test accuracy (%) when capabilities are derived from different sources, under the same downstream SkillFocus pipeline. 
+
+capability source SearchQA SSB LiveMath 
+
+SkillFocus 80.1 77.1 43.6 
+
+task-semantic 61.3 68.9 25.8 execution-derived 73.5 66.1 30.7 randomized assignment 69.0 59.6 23.4 
+
+Table 6: Assignment agreement across three indepen-dent proposal calls on the same task specifications. 
+
+K: proposal-specific capability counts; Common refs.: aligned behavioral-requirement references; ARI and NMI: adjusted Rand index and normalized mutual in-formation between proposal assignments. 
+
+Benchmark Views K Common refs. ARI NMI SearchQA 3 18/13/17 47.7 .883 .953 SSB 3 17/16/19 35.7 .913 .976 LiveMath 3 11/11/10 33.3 .973 .989 IFBench 3 30/24/42 112.3 .912 .974 
+
+Table 7: Per-benchmark focus–evidence crossover (five historical revision states per benchmark). Accept: candi-date acceptance rate; ∆sel , ∆tr : paired candidate gains (points) on the selection and training sets. 
+
+Condition Accept (%) ∆sel ∆tr 
+
+SearchQA 
+
+TM 40.0 +5 .30 +10 .50 
+
+T¬M 20.0 +5 .30 +3 .42 
+
+RM 40.0 +7 .50 +3 .92 
+
+R¬M 40.0 +3 .13 +1 .92 
+
+SpreadsheetBench 
+
+TM 40.0 +7 .00 +13 .33 
+
+T¬M 20.0 +4 .17 +7 .71 
+
+RM 40.0 +6 .00 +8 .10 
+
+R¬M 0.0 +5 .00 +4 .78 
+
+LiveMath 
+
+TM 40.0 0.00 +4 .29 
+
+T¬M 40.0 +1 .39 +3 .77 
+
+RM 0.0 −6.67 +3 .98 
+
+R¬M 20.0 −1.85 +3 .47 
+
+through two controlled contrasts: matched against 13 mismatched evidence under a fixed focus pol-icy (TM −T¬M and RM −R¬M), and top-priority against randomized focus under matched evidence (TM −RM). 
+
+Evidence alignment. On the training set, matched evidence raises candidate gain under top-priority focus by 7.08, 5.62, and 0.52 points on SearchQA, SpreadsheetBench, and LiveMath, and under randomized focus by 2.00, 3.32, and 0.51 points (Table 7). The direction holds under both focus policies and on all three benchmarks, so ev-idence drawn from the capability under revision beats evidence drawn from another one whichever capability the round selects. 
+
+Capability prioritization. With matched evi-dence, top-priority focus exceeds randomized focus by 6.58, 5.23, and 0.31 points, so targeting the ca-pability with the largest unresolved task mass adds to what matching the evidence already gives. 
+
+Joint reading. TM, the only condition that pri-oritizes a capability and reads its own evidence, attains the largest training set candidate gain on every benchmark and a 40.0% acceptance rate on each. Margins are smallest on LiveMath, where selection set contrasts are also less uniform; the training set candidate gain serves as the primary crossover comparison (Appendix B.5.2). 
+
+Table 8: Ablations of capability-guided revision on SearchQA, SpreadsheetBench, and LiveMath (test accu-racy, %).             
+
+> Variant SearchQA SSB LiveMath
+> SkillFocus 80.1 77.1 43.6
+> w/o matched evidence 71.4 58.6 20.8 w/o capability prioritization 68.7 38.3 20.8
+
+Selected Capabilities in the formal runs. Ta-ble 9 records which capabilities the priority rule of Equation 4 actually selected over the five rounds of each formal run. The selected capability is not always the broadest one: SpreadsheetBench re-peatedly selects a requirement covering 74% of its task population, LiveMath alternates between full-support and partial-support requirements, and IFBench selects requirements covering between 3% and 20% of its tasks. Selecting a capability narrows the pool of task records only when that capability has partial support. At full support the evidence population stays the same, and the selected capabil-ity still states the requirement that frames diagnosis and limits the injected revision history to earlier attempts on that requirement. 
+
+Table 9: Capabilities selected by the priority rule over the five rounds of each formal run. Support is the num-ber of tasks requiring the capability in the frozen Q;Share is its fraction of the task population. A capability is selected in consecutive rounds when it is the only eligible one.                                             
+
+> Benchmark capability Rounds Support Share SearchQA c13600 100.0% SearchQA c21600 100.0% SearchQA c31289 48.2% SpreadsheetBench c1589 74.2% LiveMath c1253 100.0% LiveMath c3231 58.5% LiveMath c7124 45.3% IFBench c29 333.4% IFBench c8118 20.2% IFBench c12 144.5%
+
+End-to-end ablations. Table 8 reports the end-to-end ablations defined in Appendix B.5.1. Under global evidence, keeping capability prioritization raises the endpoints by 2.7, 20.3, and 0.0 points on SearchQA, SpreadsheetBench, and LiveMath; with prioritization kept, matching the evidence to the selected capability adds 8.7, 18.5, and 22.8 points. LiveMath separates the two most sharply: prioritization under global evidence recovers none of the loss, while matched evidence recovers 22.8 points. These ablations rerun the whole evolution trajectory, so they measure what each component contributes to the final skill, alongside the same-state crossover above. 
+
+A.4 Behavioral Scope of Capability-Guided Revisions 
+
+A whole-skill edit can change tasks beyond the ones that selected its capability. Table 10 measures how far each recorded change concentrates on tar-get tasks. 
+
+Table 10: Target and non-target edit responses. T/N: group sizes; ∆T /∆N : net changes (points); 
+
+Rd(e): their difference; Screen./Acc.: screening record/accepted candidate (Acc.-1: first accepted).                           
+
+> Benchmark Record T/N n∆T/∆NRd(e)
+> SQA Screen. 93/107 +1 .1/+ 0 .0+1 .1
+> SSB Acc.-1 89/31 +46 .1/+ 16 .1+29 .9
+> LM Acc. 31/22 +6 .5/+ 4 .5+1 .9
+> IFB Acc. 3/86 +0 .0/+ 8 .1−8.1
+
+The target behaviors in the recorded responses are selecting the answer type requested by a clue, writing the exact formula in specified answer cells, selecting the strongest claim supported by a prompt, 14 and ending each required sentence with an emoji. Target and non-target groups are defined by the frozen task–capability Matrix. Rd(e) is the target-minus-non-target difference in net percentage-point change. SpreadsheetBench shows the clearest targeted response (Table 10), consistent with a specific target-cell contract. SearchQA and LiveMath show smaller positive contrasts ( +1 .1 and +1 .9 percent-age points), indicating that reusable skill rules can benefit both target and neighboring behaviors. IF-Bench shows a negative contrast ( −8.1 percentage points), with its improvement appearing mainly outside a three-task target group. Appendix A.7 examines the first accepted SpreadsheetBench edit in detail. The second ac-cepted edit has a positive target response together with a larger non-target response, recording the col-lateral changes possible when whole-skill instruc-tions affect overlapping behaviors. The IFBench response contains three target tasks and a much larger non-target group; its support size is reported with the response value. A selected capability therefore decides which evidence a round reads and which direction the edit takes; it does not fence in where the edit lands. Whole-skill screening is what keeps the aggregate change positive. 
+
+A.5 Selection Screening and Held-out Transfer 
+
+The selection set screens candidates inside the loop, while test accuracy reports what the retained skill transfers to unseen tasks. Table 11 lists both end-points for SkillFocus and SkillOpt. SkillFocus builds its selection set for capability coverage and remaining headroom, so the set collects tasks the initial skill leaves unresolved, and its accuracy stays below the corresponding test accuracy on three of the four benchmarks: 49.5 against 80.1 on SearchQA, 38.9 against 43.6 on LiveMath, and 77.8 against 82.0 on IFBench. A set built this way is meant to score low. SkillOpt shows the opposite ordering on Spread-sheetBench and IFBench, where its screening accu-racy of 85.0 and 89.7 exceeds its test accuracy of 62.1 and 73.9 by 22.9 and 15.8 points. SkillFocus screens lower on both benchmarks and still reaches the higher test accuracy. A screening score reports how well a candidate fits the tasks it was retained on, and it carries no guarantee about unseen tasks. The two columns cover different task sets, and                      
+
+> Table 11: Final selection set and held-out test accuracy (%). The two columns cover different task sets, so their difference is not a calibrated generalization gap across methods.
+> SkillFocus SkillOpt Benchmark Sel. Test Sel. Test SearchQA 49.5 80.1 76.0 76.1 SpreadsheetBench 80.0 77.1 85.0 62.1 LiveMath 38.9 43.6 44.4 41.1 IFBench 77.8 82.0 89.7 73.9
+
+the selection sets differ in composition across meth-ods, so the screening-to-test difference carries no cross-method claim about generalization. What the table does support is how to read the trajectories in Figure 3, which plot selection set gain along the search path, and the construction control be-low, which measures what a different selection set retains. 
+
+A.6 Evolution Cost and Selection-Set Design 
+
+SkillFocus spends its evolution budget on diag-nosing one requirement at a time and on rejecting weak candidates early, which Figure 3 and the to-ken ledger in Table 15 show from two sides. The curves plot selection set accuracy gain against cu-mulative evolution tokens instead of round counts: horizontal segments are rejected candidates that consume tokens without changing the retained skill, and jumps follow accepted updates. The ledger sep-arates one-time initialization, iterative evolution, and final test set inference. The evolution cost can be read as 
+
+Cevo = Cbase + Cinduction 
+
++ Crevision + Cvalidation ,
+
+where Cbase is the initial evaluation of the current skill, Cinduction is the one-time cost of inducing and freezing (C, Q ), Crevision covers per-round di-agnosis and edit generation, and Cvalidation cov-ers candidate screening, training set re-evaluation, and recomputation of the capability scores. In Ta-ble 15, Initialization aggregates Cbase + Cinduction ,while Iterative Evolution aggregates Crevision +
+
+Cvalidation . SkillFocus pays Cinduction once. In exchange, every round reads the capability scores, the selected capability, and its evidence off Q and the current execution record, and never re-derives which tasks and failures belong together. Screening on the selection set first further limits Cvalidation : a candidate that fails there is rejected without training set re-evaluation, and an accepted candidate’s train-15 Task requests Recurring requirements One Capability-guided revision    
+
+> Formula repair Sum profit by year/share; write K6 Attendance summary Two rows per person; fill O5:Z12 Index/Match lookup Retrieve dates and names; fill Sheet2 Lowest-performer list Excel 2013; no FILTER function
+> Write the exact formula or formula-based expression in the specified answer cells Use only the supplied question, workbook, and metadata as evidence
+> Selected Capability exact formula in target cells
+> Diagnosis formula text may remain while resolved readback is missing
+> Skill edit verify saved target cells in resolved form before acceptance
+> Paired response on the recorded task population
+> Target +46.1 pp
+> Non-target +16.1 pp Rd(e) = +29.9 pp
+
+Figure 5: Representative capability-guided revision on SpreadsheetBench. The case connects diverse task requests to a recurring behavioral requirement, an evidence-grounded revision, and paired target/non-target responses. 
+
+4. Confirm the target cells/range contain the expected values. Target contract: verify the requested result in the task-specified target cells or ranges. 4. Confirm the target cells/range by reopening or rereading the saved output and checking the concrete saved values, not only the formula string. 
+
+Figure 6: Representative accepted skill revision on SpreadsheetBench. The first excerpt is the current instruction; the second is the accepted candidate’s added target-cell verification and read-back contract. 
+
+ing set record becomes the next execution record. The saving comes from where tokens are spent, not from making fewer model calls. Appendix A.5 shows what the constructed se-lection set screens on; the control below shows what a different one retains. Replacing the con-structed selection set with uniform random sam-pling of the same size (Appendix B.5.4) lowers the final test accuracy on all three evaluated bench-marks, by 5.1 points on SearchQA, 3.9 points on SpreadsheetBench, and 17.2 points on LiveMath. Which tasks screen the candidates decides which skill survives the loop: tasks chosen for capability coverage, feature diversity, and diagnosable failure retain different candidates than a uniform sample, and every retained candidate changes the skill, the next execution record, and the next capability prior-ity. A selection set built for coverage and headroom keeps more of the updates that transfer beyond the training evidence, and the effect is largest on Live-Math, where the set is smallest. A selection set con-structed independently of the priority rule would separate its composition from capability prioriti-zation directly; the uniform random sample is the closest available approximation, and a dedicated control remains open. 
+
+A.7 Representative Capability-Guided Revision 
+
+We present one complete revision chain from the recorded SpreadsheetBench run, following the same objects SkillFocus works with: a recurring requirement, the evidence matched to it, a diag-nosis, a whole-skill revision, and paired candidate responses. 
+
+Cross-task Capability and evidence. The four requests in Figure 5 have different surface goals, in-cluding formula repair, attendance summarization, lookup construction, and a version-constrained list. They share one requirement: write the exact for-mula or formula-based expression into the specified answer cells. The frozen Q assigns that require-ment to the same capability across the displayed rows, so one revision can be evaluated on tasks that look unrelated. 
+
+Evidence-grounded diagnosis. 
+
+Observed pattern. Executions under the current skill may write a formula string without verifying the resolved value in the requested target cells. 
+
+Diagnosis. The skill lacks an explicit post-save check that reopens the output and verifies the concrete values in the task-specified cells. 
+
+Editable location. Extend the target-cell confirmation in-struction with an identity check and a read-back check be-fore the task output is considered complete. 
+
+16 The evidence bundle combines failures on the tar-get capability, a successful contrast, related current-skill content, and earlier revisions of the same ca-pability. The diagnosis ties this evidence to an observed execution pattern and to one place in the skill. The resulting edit is applied to the complete skill before candidate screening. 
+
+Skill edit. The accepted edit adds a target con-tract and strengthens the confirmation step of the targeted instruction (Figure 6); the complete skill files are omitted for brevity. 
+
+Table 12: Paired response of the representative Spread-sheetBench revision. Repair/reg. counts failure-to-success and success-to-failure changes; the target-minus-non-target contrast is +29 .9 points.           
+
+> Group nRepair/reg. Net ∆
+> Target 89 42/1 +46 .1%
+> Non-target 31 7/2 +16 .1%
+
+Paired candidate response. The case materials thus run from capability-matched evidence to a diagnosis, a whole-skill edit, and a paired candidate evaluation. 
+
+Why the Capability matters in this case. The four tasks differ in surface form, yet their fail-ures expose the same target-cell contract. A task-local repair could specialize to one spreadsheet operation, whereas capability-matched evidence pools failures and successes across these tasks be-fore diagnosis. The revision therefore changes a reusable verification rule instead of adding an instance-specific workaround, and it moves target tasks more than non-target ones (Table 12). 
+
+B Experimental Details 
+
+This section documents how the experiments are constructed; the corresponding observations are reported in Section 4 and Appendix A. 
+
+B.1 Benchmarks and Data Split 
+
+Table 13 summarizes the four benchmarks. SearchQA tests whether the agent returns the an-swer type and entity requested by a clue. Spread-sheetBench requires writing correct formulas or values into the specified cells of a workbook. LiveMathematicianBench requires selecting the strongest mathematical claim among shuffled op-tions without code execution. IFBench constrains responses along count, format, ratio, repetition, sen-tence, word, and custom dimensions. Each bench-
+
+Table 13: Benchmarks used in the experiments. Task format states what the agent reads and produces; Eval-uation states the deterministic checker applied to each response.       
+
+> Benchmark Task format Evaluation SearchQA Jeopardy!-style clues answered in a closed-context, single-turn setting Deterministic answer matching SpreadsheetBench Spreadsheet manipulation on the Verified subset; the agent reads and writes workbook files Target cells compared with the reference workbook LiveMath Multiple-choice mathematical reasoning with deterministically shuffled options; code execution is disabled Exact match of the selected option IFBench Single-turn free-text responses under verifiable output constraints Programmatic constraint verification
+
+mark evolves an independent skill from an initial skill that mirrors the SkillOpt setting for that bench-mark, all methods share the same evaluator, and every reported score is accuracy on the held-out test set. The formal protocol uses 
+
+|Dtr | : |Dsel | : |Dtest | = 2 : 1 : 7 .
+
+Let D denote the task pool after removing the held-out test set. SkillFocus induces and freezes its ca-pability space over D, executes the initial skill on the same pool to obtain O0, and then constructs 
+
+(Dsel , D tr ) from (C, Q, O 0) as specified in Sec-tion 3.4. The construction prioritizes capability coverage, task diversity, and diagnosable improve-ment opportunity; a reserve of tasks solved by S0
+
+keeps regressions visible. Both sets are fixed be-fore the first round. selection outcomes enter the loop through candidate screening, and the test set stays closed until final evaluation. 
+
+B.2 Baselines and Fairness 
+
+No Skill runs the target model on the benchmark task without procedural guidance. One-shot Skill 
+
+applies a single skill document created once before evaluation, without iterative execution feedback. 
+
+Trace2Skill (Ni et al., 2026) executes the target agent on the training set, lets independent optimizer analysts propose local skill patches from individual trajectories, and consolidates the patches into one skill document with a final optimizer call. GEPA 
+
+17 (Agrawal et al., 2026) treats the skill text as a single optimizable component and applies reflective muta-tion with Pareto-based candidate selection, a reflec-tion minibatch of three examples, and a budget of 160 metric calls. SkillOpt (Yang et al., 2026) uses its official implementation to iteratively optimize a retained skill. The skill-optimization baselines use the same evaluators, target model, optimizer model, and initial skill as SkillFocus. Candidate retention remains method-specific: GEPA keeps its Pareto-based selection, SkillOpt its retained-skill update, and SkillFocus its paired selection and training check. Fairness is enforced through the same task pool and held-out test split, evalua-tors, target and optimizer models, and initial skills where applicable. Optimization budgets follow each method’s native protocol, while how each method splits the pool and retains candidates re-mains part of its design. Table 14 summarizes these shared and method-specific conditions. 
+
+B.3 Models and Inference Settings 
+
+The formal runs use GPT-5.4 as the optimizer model and DeepSeek-V4-Flash as the fixed tar-get model, with random seed 42 and 64 within-run workers. The target model runs with temperature 0 and thinking enabled at low reasoning effort, and optimizer calls use temperature 0. The evolution horizon is at most five rounds with one candidate per round. The same test set is used for final com-parison and remains unseen during evolution. 
+
+B.4 Evolution Cost Accounting 
+
+SkillFocus costs in Table 16 are the sum of Initial-ization and Iterative Evolution in Table 15. Skil-lOpt costs are reconstructed by summing prompt and completion tokens over every recorded opti-mization step in the matched run history, with final test set inference excluded. The relative change is 
+
+(CSkillFocus evo −CSkillOpt evo )/C SkillOpt evo , so negative val-ues indicate a reduction; the mean over benchmarks gives the 24% reduction reported in the main text. Initialization is the one-time pre-evolution bucket: the baseline evaluation and the capability induc-tion that constructs and freezes (C, Q ). Iterative evolution contains per-round diagnosis, edit gen-eration, screening, recomputation of the capability scores, and memo calls. Both buckets constitute 
+
+Cevo ; final test set inference is reported separately as Ctest and is excluded from Cevo . Evolution to-kens include model calls incurred before the final skill is fixed, including rejected and abstained can-didates; a round that attempts more than one capa-bility counts every attempt. Values are rounded to millions of inference tokens. 
+
+B.5 Analysis Protocols 
+
+The following protocols specify how the ablations and analyses are constructed; their results appear in Section 4 and Appendix A. 
+
+B.5.1 Ablation Controls 
+
+w/o capability prioritization drops the priority rule and supplies global training set evidence. w/o matched evidence keeps the priority rule and sup-plies global training set evidence. randomized ca-pability assignment preserves the task and capabil-ity degree sequences while randomizing their corre-spondence. The three interventions separate where the capabilities come from, which one a round se-lects, and which evidence the revision reads. 
+
+B.5.2 Counterfactual Focus–Evidence Crossover 
+
+The focus–evidence crossover is a post-hoc mech-anism analysis over the same historical revision states; it does not change capability induction, the evolution horizon, candidate gating, or held-out evaluation. Each unit is a candidate-producing state 
+
+Xt = ( St, O t, qt, Ht; C, Q ).
+
+The TM condition reuses the historical top-priority focus and its matched evidence. T ¬M keeps the top-priority focus but replaces its evidence with the evidence for a code-selected non-top capability 
+
+cr. RM uses cr for both focus and evidence, while R¬M uses cr for focus and the historical top capa-bility’s evidence. The same cr is used for all three counterfactual branches of a state and is selected without reading their outcomes. All four conditions share the current skill state, frozen (C, Q ), state-bound task sets, model and prompt configuration, evidence budget, candidate generation, and screening protocol. Counterfactual branches do not write back to the historical run or to one another. The reported acceptance rate, ∆sel ,and ∆tr are computed against the same historical current skill, and Table 2 reports macro averages over five states per benchmark. Selection set out-comes remain a screening measure, so the training set candidate gain is the clearest comparison. The crossover measures candidate-level changes from historical states, not held-out test accuracy, and it compares controlled contrasts instead of estimating 18 Table 14: Shared and method-specific conditions across compared methods. “–” denotes a condition that does not apply to the method.                                    
+
+> Condition No Skill One-shot Skill Trace2Skill GEPA SkillOpt SkillFocus Evaluator and test split Shared Shared Shared Shared Shared Shared Target model DeepSeek-V4-Flash DeepSeek-V4-Flash DeepSeek-V4-Flash DeepSeek-V4-Flash DeepSeek-V4-Flash DeepSeek-V4-Flash Initial skill ––Shared Shared Shared Shared Optimizer ––GPT-5.4 GPT-5.4 GPT-5.4 GPT-5.4 Evolution budget ––One analysis and consolidation pass 160 metric calls Official setting At most five rounds, one screened candidate per round Candidate retention ––Single consolidated skill Pareto-based selection Retained-skill update Positive paired change on selection and training sets Evolution cost reported ––––Yes Yes
+
+Table 15: SkillFocus inference-token ledger (millions). SQA, SSB, LM, and IFB abbreviate the four bench-marks; C/A: proposed/accepted candidates; Init., Iter.: initialization and iterative evolution.                          
+
+> Benchmark C/A Init. Iter. Cevo Test SQA 5/2 5.10M 15.55M 20.66M 8.51M SSB 5/2 6.45M 22.61M 29.06M 4.73M LM 5/2 0.38M 5.98M 6.36M 3.40M IFB 5/1 0.97M 2.48M 3.45M 1.58M
+
+Table 16: Pre-final-test evolution cost (millions of infer-ence tokens) of SkillFocus and SkillOpt. The final row averages the per-benchmark relative changes.                   
+
+> Benchmark SkillFocus SkillOpt Relative change SearchQA 20.66 45.21 −54 .3%
+> SpreadsheetBench 29.06 40.55 −28 .3%
+> LiveMath 6.36 8.14 −21 .9%
+> IFBench 3.45 3.21 +7 .5%
+> Mean ––−24 .0%
+
+a formal factorial interaction effect. Per-benchmark results are reported in Appendix A.3. 
+
+B.5.3 Decomposition-Source Control 
+
+To isolate where the capabilities come from, we hold the downstream evolution interface fixed. The SkillFocus condition uses the formal capability space and its endpoint. The task-semantic con-dition reads the same pre-execution task specifica-tions and describes each task by its overall objec-tive, operation, and domain. The execution-derived condition summarizes how the initial skill behaved on the full non-test task pool. Let D denote the task pool after the test set has been removed. The SkillFocus and task-semantic arms induce and freeze (C, Q ) from D before the initial skill is executed. The initial skill is then executed on the complete pool, 
+
+O0 = Execute( A, S 0, D),
+
+and (C, Q ) together with O0 are passed to the shared selection constructor, 
+
+(Dsel , D tr ) = ConstructSelection( C, Q, O 0, M ).
+
+For the execution-derived condition, this full-pool 
+
+O0 supplies the input to the behavior summary, which is frozen as (C, Q ) before the same construc-tor assigns the two roles. The subsequent evolution uses O0 restricted to Dtr . Every arm forms (C, Q )
+
+before the split, so the training and selection sets follow from the frozen (C, Q ) and O0.Each arm freezes its (C, Q ) once before round 0 and keeps it for the full run. The alternatives are allowed the same number of capabilities, with 
+
+Ksem = Kexec = Kcap , assign several capabil-ities per task, apply the same support threshold 
+
+nmin = 3 , and pass the same natural-language descriptions to revision, assignment and filtering, 
+
+JD, and JG. They share the same task pool and held-out test split, initial skill, target and optimizer models, evaluator, inference settings, evidence bud-get, prompts, edit operations, history mechanism, five-round horizon, candidate screening, training re-evaluation, and paired acceptance rule. Each condition constructs its own (Dsel , D tr ) from its own (C, Q ) and O0, so the selection set matches the capability source under test. The primary outcome is final held-out test accuracy, reported in Table 5; token cost and candidate counts are outside this control. 19 B.5.4 Selection-Set Construction Control 
+
+The control keeps the selection set size and replaces the construction of Section 3.4 with uniform ran-dom sampling from the same pool on SearchQA, SpreadsheetBench, and LiveMath. The rest of the pipeline is unchanged. Results are reported in Ap-pendix A.6. 
+
+C Method Details 
+
+This section details each stage of the main-text algo-rithm, using the notation of Section 3; ∆X (S′, S )
+
+is the paired change of Equation 6. The prompt interfaces behind the model calls are described in Appendix D. 
+
+C.1 Capability Induction 
+
+Capability induction reads task records from the training and selection sets. Each record contains the task instruction, input structure, and environ-ment contract. The extraction interface never sees the current skill, an execution trace, a success label, a failure explanation, or a candidate edit. The test set remains unavailable until the final retained skill is fixed. 
+
+Algorithm C.1 Capability Induction                                                            
+
+> Require: Task records for the task pool D
+> Ensure: Frozen capability set Cand matrix Q
+> 1: for all τi∈ D do
+> 2: Ri←requirements of task i
+> 3: end for
+> 4: for j←1to 3do
+> 5: Pj←proposal from {Ri}under ρj
+> 6: end for
+> 7: C0←consensus of P1, P 2, P 3
+> 8: Q0←assignment of each Rito C0
+> 9: for all cd∈ C 0do
+> 10: if P
+> τi∈D Q0,i,d < n min then
+> 11: Remove cdand unassign its requirements 12: end if
+> 13: end for
+> 14: (C, Q )←freeze (C0, Q 0)
+> 15: return (C, Q )
+
+Algorithm C.1 extracts requirements from the task records, forms three independent proposal views, consolidates their registries, and assigns each requirement to one retained capability or 
+
+> UNASSIGNED
+
+. Support filtering runs determin-istically before (C, Q ) is frozen. The three calls share the same canonical required- behavior in-put and use fixed Requirement-, Intervention-, and Boundary-centric perspectives, respectively; they do not see one another’s outputs. Here ρj denotes the perspective injected for proposal call j.
+
+Algorithm C.2 ConstructSelection                                                                          
+
+> Require: Task pool D, frozen (C, Q ), initial record O0, se-lection size M
+> Ensure: selection set Dsel and training set Dtr
+> 1: πd←support share of cdin D;oi←diagnosable failure rate of iin O0;R← { i:O0succeeds on all runs of i}
+> 2: Dsel ← ∅ ;K ← ∅
+> 3: while |Dsel |< M do
+> 4: A← { i∈ D \ Dsel that leaves every cdsupported outside Dsel }, restricted to Ronce the remaining slots are needed for the reserve 5: γi←P
+> d:Qi,d =1 , c d/∈K πd;νi←|new features of i|
+> 6: i∗←arg max i∈A(γi, ν i, o i)▷lexicographic 7: Dsel += {i∗};K+= {cd:Qi∗,d = 1 }
+> 8: end while
+> 9: return frozen sets (Dsel ,D \ Dsel )
+
+C.2 Selection-Set Construction 
+
+Algorithm C.2 builds the selection set of Sec-tion 3.4. The coverage weight πd is the share of pool tasks whose row in Q marks cd, so the same support share that weights unresolved task mass in Equation 4 also weights coverage here. Diversity counts the static task features an item adds to the partial selection set, using the task family, input structure, and environment contract labels recorded with each item. The improvement-opportunity term is the fraction of an item’s initial executions that fail for diagnosable task-logic reasons. That classifica-tion is deterministic and uses no model call: failed executions are grouped first by the evaluator’s er-ror signal and then by the repair signature of the trace, and failures caused by the execution environ-ment are counted apart from them, so environment faults win no slots. Items solved on every initial execution form the stable-success reserve, which the construction fills to one fifth of the selection set once the remaining slots would otherwise leave it unreachable; this fraction is fixed in advance and is not tuned against any outcome. The feasibility constraint keeps, for every capability, at least one supporting task in the training set. It reads Q alone, so the task it keeps need not be one the initial skill fails, and a capability whose failing tasks all move to the selection set leaves the eligible capability set of Equation 4 for the rest of the run. Ties at every level are broken by task identifier, which makes the construction deterministic given the pool, (C, Q ),and the initial execution record. 
+
+C.3 Capability Scores and Capability Selection 
+
+Algorithm C.3 recomputes the capability scores from the training set and orders the eligible capabil-20 Algorithm C.3 Capability Scores and Capability Selection 
+
+Require: A, skill St, record Ot, Dtr , Dsel , C, Q
+
+Ensure: Record Ot, capability scores qt, ordered eligible capabilities Ut
+
+1: if Ot is unavailable then 
+
+2: Ot ← execute A with St on Dtr 
+
+3: end if 
+
+4: for all cd ∈ C do 
+
+5: πd ← 1
+
+> |Dtr ∪Dsel |
+
+P 
+
+> i∈Dtr ∪Dsel
+
+Qi,d 
+
+6: qtd ← mean of Yi(St) over i ∈ Dtr with Qi,d = 1 
+
+7: mtd ← πd
+
+ 1 − qtd
+
+
+
+8: end for 
+
+9: Ut ← { cd : diagnosable failure in Dtr , support in Dsel }
+
+10: return (Ot, qt, Ut by decreasing mtd)
+
+ities by unresolved task mass, with ties broken by registry order; a round tries them in this order until one yields a candidate. A capability whose last can-didate was rejected for a confirmed non-positive paired effect sits out the next round, and returns at once when no other capability is eligible; in the reported runs every round produced a candidate for its first eligible capability. An accepted candidate’s re-evaluation becomes the next Ot.
+
+C.4 Capability-Guided Revision 
+
+For the selected capability, retrieval keeps the train-ing set tasks that Q marks for it. The bundle con-tains failures on those tasks, successful executions to compare against, related current-skill content, and earlier edits made for the same capability. Fail-ure examples are stratified by observed reason, du-plicate traces are removed, and retrieval order ro-tates across rounds when more examples are avail-able than the evidence allowance. A failed task is paired first with a successful execution of the same task when available, otherwise with a successful task requiring the selected capability. When the record holds no successful execution for that capa-bility, the diagnosis is told so instead of receiving a substitute contrast. Algorithm C.4 makes the evidence boundary ex-plicit: the selected capability picks the failures and success contrasts, pulls in the related skill content and its own revision history, and then frames diag-nosis and edit integration. The edit is applied to the complete skill. Before execution, a candidate is discarded if it cites evidence outside its bundle, targets an instruction the skill does not contain, duplicates an existing instruction, or copies task-specific entities such as task identifiers, file or sheet names, and target coordinates. A removal is admit-ted only when observations across several rounds and tasks associate the targeted instruction with 
+
+Algorithm C.4 Capability-Guided Revision 
+
+Require: Selected capability c⋆t , skill St, record Ot, history 
+
+H, Q
+
+Ensure: Candidate S′ 
+
+> t
+
+and record rt, or ABSTAIN 
+
+1: It ← { i ∈ Dtr : Qi,d ⋆t = 1 }
+
+2: Et ← failures and successes on It in Ot
+
+3: Add skill content related to c⋆t to Et
+
+4: Add history entries of c⋆t in H to Et
+
+5: for j ← 1 to JD do 
+
+6: z(j) 
+
+> t
+
+← diagnosis from Et under πDj
+
+7: end for 
+
+8: zt ← integration of {z(j) 
+
+> t
+
+} against Et
+
+9: if zt is not actionable then 
+
+10: return (ABSTAIN , r t = ( zt)) 
+
+11: end if 
+
+12: for j ← 1 to JG do 
+
+13: g(j) 
+
+> t
+
+← edit concept for zt under πGj
+
+14: end for 
+
+15: et ← integration of {g(j) 
+
+> t
+
+} into one edit 16: if no valid edit exists then 
+
+17: return (ABSTAIN , r t = ( zt)) 
+
+18: end if 
+
+19: S′ 
+
+> t
+
+← St with et applied; rt ← (zt, e t)
+
+20: return (S′
+
+> t
+
+, r t)
+
+the failing behavior. These checks are determin-istic and add no model calls. In the formal runs, 
+
+JD = JG = 3 . The value follows the three frozen operational perspectives of each stage, with one independent Explorer per perspective, and was set without reference to benchmark outcomes; sensi-tivity to the number of Explorers is left to future work. Each Explorer call is independent, uses its corresponding configured perspective πDj or πGj ,and is followed by one Integrator call for that stage. The independent-view design follows the logic of self-consistency (Wang et al., 2023); its multi-agent consolidation step is also related to debate-based aggregation (Du et al., 2024). 
+
+C.5 Candidate Screening 
+
+Candidate screening compares the candidate and the current skill on identical task instances. 
+
+Algorithm C.5 Candidate Screening and Skill Update 
+
+Require: A, skill St, candidate S′
+
+> t
+
+, record Ot, Dsel , Dtr 
+
+Ensure: St+1 , Ot+1 , decision at, and record ut
+
+1: ∆t 
+
+> sel
+
+← ∆Dsel (S′
+
+> t
+
+, S t)
+
+2: if ∆t 
+
+> sel
+
+≤ 0 then 
+
+3: return (St, O t, REJECT , u t = (∆ t
+
+> sel
+
+)) 
+
+4: end if 
+
+5: O′ 
+
+> t
+
+← execute A with S′ 
+
+> t
+
+on Dtr 
+
+6: ∆t 
+
+> tr
+
+← ∆Dtr (S′
+
+> t
+
+, S t)
+
+7: ut ← (∆ t
+
+> sel
+
+, ∆t
+
+> tr
+
+)
+
+8: if ∆t 
+
+> tr
+
+> 0 then 
+
+9: return (S′
+
+> t
+
+, O ′
+
+> t
+
+, ACCEPT , u t)
+
+10: end if 
+
+11: return (St, O t, REJECT , u t)
+
+Algorithm C.5 screens a complete candidate first on the selection set and then, after a passing first 21 Table 17: Overview of the prompt interfaces and their call multiplicity in the formal runs. 
+
+Interface Role Calls 
+
+capability induction 
+
+ExtractRequirements task → requirements per task 
+
+ProposeCapabilities cross-task proposals 3
+
+Consensus frozen registry 1
+
+Assign requirement → capability batched 
+
+capability revision 
+
+ExploreDiagnoses diagnosis hypotheses 3/round 
+
+IntegrateDiagnosis selected diagnosis 1/round 
+
+ExploreEdits edit concepts 3/round 
+
+IntegrateEdit final candidate edit 1/round 
+
+Table 18: Frozen Explorer perspectives in the formal runs. 
+
+Stage / perspective Frozen operational condition Diagnosis: missing guidance No current-skill rule addresses the operation; the explorer leaves 
+
+cited_rules empty. Diagnosis: ineffective guidance An existing rule addresses the operation but fails; the explorer quotes at least one such rule. Diagnosis: behavior organization Interacting rules create an ordering, conditioning, or precedence problem; the explorer quotes at least two rules. Generation: minimal addition Propose one non-duplicative standalone rule with op=add .Generation: revise existing guidance Replace the core content of one existing rule, quoting the rule being revised. Generation: structural change Change a rule’s trigger, ordering, precedence, interaction, or removal target, quoting the affected rule(s). 
+
+stage, on the training set. Only an accepted can-didate replaces the current skill and supplies the next training set record. After each round, the loop appends the selected capability, the revision record, and the screening outcome (c⋆t , r t, u t) to H. Ab-stentions and rejected candidates are retained as revision history, while leaving the current skill un-changed. 
+
+D Representative Prompt Interfaces 
+
+SkillFocus issues its model calls through eight structured prompt interfaces (Table 17), with run-time records, skill text, evidence, history, and per-spectives substituted by the runner. We show one interface per stage; the remaining five follow the same contract. The runner selects these rows in order, so πDj
+
+and πGj in Algorithm C.4 identify the row for Ex-plorer call j; the configured mechanism-grounded addition perspective is unused at JG = 3 .
+
+D.1 Capability Proposal 
+
+Interface: ProposeCapabilities . Group required be-haviors that recur across distinct tasks and can share skill guidance. Keep each capability cross-task, observable, and skill-addressable; do not group by benchmark, tool, op-eration name, or output artifact. The shared template is called with one fixed perspective tag ρj per independent pro-posal. Specifically, (ρ1, ρ 2, ρ 3) are REQUIREMENT-CENTRIC ,
+
+INTERVENTION-CENTRIC , and BOUNDARY-CENTRIC ; the tag changes the grouping lens but not the input records or out-put schema. The proposals use only the canonical required-behavior records and do not use execution outcomes, current skill text, or evaluator results. Merge behaviors only when the same reusable guidance would normally improve them; keep them separate when distinct guidance is needed. Do not optimize for a target number of capabilities, and cite represen-tative behavior records rather than performing assignment in this call. 
+
+Output. 
+
+<capability_proposal> <capabilities> <capability> <name>behavioral name</name> <definition> reusable requirement </definition> <evidence_refs> <ref>RB_ID</ref> </evidence_refs> </capability> </capabilities> </capability_proposal> 
+
+D.2 Diagnosis Explorer 
+
+Interface: ExploreDiagnoses . Given the selected ca-pability, evidence bundle, and current skill, develop one evidence-supported hypothesis connecting an observed ex-ecution pattern to an editable skill location. One Explorer returns one hypothesis; it does not write an edit. The Explorer cites the evidence records and any current-skill rules required by its configured perspective, and abstains when the bundle cannot support one defensible hypothesis. 
+
+Output. 
+
+<diagnosis_explorer_result> <status> supported|insufficient_evidence </status> <hypothesis> one evidence-grounded diagnosis </hypothesis> <cited_rules> <rule>verbatim current-Skill rule</rule> </cited_rules> <evidence_refs> <ref>EVIDENCE_ID</ref> </evidence_refs> </diagnosis_explorer_result> 
+
+D.3 Edit Integrator 
+
+Interface: IntegrateEdit . Select or synthesize the small-est coherent edit from the proposed concepts and the diag-nosis. Return no_valid_edit if no operation has a precise target and a reusable content change. The returned candi-date records its operation, target contract, preservation scope, trigger/action/check, expected change, falsifier, and history 
+
+22 assessment in addition to the target-facing content. The in-tegrator also checks the formal rejection memo, preserves effective unrelated skill content, avoids benchmark-specific hard-coding, and requires a concrete worked example in the target-facing edit. 
+
+Output. 
+
+<candidate_edit_result> <status> candidate|no_valid_edit </status> <op>add|replace|remove</op> <target> exact target or insertion location </target> <trigger> when the rule applies </trigger> <action> what the agent should do </action> <check> what the agent should verify </check> <preserve> effective behavior to preserve </preserve> <expected_change> failure behavior expected to change </expected_change> <content><![CDATA[ exact target-facing Skill edit including the worked example ]]></content> </candidate_edit_result> 
+
+Audit fields for the target specification, preservation scope, history assessment, falsifier, and rationale are omitted. 
+
+E Use of Large Language Models 
+
+Large language models are components of the stud-ied system: GPT-5.4 is the optimizer model for capability induction, diagnosis, and edit genera-tion, and DeepSeek-V4-Flash is the fixed target model that executes benchmark tasks; the baselines use the same models in these roles. 23

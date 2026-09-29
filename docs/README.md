@@ -51,14 +51,14 @@
       <span class="dpr-home-dashboard-kicker">2026-09-29</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 19 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 38 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
-    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>2 次</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>19</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>19</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-29 00:31:14 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-29 23:06:29 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读7篇、速读12篇，重点覆盖智能体技能演化与递归自改进AI安全。最值得看的是《SkillEvoReg》对智能体技能过拟合的正则化方案，以及递归自改进AI的演化安全分类与评估。普通读者可优先关注多智能体强化学习的拜占庭容错与激励设计，理解协作系统的鲁棒性底线。</p>
+<p>今日精读19篇、速读19篇，重点聚焦具身智能与多智能体系统。最值得看的是《GameBoyWorlds》提出的具身游戏自改进测试平台，以及《ExpVoyager》用直接经验导航实现动态技能合成。普通读者可优先关注多智能体中的合谋风险与拜占庭容错强化学习，这两类问题正从理论走向现实部署。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">19 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SkillEvoReg: Regularizing Agent Skill Evolution Against Overfitting">SkillEvoReg: Regularizing Agent Skill Evolution Against Overfitting</span></li><li><span class="dpr-home-dashboard-paper-title" title="Evolutionary Safety of Recursive Self-Improving AI: Taxonomy, Risk Discovery, and Evaluation">Evolutionary Safety of Recursive Self-Improving AI: Taxonomy, Risk Discovery, and Evaluation</span></li><li><span class="dpr-home-dashboard-paper-title" title="When Does Communication Help? Beyond Spectral Descriptions of Collective Intelligence">When Does Communication Help? Beyond Spectral Descriptions of Collective Intelligence</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="GameBoyWorlds: A Testbed for Self-Improvement in Embodied Video Games">GameBoyWorlds: A Testbed for Self-Improvement in Embodied Video Games</span></li><li><span class="dpr-home-dashboard-paper-title" title="ExpVoyager: Direct Experience Navigation for Dynamic Agent Skill Synthesis">ExpVoyager: Direct Experience Navigation for Dynamic Agent Skill Synthesis</span></li><li><span class="dpr-home-dashboard-paper-title" title="SkillVine: Agent Skill Evolution via Branching Exploration">SkillVine: Agent Skill Evolution via Branching Exploration</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>4</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>15</strong></span><span class="dpr-home-dashboard-tag">multi-agent <strong>4</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">12 篇</strong>
+    <strong class="dpr-home-dashboard-count">19 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Fully Byzantine-Resilient Multi-Agent Reinforcement Learning">Fully Byzantine-Resilient Multi-Agent Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Incentive Design for Multi-Agent Systems: A Bilevel Optimization Framework for Coordinating Independent Agents and Convergence Analysis">Incentive Design for Multi-Agent Systems: A Bilevel Optimization Framework for Coordinating Independent Agents and Convergence Analysis</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Decentralized Partially Observable Team Decision Methodology with Delayed Information Sharing">A Decentralized Partially Observable Team Decision Methodology with Delayed Information Sharing</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Mixed-integer flow formulations for motion planning and decision-making of networked multi-agent systems">Mixed-integer flow formulations for motion planning and decision-making of networked multi-agent systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="Emergent Collusion in Long-Horizon LLM Agent Interaction">Emergent Collusion in Long-Horizon LLM Agent Interaction</span></li><li><span class="dpr-home-dashboard-paper-title" title="Fully Byzantine-Resilient Multi-Agent Reinforcement Learning">Fully Byzantine-Resilient Multi-Agent Reinforcement Learning</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>10</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>16</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
 </section>
 </div>
 
