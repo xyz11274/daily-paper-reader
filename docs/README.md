@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-19 ~ 2026-09-28</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-29</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 23 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 19 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>12</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-28 09:52:46 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-29 00:31:14 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-09-19至09-28日报完成23篇，精读12篇、速读11篇，聚焦多智能体协作与安全。最值得看的是两篇9.0分精读：自组织智能体团队协同推理，以及面向弹性多智能体生态的通用协作智能架构。普通读者可优先从这两篇入手，再结合速读中的去中心化探索与提示注入防御，理解多智能体系统的能力与风险。</p>
+<p>今日精读7篇、速读12篇，重点覆盖智能体技能演化与递归自改进AI安全。最值得看的是《SkillEvoReg》对智能体技能过拟合的正则化方案，以及递归自改进AI的演化安全分类与评估。普通读者可优先关注多智能体强化学习的拜占庭容错与激励设计，理解协作系统的鲁棒性底线。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">12 篇</strong>
+    <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Self-Organizing Agent Teams Learn to Reason Together">Self-Organizing Agent Teams Learn to Reason Together</span></li><li><span class="dpr-home-dashboard-paper-title" title="General Collaborative Intelligence: Architecting Cognition for Resilient Multi-Agent Ecosystems">General Collaborative Intelligence: Architecting Cognition for Resilient Multi-Agent Ecosystems</span></li><li><span class="dpr-home-dashboard-paper-title" title="TRACS: A Geometry-Aware Framework for Scalable Multi-Agent Path Finding in Warehouses">TRACS: A Geometry-Aware Framework for Scalable Multi-Agent Path Finding in Warehouses</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SkillEvoReg: Regularizing Agent Skill Evolution Against Overfitting">SkillEvoReg: Regularizing Agent Skill Evolution Against Overfitting</span></li><li><span class="dpr-home-dashboard-paper-title" title="Evolutionary Safety of Recursive Self-Improving AI: Taxonomy, Risk Discovery, and Evaluation">Evolutionary Safety of Recursive Self-Improving AI: Taxonomy, Risk Discovery, and Evaluation</span></li><li><span class="dpr-home-dashboard-paper-title" title="When Does Communication Help? Beyond Spectral Descriptions of Collective Intelligence">When Does Communication Help? Beyond Spectral Descriptions of Collective Intelligence</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>9</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>4</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Decentralized Multi-Robot Exploration with Probabilistic Peer Intent and Multi-hop Plan Propagation">Decentralized Multi-Robot Exploration with Probabilistic Peer Intent and Multi-hop Plan Propagation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Single-Model Injection: A Threat Model and Defense Architecture for Prompt Injection in Multi-Agent Systems">Beyond Single-Model Injection: A Threat Model and Defense Architecture for Prompt Injection in Multi-Agent Systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="Paying for Space: Incentive-Aware Motion Planning for Multi-Agent Collision Avoidance">Paying for Space: Incentive-Aware Motion Planning for Multi-Agent Collision Avoidance</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Fully Byzantine-Resilient Multi-Agent Reinforcement Learning">Fully Byzantine-Resilient Multi-Agent Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Incentive Design for Multi-Agent Systems: A Bilevel Optimization Framework for Coordinating Independent Agents and Convergence Analysis">Incentive Design for Multi-Agent Systems: A Bilevel Optimization Framework for Coordinating Independent Agents and Convergence Analysis</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Decentralized Partially Observable Team Decision Methodology with Delayed Information Sharing">A Decentralized Partially Observable Team Decision Methodology with Delayed Information Sharing</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>9</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>10</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>2</strong></span></div>
 </section>
 </div>
 

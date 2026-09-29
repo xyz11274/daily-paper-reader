@@ -1,0 +1,310 @@
+Title: Passes Alone, Fails Together: Benchmarking Semantic Coordination in Parallel LLM-Agent Development
+
+URL Source: https://arxiv.org/pdf/2609.25396v1
+
+Published Time: Wed, 23 Sep 2026 00:20:42 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# Passes Alone, Fails Together: Benchmarking Semantic Coordination in Parallel LLM-Agent Development 
+
+# Haocheng Xia 
+
+University of Illinois Urbana-Champaign Champaign, USA hxia7@illinois.edu 
+
+# Eugene Wu 
+
+Columbia University New York, USA ewu@cs.columbia.edu 
+
+# Yongjoo Park ✉
+
+University of Illinois Urbana-Champaign Champaign, USA yongjoo@illinois.edu 
+
+## Abstract 
+
+Parallel coding agents can produce patches that work alone but fail when merged. This happens when one agent changes an interface or rule that another agent still relies on. We study these failures with stale, a benchmark for semantic coordination. Our evaluation runs the same tests on each patch alone and on their combination, counting only failures introduced by combining the patches. We use three tiers: synthetic tasks with controlled interface changes, pairs of merged pull requests, and constructed tasks that use real Django helpers. Among 834 runs on 417 mined Django pairs, only one showed interference after correcting the grading procedure. On constructed tasks using 12 Django helpers, interference occurred in 97% of runs. A message describing the completed concurrent change recovered 82% of runs. Reviewed pull requests may contain few unresolved parallel changes, even when agents fail on controlled tasks using real code. The constructed failure rates do not estimate how often these problems occur in practice. 
+
+## CCS Concepts 
+
+• Software and its engineering → Software testing and de-bugging ; Software reliability ; • Computing methodologies →
+
+Multi-agent systems .
+
+## Keywords 
+
+LLM coding agents, semantic coordination, software benchmarks 
+
+ACM Reference Format: 
+
+Haocheng Xia, Eugene Wu, and Yongjoo Park. 2026. Passes Alone, Fails Together: Benchmarking Semantic Coordination in Parallel LLM-Agent Development. In Proceedings of the 2nd Workshop on Explainable and Reliable Software Systems (EXPRESS ’26), October 4–9, 2026, Oakland, CA, USA. ACM, New York, NY, USA, 6 pages. https://doi.org/10.1145/3842650.3843171 
+
+## 1 Introduction 
+
+Parallel multi-agent systems use different coordination models, in-cluding shared state, explicit orchestration, asynchronous updates, and isolated workers whose outputs are merged afterwards [5, 11]. We focus on a specific scenario where workers do not receive up-dates from their peers while on the job. This scenario can occur as a complete workflow or as a temporary information gap within a coordinated system. It is efficient and harmless for independent 
+
+> This work is licensed under a Creative Commons Attribution 4.0 International License.
+> EXPRESS ’26, Oakland, CA, USA
+> © 2026 Copyright held by the owner/author(s). ACM ISBN 979-8-4007-2968-3/2026/10 https://doi.org/10.1145/3842650.3843171
+
+(a) A: add caching  
+
+> 1
+
+cache = {}  
+
+> 23
+
+def get_price(k):  
+
+> 4
+
+if k not in cache:  
+
+> 5
+
+cache[k] = db[k]  
+
+> 6
+
+return cache[k]  
+
+> 78
+
+def update_price(k, v):  
+
+> 9
+
+db[k] = v  
+
+> 10
+
+cache.pop(k, None) 
+
+(b) B: add bulk updates  
+
+> 1
+
+def bulk_update(prices):  
+
+> 2
+
+db.update(prices) 
+
+New write path bypasses the cache added by A. 
+
+(c) Merged execution  
+
+> 1
+
+# Initially: db = {"x": 100}; cache = {}  
+
+> 2
+
+get_price("x") # 100; caches price  
+
+> 3
+
+bulk_update({"x": 80}) # database only  
+
+> 4
+
+get_price("x") # 100; expected 80 
+
+Figure 1: Independently correct patches merge without tex-tual conflicts but produce stale prices. 
+
+tasks [9, 10], but dangerous when one patch depends on an inter-face or invariant that is being changed concurrently. Each patch may then pass in isolation while their composition fails. We call the problem of maintaining consistency across such concurrent, coupled changes semantic coordination .
+
+Motivating Example. Figure 1 illustrates how independently cor-rect patches can become inconsistent when combined. Two workers start from a service that reads and writes prices directly in a data-base. Worker A adds caching and modifies the existing update function to invalidate cached prices. Without seeing A’s changes, Worker B adds a bulk-update function that writes directly to the database. Then a query returns 100 even after the database price changes to 80. The failure arises because A introduces an invariant that B’s new write path violates: every price update must invalidate the corresponding cache. Keeping this invariant across patches requires semantic coordination beyond conflict-free code merging. Version control helps developers combine parallel changes, but a clean merge does not guarantee correct behavior. For example, one patch may rename a helper that another patch still calls, add a required argument that another caller omits, or change a rule that other code relies on. These inconsistencies may appear only when tests run on the combined code. By then, diagnosing the failure requires understanding both patches. arXiv:2609.25396v1 [cs.CL] 21 Sep 2026 EXPRESS ’26, October 4–9, 2026, Oakland, CA, USA Haocheng Xia, Eugene Wu, and Yongjoo Park 
+
+A clean merge can still fail, even when agents edit different files. AutoGen [14] and MetaGPT [5] coordinate agents through roles and messages, as do ChatDev [11] and Agent Teams [1]. We measure failures caused by missing updates and test how many an agent can avoid when it sees the concurrent change.                      
+
+> git merge behavioral tests
+> change 𝐴 alone –pass change 𝐵 alone –pass
+> 𝐴 ∥𝐵 (blind) no conflict fail =Δblind
+> 𝐴 →𝐵 (informed) no conflict pass
+
+Figure 2: A clean merge can still introduce test failures. We count a test in Δblind only if it passes with each patch alone and fails with the patches combined. An informed agent sees the other worker’s completed edit before solving its task. Comparing these conditions estimates how much complete information can help. 
+
+A blind agent works without seeing the other worker’s changes; an informed agent works afterward and sees the completed edit. We call the informed setting an oracle because it provides complete information that an agent working in parallel would usually lack. This comparison estimates semantic coordination headroom : how much failure coordination could prevent under ideal visibility. To measure interference between fixed patches, we count tests that pass with each patch alone but fail with both patches together. We denote this count by Δblind and also report whether it is greater than zero. These measures describe failures detected by the tests; they do not measure defect severity or how often conflicts occur in practice. We study three types of instances because historical pull requests may already have resolved the conflicts we want to measure. We make three contributions. (1) We define semantic coordina-tion headroom and a grading procedure that tests the same patches, both alone and together, using the same test set. This separates failures caused by patch interaction from differences between agent runs or grading conditions. (2) We provide a deterministic pipeline for finding related pull requests and checking that both tasks can be evaluated from a shared base commit. It produces 447 pairs across Django, SymPy, xarray, and seaborn. Experiments on the 417 Django pairs find almost no interference after correcting the grading procedure. (3) We demonstrate the failure mechanism in controlled experiments: synthetic tasks vary how many interfaces change, and 36 constructed tasks apply these changes to 12 real Django helpers. The controlled tasks isolate failures caused by stale information. The code is available in the benchmark repository. 1
+
+## 2 Benchmark Design 
+
+Tasks and Evaluation Settings. In the mined tier, each instance contains 𝑁 related pull requests (PRs), {𝑝 𝑖 }𝑁 𝑖 =1, evaluated from a 
+
+> 1https://github.com/illinoisdata/STALE-bench
+
+shared base commit 𝑏 . Each PR provides a task description, a human reference solution, and a hidden gold test patch . The task descrip-tion comes from the issue or PR, with text explaining the solution removed. The gold tests encode the expected behavior: they fail before the fix and pass afterward (fail-to-pass tests, F2P 𝑖 ). We define three evaluation settings: 
+
+• solo( 𝑝 𝑖 ): an agent solves 𝑝 𝑖 alone, producing the baseline patch. 
+
+• blind( {𝑝 𝑖 }): agents solve their assigned tasks independently on 𝑏 , without seeing the other agents’ changes, and the resulting code diffs are merged. 
+
+• informed( 𝑝 𝜋 (1) , . . . , 𝑝 𝜋 (𝑁 ) ): agents work in order 𝜋 , each seeing the completed edits of earlier agents. This is the se-quential oracle. We evaluate patches alone (solo) and together (blind) on every instance. On the synthetic tier, we also run the informed condition (§4). The completed edit provides an ideal-visibility baseline for evaluating coordination. Following SWE-bench [6], we grade code changes using hidden tests from the human PRs. Before grading, we discard any test-file edits made by the agent and apply the gold test patches. We then run the combined test set from all tasks in every 
+
+setting. Using different tests for individual and merged patches can falsely suggest interference (§4). 
+
+The Interference Metric. Let 𝐹 𝑖 be the tests that fail with patch 𝑖 
+
+alone, and let 𝐹 blind be the tests that fail after merging the patches. Both sets come from the same combined test suite. We define 
+
+Δblind = 𝐹 blind \ Ð𝑖 𝐹 𝑖 ,
+
+Δblind counts failures that appear only when the patches are com-bined. A test that already fails with any individual patch is excluded. We reuse the exact patches from solo in the blind merge, so differ-ences between agent runs cannot explain the result. We report the count Δblind and an indicator of whether any interference was detected, 𝐼 blind = 1[Δblind > 0]. For example, three newly failing tests give Δblind = 3 and 𝐼 blind = 1; they need not represent three separate defects. Both measures depend on test coverage, and the count also depends on how tests are divided or duplicated. We therefore compare counts only with the same test set. A pair is observable , and eligible for our interference analysis, only when each agent’s patch passes its own task’s tests during grading on the combined suite. 
+
+Three Benchmark Tiers. The synthetic tier tests whether stale information causes interference by varying the number of changed interfaces while keeping the task and type of change fixed. The 
+
+mined tier uses reviewed PRs to test whether repository history contains examples of unresolved interference. The real-derived tier applies scripted changes to real Django helpers to test whether the synthetic failure mechanism also occurs in existing code. We also evaluate a communication condition, comm. The agent receives a short message describing the other worker’s completed change. We generate this message from a template and the known transformation. This is an oracle message based on a completed change. We do not evaluate messages generated during ongoing work. Passes Alone, Fails Together EXPRESS ’26, October 4–9, 2026, Oakland, CA, USA 
+
+Table 1: Benchmark summary across two model families and more than 4,000 graded task solves. A validated coupled pair consists of two patches that apply and merge textually on a shared, base-valid commit; interference is measured separately by the agent study.                                        
+
+> Tier Instances Runs Role Synthetic (planted) 3×496 controlled changes Real mined, Django 417 834 reviewed PRs Real mined, other repos 30 —mining in other repos Disjoint controls 23 —unrelated changes Constructed real-derived 36 216 real Django helpers
+> Synthetic: 3mechanisms ×4degrees, 8trials each ( 96 blind +comm cells). Real-derived: 12 real symbols ×3mechanisms ×3trials =108 blind +108
+> communication runs.
+
+## 3 Dataset Construction 
+
+We build most instances from Django, which has established tools for reproducible agent evaluation. We use the same deterministic construction procedure for SymPy, xarray, and seaborn. 
+
+Mining. We collect merged PRs, keep those that change 1–12 runtime source files (excluding docs/CI/formatting), and form candi-date pairs that edit at least one common source file, an inexpensive way to find potentially related changes [4]. Sharing a file does not guarantee interference; we test for it in the agent study. 
+
+Checking the Shared Base. For each candidate pair, we choose the merge base of the two PR bases as the shared starting commit 
+
+𝑏 . We then apply two filters, starting with the cheaper check. (i) Clean merge: both code patches apply to 𝑏 , and their composition produces no textual conflict. (ii) Base validity: for each PR, its gold tests must fail on 𝑏 when only the test patch is applied and pass after adding the code patch. The gold test patch comprises the behavioral tests added or modified by the human PR. Checking the shared base matters because related PRs often start from different commits. One PR’s base may already contain part of the other PR’s solution, hiding the interaction we want to test. In one HTTP-header pair, for example, the later PR’s base already contained a helper added by the earlier PR. Our check rejects such a base because the relevant tests pass before we apply the candidate fix. In a representative batch, invalid bases accounted for about one third of rejections. 
+
+Yield. From 685 mined Django PRs we formed 4,262 candidate pairs; deterministic validation across a 5-node cluster (320 cores) accepted 417 as valid coupled instances. In a representative batch, 
+
+∼36% failed because the two changes textually conflict, ∼33% failed base validity (drift), ∼17% did not apply on a common base, and 
+
+∼14% were accepted. We limit validation cost by running tests only on pairs that pass the structural and textual filters. 
+
+## 4 Preliminary Study 
+
+We evaluate more than 4 ,000 graded task solves using two model families (Table 1). The synthetic experiments measure interference as more interfaces change and test how much an oracle message can prevent. We then examine reviewed PR pairs for interference and apply the controlled changes to real Django helpers. 
+
+Figure 3: Synthetic tier ( 8 trials per point, averaged over three mechanisms). Blind interference Δblind increased with stale-ness degree 𝑑 (red). A ∼130 -token oracle description of the finalized transformation reduced it to near zero (green), re-covering 98% .
+
+Synthetic Tier. Each synthetic instance adds 𝐾 =4 helper func-tions to a Django checkout. The agent writes small wrappers that call these helpers. A scripted concurrent patch changes exactly 𝑑 
+
+helper interfaces, where 𝑑 ∈ { 0, . . . , 4} is the staleness degree . It either renames helpers, adds a required argument, or changes the return type. The expected wrapper output stays the same. We run eight trials per setting. A blind agent uses the old interfaces, so we expect its wrappers to fail on the 𝑑 changed helpers after merg-ing. An informed agent sees the new interfaces before writing its wrappers. Renames and required-argument changes matched the predic-tion. Blind patches failed on all 𝑑 changed helpers ( Δblind = 𝑑 , with zero variance). The informed agent had no failures. Because the wrapper tasks leave little room for alternative implementations, the result does not predict how failures scale in open-ended develop-ment. For return-type changes, the informed agent still averaged 0.13 failures per run despite seeing the new interface. 
+
+Synthetic Tier with an Oracle Message. We next give the blind agent a message describing the scripted change, averaging about 130 tokens. The message states the new helper names, required arguments, or return types. With this information, the mean in-terference count fell from 2 .50 to 0 .04, a 98% reduction (Fig. 3). We generate the message from the scripted transformation, so the result assumes a complete and accurate description of the change. 
+
+Mined PR Tier. For the mined PR pairs, a GPT-5-class coding model solves each task in solo and blind conditions on the shared base. We run the model with mini-swe-agent [16], a minimal tool-calling harness, and with OpenHands [13]. Both use SWE-bench-style grading. Our initial grading procedure produced misleading interference counts for two reasons. First, agents sometimes edited test files, which could prevent the gold tests from being applied consistently. Second, we tested each individual patch only on its own task’s tests, but tested merged patches on both tasks’ tests. A patch could therefore break another task’s test on its own, yet the failure would EXPRESS ’26, October 4–9, 2026, Oakland, CA, USA Haocheng Xia, Eugene Wu, and Yongjoo Park              
+
+> solo A solo B blind Δblind
+> naive pass not run fail +1(false) corrected pass fail fail 0(excluded)
+
+Figure 4: Using different test sets can create false interfer-ence. Patch B fails this test on its own, but the initial grading procedure does not run it in solo B. Running the same tests in all conditions reveals the existing failure and excludes it from Δblind .
+
+appear only in the merged evaluation. Both problems falsely in-creased Δblind (Fig. 4). After removing agent test edits and running the combined test set in every condition, nearly all apparent interference disappeared. Of 834 runs on 417 validated Django pairs, only one had Δblind > 0, with one newly failing test. The reviewed human patches also merged without gold-test failures across the examined pairs. These results suggest that merged PR history is a poor source of examples of unresolved parallel changes: development and review may have already made the patches compatible. GPT-5.5 reproduced the synthetic result on newly added helper names, reducing the likelihood that the result depends on memo-rized code. On the most strongly coupled mined pairs, it showed no interference in 72 runs. It did fail on the constructed Django tasks described next. The difference is consistent with the mined patches having been made compatible during development and review. 
+
+Constructed Tasks on Real Django Helpers. We apply three inter-face transformations to 12 Django helpers to construct 36 instances (Appendix C). Each helper is linked to a validated PR pair that illus-trates a dependency through a shared symbol. One patch makes a scripted interface change; an agent writes the other patch, which uses the helper. In the blind condition, GPT-5.5 produced interference in 105/108 runs (97%), with failures on all 12 helpers despite clean textual merges. With the oracle message, 89/108 runs (82%) were recovered. Recovery reached 93% among message-conditioned patches that merged cleanly. These rates apply to the constructed Django tasks. The mining pipeline also works beyond Django. With the same pytest-based validation harness, it finds 11 valid pairs in SymPy, 12 in xarray, and 7 in seaborn. Textual conflicts and incompatible base commits account for most rejections. In practice, construc-tion works best with PRs close in time and tests selected from the PR’s own changes. Running entire modified test files can introduce unrelated or flaky cases. 
+
+Threats to Validity. The main measurement risk is counting an individual patch’s failure as interference. We address this by dis-carding agent test edits, running the same combined test set in every condition, and requiring each patch to solve its own task in isolation. As in SWE-bench [6], we rely on the gold tests to define correct behavior. We also check that those tests fail on the shared base before applying the human fix. Historical PRs have been through review, while the constructed tasks deliberately introduce breaking changes. The latter use one scripted patch and constrain the agent to call selected helpers. Our agent experiments are also limited to Django. The results estab-lish the failure mechanism and demonstrate it on 12 real helpers, but do not estimate its frequency or severity in everyday parallel development. The communication results assume complete descriptions of finalized changes; recovery with messages generated during parallel work remains untested. Finally, tests can miss failures, and several tests can detect the same defect. We therefore interpret interference counts only for a shared test set. 
+
+## 5 Ongoing Work and Open Problems 
+
+The experiments leave open how often interference occurs before review, how agents should communicate during parallel work, and how the results extend to more than two tasks. 
+
+Parallel Work Before Review. To measure how often interference occurs in practice, we need execution records from parallel agents before review or repair. These records should preserve a shared starting commit, independently generated patches, and intermedi-ate states [7]. These records would let us compare information gaps in systems with isolated workers, asynchronous updates, explicit orchestration, or shared state. 
+
+From Oracle Visibility to Online Communication. The oracle mes-sage reduces synthetic interference by 98%. In a running system, however, agents may only be able to share their plans, an unfin-ished patch, or an automatically generated summary. These options differ in completeness, delay, and privacy [15]. A comparison with affected-symbol lists and completed edits, using the same token budget, would show how message content and timing affect recov-ery. 
+
+Scale. Our experiments focus on pairs of tasks. With 𝑁 > 2 tasks, a failure may require three or more changes to occur together, even if every pair works correctly. Larger task sets also create more possible dependencies. Extending the benchmark would test whether results for pairs predict reliability for larger groups, and whether we can estimate coordination headroom for a given set of tasks before agents start work. 
+
+## 6 Conclusion 
+
+Agents working from the same codebase can produce patches that pass alone but fail together, even when the merge has no textual conflicts. In stale, we test the same patches alone and together us-ing a common test set. Comparing blind agents with agents that see the completed concurrent change estimates how much coordination could help. Synthetic tasks isolate failures caused by stale interfaces. Mined PR pairs suggest that reviewed history rarely retains unresolved interactions. Constructed tasks reproduce the mechanism on 12 Django helpers, with 97% interference and 82% recovery using an oracle message. These constructed rates do not measure real-world prevalence. The next step is to study parallel work before review, across more repositories, with messages that agents can generate during execution. Passes Alone, Fails Together EXPRESS ’26, October 4–9, 2026, Oakland, CA, USA 
+
+## Acknowledgments 
+
+NSF grants #2103794, #2312991, #2551201, #2440498, and #2312561 support this work, along with DAPLab corporate support in the form of funding and/or compute from Amazon, IntellectAI, Infosys, Tidalwave, Veris, Shopify, Microsoft, Thinking Machines, Dandy, Perplexity, and Daytona. This work is also supported by the Ad-vanced Cyberinfrastructure Coordination Ecosystem: Services & Support (ACCESS) program, which is supported by National Sci-ence Foundation grants #2138259, #2138286, #2138307, #2137603, and #2138296. The views and conclusions presented here are those of the authors and should not be interpreted as representing the official positions of the funding or supporting organizations. 
+
+## A Related Work 
+
+Agent Benchmarks and Scaffolds. SWE-bench [6] evaluates cod-ing agents on real GitHub issues using reproducible tests. SWE-agent [16] provides the agent–computer interface used in our ex-periments. These tools evaluate one task at a time. We use the same test-based approach to measure whether changes developed in parallel still work when combined. 
+
+Multi-Agent Software Development. AutoGen [14], MetaGPT [5], and ChatDev [11] coordinate LLM agents through assigned roles and communication protocols. We measure failures caused by stale information and compare them with an oracle condition in which agents see completed concurrent changes. Evaluating messages based on plans or unfinished work remains an open question. 
+
+Merging and Collaboration Conflicts. Software-merging research has studied both textual and semantic conflicts [8, 12]. Some tools detect conflicts by merging developer branches before developers commit their work [2]; transactional approaches use isolation to avoid conflicts before commit [3]. We study patches produced by independent coding agents and use hidden tests to detect behavioral failures after a clean textual merge. 
+
+## B A Minimal Worked Instance 
+
+Consider a synthetic module with 𝐾 =4 helper functions that put brackets around values. Task A adds wrappers f1..f4 that call these helpers. Task B renames wrap 𝑘 to bracket 𝑘 without changing the returned values. The staleness degree 𝑑 is the number of helpers B renames. For the first helper, A writes:          
+
+> def wrap1(value): # shared helper; Task A calls it
+> return "[" + str (value) + "]"
+> def f1(values): # Task A, written against wrap1
+> return ",".join(wrap1(v) for vin values)
+
+With Task A alone, f1([1,2]) returns "[1],[2]" . Task B preserves the helper’s behavior. The patches edit different regions, so git 
+
+merges them without a conflict. After the merge, however, A’s wrapper calls a name that B has removed:   
+
+> >>> f1([1, 2]) NameError: name 'wrap1' is not defined
+
+An informed agent sees B’s rename before writing the wrapper and calls bracket1 . In comm, the benchmark instead sends a message describing the completed edit: “ wrap1 was renamed to bracket1 .” The agent uses the new name and the combined code passes. 
+
+## C A Real-Derived Staleness Tier 
+
+We construct this tier using existing Django helpers to test the failure mechanism beyond the helpers added for the synthetic ex-periments. GPT-5.5 writes a consumer that calls a helper, and a scripted patch changes that helper’s interface. 
+
+Construction. We select 12 helpers that can be unit-tested from Django’s text, HTML, HTTP, and encoding modules. Each helper is linked to a validated PR pair in which one patch modifies a symbol used by the other ( 𝑊 𝐴 ∩ 𝑅 𝐵 > 0). The historical pair supplies an example of the dependency; we construct a breaking version on a helper that we can test in isolation. For example, we link phone2numeric to PRs 18361 and 20309. The historical dependency involves different symbols: PR 18361 changes the signature of as_sql , and PR 20309 adds an as_sqlite 
+
+method that calls it. Those reviewed changes work together because the signature change is additive. Our constructed task makes a breaking change to a helper while asking an agent to add a feature that calls it. We apply three transformations: rename removes the old helper name; signature adds a required keyword-only argument; and ret-type returns an object whose .text field contains the original result. Applying these transformations to 12 helpers produces 36 instances. 
+
+Worked Example. Task A renames phone2numeric . Task B asks for a new function, phone2numeric_clean . It strips spaces and hyphens from its input, then uses the existing helper to convert letters to digits. Working on the base commit without seeing A’s change, GPT-5.5 writes:    
+
+> def phone2numeric_clean(phone): cleaned = str (phone).replace("␣", "").replace("-", "")
+> return phone2numeric(cleaned) # calls the OLD name
+
+B passes alone, and the patches merge without a textual conflict. The combined code fails because B still calls the old helper name: 
+
+> NameError: name 'phone2numeric' is not defined. Did you mean: ' phone_to_numeric'?
+
+In comm, we generate a message describing Task A’s completed rename. The agent calls the new name, and the combined code passes. 
+
+Results. Across the 12 helpers, 105 of 108 blind runs show inter-ference (Table 2). In each counted run, the consumer passes alone, merges without textual conflicts, and fails the hidden tests after the scripted transformation. We observe this failure on all 12 helpers. With the oracle message, 89/108 runs (82%) recover. Among message-conditioned patches that merge without textual conflicts, recovery reaches 93%. All 36 return-type runs recover, and recov-ery is also high for renames. For required-argument changes, the agent sometimes edits the helper definition itself, creating a textual conflict. 
+
+Scope. These tasks reproduce the stale-interface failure using real Django helpers and dependency patterns found in PR history. We script the breaking patch and give the communication condi-tion a complete description of it. Estimating how often unresolved dependencies occur in practice requires records of parallel agent work before review. EXPRESS ’26, October 4–9, 2026, Oakland, CA, USA Haocheng Xia, Eugene Wu, and Yongjoo Park 
+
+Table 2: Real-derived Django tier: GPT-5.5, 3 scripted mech-anisms × 3 trials per symbol ( 9 runs each). blind denotes silent interference; comm receives an oracle description of the finalized scripted edit. Across these constructed instances, blind interference occurs in 105 /108 runs ( 97% ), and the oracle message recovers 89 /108 (82% ; 93% among cleanly merging cases). 
+
+Helper Module Anchor pair blind comm 
+
+phone2numeric text 18361,20309 8/9 9/9 
+
+slugify text 17554,19874 9/9 6/9 
+
+get_text_list text 18361,19073 9/9 9/9 
+
+capfirst text 19244,19445 9/9 8/9 
+
+get_valid_filename text 19955,20458 9/9 9/9 
+
+normalize_newlines text 16703,19478 9/9 9/9 
+
+escape html 19057,20309 9/9 4/9 
+
+strip_tags html 19459,20309 9/9 8/9 
+
+int_to_base36 http 20587,21092 9/9 9/9 
+
+urlencode http 19919,21531 8/9 3/9 
+
+iri_to_uri encoding 19040,19445 8/9 8/9 
+
+base36_to_int http 19555,20309 9/9 7/9 
+
+total 105/108 89/108 
+
+## References 
+
+[1] Anthropic. 2026. Orchestrate teams of Claude Code sessions. Claude Code Docs. https://code.claude.com/docs/en/agent-teams Describes Claude Code agent teams as of v2.1.178. Accessed: 2026-06-28. [2] Yuriy Brun, Reid Holmes, Michael D. Ernst, and David Notkin. 2011. Proac-tive detection of collaboration conflicts. In SIGSOFT/FSE’11 19th ACM SIGSOFT Symposium on the Foundations of Software Engineering (FSE-19) and ESEC’11: 13th European Software Engineering Conference (ESEC-13), Szeged, Hungary, Sep-tember 5-9, 2011 , Tibor Gyimóthy and Andreas Zeller (Eds.). ACM, 168–178. doi:10.1145/2025113.2025139 [3] Supawit Chockchowwat, Zhaoheng Li, and Yongjoo Park. 2023. Transactional Python for Durable Machine Learning: Vision, Challenges, and Feasibility. In 
+
+Proceedings of the Seventh Workshop on Data Management for End-to-End Machine Learning (DEEM’23) . 1–5. doi:10.1145/3595360.3595855 [4] Supawit Chockchowwat, Sumay Thakurdesai, Zhaoheng Li, Matthew S. Krafczyk, and Yongjoo Park. 2025. Chipmink: Efficient Delta Identification for Massive Object Graphs. Proceedings of the VLDB Endowment 19, 4 (2025), 603–616. doi:10. 14778/3785297.3785303 [5] Sirui Hong, Mingchen Zhuge, Jonathan Chen, Xiawu Zheng, Yuheng Cheng, Jinlin Wang, Ceyao Zhang, Zili Wang, Steven Ka Shing Yau, Zijuan Lin, Liyang Zhou, Chenyu Ran, Lingfeng Xiao, Chenglin Wu, and Jürgen Schmidhuber. 2024. MetaGPT: Meta Programming for A Multi-Agent Collaborative Framework. In 
+
+The Twelfth International Conference on Learning Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 . OpenReview.net. https://openreview.net/forum? id=VtmBAGCN7o [6] Carlos E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik R. Narasimhan. 2024. SWE-bench: Can Language Models Resolve Real-world Github Issues?. In The Twelfth International Conference on Learning Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 . OpenReview.net. https://openreview.net/forum?id=VTF8yNQM66 [7] Zhaoheng Li, Supawit Chockchowwat, Ribhav Sahu, Areet Sheth, and Yongjoo Park. 2024. Kishu: Time-Traveling for Computational Notebooks. Proceedings of the VLDB Endowment 18, 4 (2024), 970–985. doi:10.14778/3717755.3717759 [8] Tom Mens. 2002. A State-of-the-Art Survey on Software Merging. IEEE Trans. Software Eng. 28, 5 (2002), 449–462. doi:10.1109/TSE.2002.1000449 [9] Daniel Ogenrwot and John Businge. 2026. AgenticFlict: A Large-Scale Dataset of Merge Conflicts in AI Coding Agent Pull Requests on GitHub. arXiv:2604.03551 [cs.SE] doi:10.1145/3805760.3814923 [10] Jiayi Pan, Xingyao Wang, Graham Neubig, Navdeep Jaitly, Heng Ji, Alane Suhr, and Yizhe Zhang. 2025. Training Software Engineering Agents and Verifiers with SWE-Gym. In Forty-second International Conference on Machine Learning, ICML 2025, Vancouver, BC, Canada, July 13-19, 2025 (Proceedings of Machine Learning Research, Vol. 267) , Aarti Singh, Maryam Fazel, Daniel Hsu, Simon Lacoste-Julien, Felix Berkenkamp, Tegan Maharaj, Kiri Wagstaff, and Jerry Zhu (Eds.). PMLR / OpenReview.net. https://proceedings.mlr.press/v267/pan25g.html [11] Chen Qian, Wei Liu, Hongzhang Liu, Nuo Chen, Yufan Dang, Jiahao Li, Cheng Yang, Weize Chen, Yusheng Su, Xin Cong, Juyuan Xu, Dahai Li, Zhiyuan Liu, and Maosong Sun. 2024. ChatDev: Communicative Agents for Software Development. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2024, Bangkok, Thailand, August 11-16, 2024 , Lun-Wei Ku, Andre Martins, and Vivek Srikumar (Eds.). Association for Computational Linguistics, 15174–15186. doi:10.18653/V1/2024.ACL-LONG.810 [12] Marcelo Sousa, Isil Dillig, and Shuvendu K. Lahiri. 2018. Verified three-way program merge. Proc. ACM Program. Lang. 2, OOPSLA (2018), 165:1–165:29. doi:10.1145/3276535 [13] Xingyao Wang, Boxuan Li, Yufan Song, Frank F. Xu, Xiangru Tang, Mingchen Zhuge, Jiayi Pan, Yueqi Song, Bowen Li, Jaskirat Singh, Hoang H. Tran, Fuqiang Li, Ren Ma, Mingzhang Zheng, Bill Qian, Yanjun Shao, Niklas Muennighoff, Yizhe Zhang, Binyuan Hui, Junyang Lin, et al. 2025. OpenHands: An Open Platform for AI Software Developers as Generalist Agents. In The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 .OpenReview.net. https://openreview.net/forum?id=OJd3ayDDoF [14] Qingyun Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu, Beibin Li, Erkang Zhu, Li Jiang, Xiaoyun Zhang, Shaokun Zhang, Jiale Liu, Ahmed Hassan Awadallah, Ryen W. White, Doug Burger, and Chi Wang. 2023. AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation. CoRR abs/2308.08155 (2023). arXiv:2308.08155 doi:10.48550/arXiv.2308.08155 [15] Haocheng Xia and Yongjoo Park. 2026. SlotGuard: Stop Oversharing Private Local Context in LLM Agent Transcripts. In Second Workshop on Agents in the Wild: Safety, Security, and Beyond (AIWILD), ICML 2026 .[16] John Yang, Carlos E. Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan, and Ofir Press. 2024. SWE-agent: Agent-Computer Inter-faces Enable Automated Software Engineering. In Advances in Neural Information Processing Systems 37: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 - 15, 2024 , Amir Glober-sons, Lester Mackey, Danielle Belgrave, Angela Fan, Ulrich Paquet, Jakub M. Tomczak, and Cheng Zhang (Eds.). http://papers.nips.cc/paper_files/paper/2024/ hash/5a7c947568c1b1328ccc5230172e1e7c-Abstract-Conference.html 
+
+Received 2026-06-28; accepted 2026-07-31
