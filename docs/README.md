@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-30</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-01</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 20 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 19 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>8</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-30 22:53:16 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-01 23:01:03 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读8篇、速读12篇共20篇，重点聚焦多智能体路径规划与技能演化。最值得看的是《Decentralized Master-Mind》用迭代意图去噪做联合动作精炼（9.0分），以及《SkillVine》通过分支探索实现智能体技能进化（9.0分）。普通读者可优先从这两篇入手，再顺带浏览速读中关于去中心化网络自愈与多智能体信用分配的三篇8分工作。</p>
+<p>今日精读7篇、速读12篇共19篇，重点聚焦自学习具身智能体与递归自我改进。最值得看的是《RoboFoundry》和《R² Flow》两篇9分工作，均指向智能体通过系统级进化实现自我提升。普通读者可优先关注多智能体长程协作与分布式协调的速读方向。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">8 篇</strong>
+    <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Decentralized Master-Mind: Joint Action Refinement through Iterative Intent Denoising in Multi-Agent Pathfinding">Decentralized Master-Mind: Joint Action Refinement through Iterative Intent Denoising in Multi-Agent Pathfinding</span></li><li><span class="dpr-home-dashboard-paper-title" title="SkillVine: Agent Skill Evolution via Branching Exploration">SkillVine: Agent Skill Evolution via Branching Exploration</span></li><li><span class="dpr-home-dashboard-paper-title" title="RoboFoundry: System-as-Policy Evolution for Self-Learning Embodied Agents">RoboFoundry: System-as-Policy Evolution for Self-Learning Embodied Agents</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="RoboFoundry: System-as-Policy Evolution for Self-Learning Embodied Agents">RoboFoundry: System-as-Policy Evolution for Self-Learning Embodied Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="R$^2$ Flow: Recursive Self-Improvement via Recursive Skill Evolution">R$^2$ Flow: Recursive Self-Improvement via Recursive Skill Evolution</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Skill Evolution: Self-Evolving Context Management Policies for Long-Horizon Agent Harnesses">Beyond Skill Evolution: Self-Evolving Context Management Policies for Long-Horizon Agent Harnesses</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>6</strong></span><span class="dpr-home-dashboard-tag">multi-agent <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>7</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,9 +94,9 @@
     <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MeshHeal: Two-Timescale Self-Healing for Gray Failures in Decentralized LLM Agent Networks">MeshHeal: Two-Timescale Self-Healing for Gray Failures in Decentralized LLM Agent Networks</span></li><li><span class="dpr-home-dashboard-paper-title" title="HySTAR: Anchored Hypergraphs for Stable Credit Assignment in Cooperative Multi-Agent Reinforcement Learning">HySTAR: Anchored Hypergraphs for Stable Credit Assignment in Cooperative Multi-Agent Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Multi-agent Scaling Across Disjunctive and Compensatory Tasks">Multi-agent Scaling Across Disjunctive and Compensatory Tasks</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Multi-agent Scaling Across Disjunctive and Compensatory Tasks">Multi-agent Scaling Across Disjunctive and Compensatory Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgentWorld: Benchmarking Long-Horizon Collaboration of Multi-agent LLMs">AgentWorld: Benchmarking Long-Horizon Collaboration of Multi-agent LLMs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Symbolic Guidance for LLM Agents in Distributed Multiagent Coordination">Symbolic Guidance for LLM Agents in Distributed Multiagent Coordination</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>9</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>7</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>5</strong></span></div>
 </section>
 </div>
 

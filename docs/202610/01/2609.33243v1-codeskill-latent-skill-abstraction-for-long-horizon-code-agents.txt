@@ -1,0 +1,391 @@
+Title: CodeSkill: Latent Skill Abstraction for Long-Horizon Code Agents
+
+URL Source: https://arxiv.org/pdf/2609.33243v1
+
+Published Time: Tue, 29 Sep 2026 02:34:25 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# CodeSkill: Latent Skill Abstraction for Long-Horizon Code Agents 
+
+## Song-Li Wu 1∗, Jingyi Wang 1∗, Zhaocheng Du †2, Weinan Gan 2, Weiwen Liu 3
+
+> 1
+
+Tsinghua University, 2Huawei Noah’s Ark Lab, 3Shanghai Jiao Tong University 
+
+Abstract 
+
+Code agents require long-horizon decision-making over com-plex interaction trajectories. However, existing reinforcement learning (RL) approaches typically optimize behavior at the token level, creating a mismatch between low-level genera-tion and high-level behavioral reasoning. This limitation leads to inefficient exploration and weak credit assignment under sparse rewards. Moreover, while large-scale agent trajectories often contain recurring multi-step behavioral patterns, their noisy token-level representations hinder effective experience reuse. To address these challenges, we propose CodeSkill, a framework that adapts hierarchical latent skill modeling to the code agent domain. CodeSkill first leverages a teacher model to distill both successful and failed trajectories into multi-level textual abstractions. It then integrates temporal variational inference with reinforcement learning to map these discrete semantics into continuous latent variables, while an adaptive boundary mechanism dynamically gates skill tran-sitions based on execution feedback. The learned skills are injected into a frozen LLM policy as latent semantic prefixes, enabling optimization in a compact semantic space rather than over raw token sequences. By shifting RL from token-level exploration to experience-level reasoning, CodeSkill improves optimization efficiency and long-horizon behavioral coherence. Extensive experiments demonstrate that CodeSkill achieves highly competitive performance against strong open-weight baselines across diverse general and industrial coding benchmarks. Furthermore, the learned skills exhibit strong transferability and robust cross-domain generalization, high-lighting the effectiveness of explicit behavioral abstraction for scalable agentic code generation. 
+
+## 1 Introduction 
+
+Large language model (LLM)-based code agents are rapidly evolving from single-turn code generation toward agentic software engineering systems that iteratively navigate repos-itories, execute programs, edit files, and refine solutions through long-horizon interaction (Jiang et al. 2026; Joel, Wu, and Fard 2024; Zhan et al. 2025). Unlike static generation, these agents must perform sequential decision-making under complex environmental feedback, where intermediate actions can substantially influence future execution outcomes (Wei et al. 2025). Consequently, recent work has increasingly ex-plored reinforcement learning (RL) with execution-based supervision, such as unit-test feedback, to optimize agent 
+
+> ∗
+
+These authors contributed equally. 
+
+> †
+
+Corresponding author. Copyright © 2027, Association for the Advancement of Artificial Intelligence (www.aaai.org). All rights reserved. 
+
+behaviors over multi-step trajectories (Wen et al. 2025). However, applying RL to code agents remains fundamen-tally challenging. Existing methods typically optimize directly over token-level trajectories, modeling long-horizon software engineering interactions as flat sequences of generation and tool-use actions. As illustrated in Figure 1, this approach in-troduces two major limitations. First, sparse delayed rewards combined with large token-level action spaces often lead to unstable optimization and inefficient exploration. Second, flat trajectory modeling fails to capture reusable procedu-ral structures across tasks. In practice, semantically similar behaviors, such as dependency tracing and iterative patch refinement, frequently recur across repositories despite differ-ing surface, level trajectories. Consequently, these reusable patterns remain entangled within noisy, low-level action se-quences, severely limiting long-horizon credit assignment and hindering effective experience reuse during RL training. Recent agentic mid-training approaches have demonstrated that large-scale software engineering trajectories contain rich behavioral supervision signals (Zeng et al. 2026b). Yet, most existing methods still model these trajectories autoregres-sively at the token level, making it difficult to systematically abstract and reuse higher-level procedural behaviors. We hy-pothesize that this lack of explicit behavioral abstraction is an important factor underlying the instability of long-horizon RL for code agents. Without mechanisms that organize and reuse procedural experience, policies must repeatedly rediscover similar behaviors from low-level trajectories, substantially reducing exploration efficiency and generalization. To address these limitations, we propose CodeSkill, a framework that adapts hierarchical latent skill modeling for the specific challenges of long-horizon code agents. Instead of optimizing purely over raw token trajectories, CodeSkill leverages a teacher model to extract recurring multi-step inter-action patterns from both successful and failed rollouts. These trajectories are then distilled into a three-level hierarchy of textual abstractions: high-level global intent, mid-level execu-tion skills, and low-level token control. To bridge the discrete semantic space of the LLM with the continuous exploration space of RL, CodeSkill employs variational inference to map these discrete textual skills into continuous latent variables. Each skill corresponds to a reusable procedural behavior, enabling the policy to optimize over semantically structured decision units in addition to low-level token generation. Fur-arXiv:2609.33243v1 [cs.AI] 27 Sep 2026 Environment Code Agent Trajectory Evolving Code Agent 
+
+W/O Skill Figure 1: (a) CodeSkill pipeline overview. CodeSkill distills reusable skills from trajectories into a skill library, enabling efficient evolution of code agents, unlike vanilla training that directly learns from raw experience. (b) Training comparison with Qwen2.5-Coder-32B-Instruct backbone. All runs use fixed seeds, repeated three times with std-based confidence intervals; rewards are normalized to identical scales. Vanilla RL refers to skill-free Proximal Policy Optimization (PPO). Curves are averaged over general and industrial code benchmarks. CodeSkill delivers faster reward convergence and lower exploration entropy, validating skill abstraction improves sample efficiency. thermore, an adaptive boundary mechanism is introduced to dynamically gate skill transitions based on discrete execution feedback, ensuring temporal coherence. The learned skills are ultimately injected into frozen LLM policies as latent semantic prefixes. By shifting RL from token-level exploration to experience-level reasoning, CodeSkill explicitly improves optimization efficiency and long-horizon behavioral coherence. To rig-orously evaluate our approach, we apply CodeSkill to a 32B-parameter backbone and test it across diverse general and industrial coding benchmarks. The primary contributions of this work are multifold. First, we introduce a hierarchi-cal latent skill framework that successfully bridges discrete textual skill supervision with continuous RL optimization in coding environments. Second, we demonstrate that ex-tracting counterfactual skills from both successful and failed trajectories provides robust supervisory signals that stabi-lize long-horizon optimization. Finally, empirical evaluations show that CodeSkill is highly competitive with strong, open-weight baselines across various benchmarks, demonstrating robust cross-domain generalization and strong transferability of the learned abstractions. 
+
+## 2 Related Works 
+
+2.1 Reinforcement Learning and Mid-Training for LLMs 
+
+Reinforcement learning (RL) (Wen et al. 2025; Yu et al. 2025) has become a key paradigm for improving reasoning in large language models by optimizing outcome-based rewards beyond supervised data. However, applying RL to multi-turn agentic tasks remains challenging due to the exponential growth of state space with interaction length (Zhang et al. 2025), leading to exploration collapse (Wang et al. 2025), long-horizon credit assignment difficulty (Feng et al. 2025), and fragile exploration under trajectory failure. Mid-training (MT) bridges pre-training and RL by learning from offline interaction trajectories (Yang et al. 2024; Xu et al. 2024). Most existing methods rely on behavior cloning, which suffers from distribution shift (Seo et al. 2024; Guan et al. 2024), mode collapse (GX-Chen et al. 2025), and performance bounded by demonstration quality (Joel, Wu, and Fard 2024; Jiang et al. 2026), while also lacking temporal abstraction. CodeSkill addresses these limitations by introducing a latent skill space learned from offline trajectories via variational inference. RL is then performed over skill-level actions instead of tokens, enabling temporally abstract exploration and more stable optimization. This design improves generalization and enhances sample efficiency in long-horizon code agent tasks. 
+
+2.2 Agentic Skills 
+
+A key direction for LLM agents is to introduce skills as reusable abstractions for long-horizon decision making, el-evating generation from token-level actions to higher-level behavioral primitives (Wang et al. 2023; Xu and Yan 2026). Existing approaches construct skills via libraries or auto-matic discovery (Alzubi et al. 2026; Xia et al. 2026; Zhang et al. 2026), but largely treat them as symbolic, discrete units with heuristic boundaries, limiting their ability to capture the continuity and compositionality of behaviors and preventing joint optimization in skill space. We adopt a latent-variable Stage 1 : Skill Discovery from Demonstrations 
+
+> Raw Trajectories
+
+Offline Expert Demonstrations  
+
+> Encoder
+
+�� 
+
+> Mid-level Excution Skill High-level Goal Skill Low-level Token Skill
+> Decoder Hierarchical Variational Autoencoder(VAE) Skill 1 Goal: Diagnostic
+
+... ... 
+
+> Discovered Skill Bank
+> Skill n Template Skill 2 Execution
+
+Stage 2: Skill Evolution   
+
+> Plan Executor LLM
+> HML
+> Skill choice Code Action
+> Code Repository Environment
+> Policy
+> Update
+> Optimization
+
+Figure 2: Overview of the CodeSkill framework. We present a two-stage framework for code agents: (1) Skill Discovery: A hierarchical VAE distills offline expert trajectories into a multi-level skill bank; (2) Skill Evolution: A planning-execution loop with RL refines skills based on environment feedback. 
+
+view , modeling skills as continuous hierarchical representa-tions, where skill discovery is cast as latent inference coupled with policy optimization. Accordingly, CodeSkill learns pa-rameterized skills via variational inference with adaptive segmentation and integrates them into LLMs as soft condi-tioning, enabling unified optimization of skill abstraction and action generation. 
+
+## 3 Method 
+
+3.1 Problem Formulation 
+
+We formulate repository-level code generation as a sequential decision-making problem. Given a natural language instruc-tion l ∈ L , an agent interacts with an environment character-ized by a state space S and an action space A. At timestep t,the state st ∈ S contains repository context, execution feed-back, file structures, and intermediate program states, while the action at ∈ A corresponds to code edits, tool invocations, or execution operations. We assume access to a dataset of repository interaction trajectories D = {(τi, l i)}Ni=1 , where each trajectory τ =
+
+{(st, a t)}Tt=1 represents a multi-step software engineering process. Our objective is to learn a latent-conditioned policy 
+
+πθ , which acts simultaneously as the generative model and the reinforcement learning actor, that maximizes execution-based rewards while generalizing to unseen repository-level tasks. A comprehensive overview of the proposed framework designed to achieve this objective is depicted in Figure 2. 
+
+Distinction from Traditional HRL. Traditional HRL (Pa-teria et al. 2021) learns latent skills from meaningless isotropic Gaussian priors N (0 , I ) and uses static probabilistic skill segmentation, which fails to align latent representations with coding semantics and ignores runtime execution feedback. When applied to long-horizon code agents, this misalignment disrupts complete programming subtasks and worsens sparse reward credit assignment. By contrast, CodeSkill anchors continuous RL exploration to discrete textual coding seman-tics. Its temporal skill boundaries are dynamically gated by execution feedback like interpreter errors, unifying symbolic program states and continuous latent optimization to resolve code-specific long-horizon RL difficulties. 
+
+3.2 Hierarchical Skill Discovery 
+
+Raw repository-level trajectories are highly verbose, contain-ing exploratory edits and redundant debugging attempts that obscure key decisions. Directly optimizing over such trajecto-ries at the token level makes it difficult to identify reusable behavioral patterns. To address this, CodeSkill first transforms raw interaction trajectories into compact hierarchical skill representations. We deploy a base code agent πbase to collect diverse trajec-tories: T = {τi}Ni=1 . Unlike prior approaches that retain only successful executions, we preserve both successful and failed trajectories: 
+
+T + = {τi : r(τi) = 1 }, T − = {τi : r(τi) = 0 }, (1) where r(τ ) denotes execution-based task success. Failed trajectories reveal debugging failure modes and execution boundary conditions critical for robust skill learning. To avoid the confounding effect of knowledge distillation from a superior oracle, we employ the exact same backbone as πbase for our teacher model MT . MT is formulated via zero-shot structured prompting (see Appendix A for the full prompt templates) to distill hierarchical skills: 
+
+(sH , s M , s L) = MT (τ, l ). (2) The high-level skill sH captures the global problem-solving strategy, mid-level skills sM = {sM 
+
+> 1
+
+, . . . , s MK } represent temporally extended subtasks, and low-level skills sL capture localized execution behaviors. For T −, MT extracts compact counterfactual skills, summarizing the erroneous decision, the execution evidence and a corrected alternative. 
+
+3.3 Skill Weaver 
+
+The distilled hierarchical skills provide compact semantic de-scriptions of repository interactions, but they remain discrete textual representations that cannot be directly optimized by reinforcement learning. To bridge this gap, we introduce a Skill Weaver module, which parameterizes semantic Gaussian priors from the textual skills and maps them into continuous latent skill representations. Specifically, at each timestep t, given a textual skill st, the frozen text embedding layer of the base LLM first encodes it into a semantic representation, which is then projected by a two-layer MLP to the parameters of a Gaussian distribution: 
+
+p(zHt | sHt ) = N (μsem (sHt ), σ sem (sHt )) , (3) 
+
+p(zLt | sLt ) = N (μsem (sLt ), σ sem (sLt )) , (4) where μsem (·) and σsem (·) denote the mean and standard deviation of the semantic prior, respectively. They are param-eterized by a two-layer MLP that projects the frozen LLM text embeddings from the hidden dimension dmodel to the latent space dz . Consequently, semantically similar textual skills are encouraged to occupy nearby regions in the latent space, providing a semantically grounded prior for subsequent reinforcement learning. For mid-level skills, we model temporal persistence through an execution-gated boundary variable bt ∈ { 0, 1}. p(bt |
+
+st, z Ht ) is heavily biased by discrete state changes in st (e.g., new compiler tracebacks). The mid-level prior is: 
+
+p(zMt | bt, z Mt−1, s Mt ) = 
+
+N (μsem (sMt ), σ sem (sMt )) , bt = 1 ,δ(zMt − zMt−1), bt = 0 .
+
+(5) 
+
+Variational Inference. We employ an amortized varia-tional posterior qϕ. A bidirectional sequence encoder yields step-wise hidden states ht and a globally pooled state hglobal .The posteriors are: 
+
+qϕ(zHt | hglobal ) = N (μH (hglobal ), σ H (hglobal )) , (6) 
+
+qϕ(zLt | ht) = N (μL(ht), σ L(ht)) . (7) To allow joint backpropagation through the discrete bound-ary variable bt ∼ qϕ(bt | ht), we employ the Gumbel-Softmax relaxation during training. The mid-level posterior incorporates bt:
+
+qϕ(zMt | ht, b t, z Mt−1) = 
+
+N (μMt (ht), σ Mt (ht)) , bt = 1 ,δ(zMt − zMt−1), bt = 0 .
+
+(8) Finally, the Skill Weaver transforms the inferred latent skills into continuous soft prompts Pt = Embed( zHt , z Mt , z Lt ),prepending them to the interaction history ˜Ht =Concat( Pt, H t). To align continuous soft prompts with the discrete token space without catastrophic forgetting, we freeze the base LLM and apply Low-Rank Adaptation (LoRA) to the attention layers, yielding the generation policy: 
+
+at ∼ πθ (at | ˜Ht).
+
+3.4 Variational Reinforcement Learning 
+
+The variational objective forces the policy to stay close to the semantic priors: 
+
+LELBO = Eqϕ
+
+" TX
+
+> t=1
+
+log πθ (at | st, z Ht , z Mt , z Lt )
+
+#
+
+− R KL ,
+
+(9) 
+
+RKL = βH DKL (qϕ(zHt )∥p(zHt | sH )) +
+
+> T
+
+X
+
+> t=1
+
+h
+
+βB DKL (qϕ(bt)∥p(bt)) + bt · βM DKL (qϕ(zMt )∥p(zMt | sMt )) + βLDKL (qϕ(zLt )∥p(zLt | sLt )) 
+
+i
+
+. (10) To align latent skills with repository-level success, we optimize the policy using Proximal Policy Optimization (PPO). Let ˆAt denote the generalized advantage estimation (GAE) based on the execution rewards. The RL objective is defined as: 
+
+LRL = Eτ ∼πθ
+
+h
+
+min( wt ˆAt, clip (wt, 1 − ϵ, 1 + ϵ) ˆAt)
+
+i
+
+,
+
+(11) where wt = πθ (at| ˜Ht)  
+
+> πold (at|˜Ht)
+
+. Crucially, for failed trajectories τ ∈T −, the counterfactual skills extracted by MT guide the policy toward negative advantages ( ˆAt < 0), explicitly penalizing degenerate latent behaviors. The final loss is: 
+
+L = LELBO + λLRL . (12) 
+
+## 4 Experiments 
+
+4.1 Baselines and Benchmarks 
+
+We evaluate CodeSkill against a diverse set of state-of-the-art coding models, including both open-weight models and proprietary APIs (Team 2026; ByteDance Seed Team 2025; Qwen 2025; Zhipu 2025; Anthropic 2026; Cao et al. 2026; Liu et al. 2025; Zhu et al. 2024; Team et al. 2025; Hui et al. 2024; Yang et al. 2026, 2025a; Seed et al. 2025; Zhan et al. 2025). Detailed baseline configurations are provided in the Appendix. The evaluation covers both general-purpose and industrial repository-level coding benchmarks (Liu et al. 2023; Yu et al. 2018; Li et al. 2023; Chen et al. 2021; Du et al. 2024; Jain et al. 2025; Gu et al. 2024; Cheng et al. 2024; Zhuo et al. 2025; Austin et al. 2021), with detailed benchmark descriptions provided in the Appendix. Among them, Mercury (Du et al. 2024) is adopted to specifically evaluate code efficiency, as it jointly measures functional correctness and runtime performance. Unless otherwise specified, CodeSkill is built upon the Qwen2.5-Coder-32B-Instruct backbone. 
+
+4.2 Main Results 
+
+Results on General Code Benchmarks. As shown in Table 1, CodeSkill consistently demonstrates strong and well-balanced performance across a broad range of coding tasks, including code generation, reasoning, and interactive tool use. Despite operating at the 32B scale, the model remains highly competitive with substantially larger systems and achieves leading performance among open-weight models on several challenging benchmarks. The gains are particularly evident on tasks requiring long-horizon reasoning, structured prob-lem decomposition, and execution-aware decision making, suggesting that latent skill abstraction improves the model’s ability to maintain coherent multi-step behaviors beyond conventional token-level generation. In addition, CodeSkill Table 1: Performance comparison on general code generation tasks. Model Size EvalPlus BigCodeBench FullStackBench HumanEval HumanEval+ MBPP MBPP+ Full Hard 
+
+6B+ Models 
+
+DeepSeek-Coder-V2-Lite-Instruct 2.4/16B 81.1 75.6 85.2 70.6 37.8 18.9 49.4 Qwen2.5-Coder-7B-Instruct 7B 87.2 81.7 84.7 72.2 37.8 13.5 42.2 Seed-Coder-8B-Instruct 8B 81.1 75.6 86.2 73.3 44.6 23.6 55.8 Qwen2.5-Coder-14B-Instruct 14B 62.8 59.8 88.6 77.2 47.0 6.1 53.1 
+
+30B+ Models 
+
+Qwen3-Coder-30B-A3B-Instruct 3.3/30.5B 93.9 87.2 90.7 77.2 46.9 27.7 60.9 Deepseek-V3.2 37/671B 93.9 88.4 93.4 77.2 48.1 27.0 64.9 Qwen2.5-Coder-32B-Instruct 32B 93.3 86.6 90.2 77.8 48.0 24.3 57.4 Qwen3-235B-A22B-Instruct-2507 22/235B 96.3 91.5 92.3 77.8 47.4 25.7 62.7 Qwen3-235B-A22B-Thinking-2507 22/235B 98.8 93.3 95.5 81.5 44.1 23.0 -Qwen3-Coder-480B-A35B-Instruct 35/480B 97.6 92.7 94.2 80.2 49.4 27.7 66.4 Kimi-Dev-72B 72B 93.3 86.0 79.6 68.8 45.4 31.8 38.6 Kimi-K2-Instruct-0905 32B/1T 94.5 89.6 91.8 74.1 49.8 30.4 63.5 Kimi-K2-Thinking 32B/1T 98.2 92.7 97.4 82.3 46.8 28.4 -KAT-Dev 32B 90.9 86.6 89.4 76.2 46.2 25.7 58.8 KAT-Dev-72B-Exp 72B 88.4 81.7 85.2 69.3 48.3 26.4 52.9 GLM-4.7 32/355B 87.2 79.9 90.5 75.7 45.7 26.4 70.2 InCoder-32B 32B 94.5 89.6 91.8 78.3 49.8 31.1 57.1 InCoder-32B-Thinking 32B 95.1 89.6 92.1 78.3 47.4 29.1 60.8 CodeSkill 32B 99.2 94.8 98.3 83.7 50.3 32.6 71.5 
+
+Table 2: Performance comparison on chip design benchmarks. CodeSkill results are highlighted in blue. Model Size VeriScope Score VeriRepair Fix (%) RealBench ArchXBench System Module n t
+
+Syn@1 Syn@5 Syn@1 Syn@5 Func@1 Func@5 6B+ Models Qwen3.5-9B 9B 32.0 - - - 6.3 15.8 4.3 8.5 1.9 44.3 GPT-OSS-20B 3.6/21B 73.9 86.7 3.8 17.4 22.9 47.9 9.8 21.0 3.1 53.5 Qwen3.5-27B 27B 55.7 60.0 6.2 20.1 17.1 33.8 10.6 17.8 2.6 48.3 30B+ Models Qwen3-Coder-30B-A3B-Instruct 3.3/30.5B 66.2 76.7 - - 23.0 35.2 5.2 8.2 2.4 37.3 Seed-OSS-36B-Instruct 36B 67.2 66.7 5.0 21.3 14.3 23.0 11.5 20.3 2.5 43.7 GPT-OSS-120B 5.1/117B 82.2 76.7 5.0 21.3 37.8 64.3 17.5 30.8 3.4 54.8 MiniMax-M2.5 10/230B 75.1 66.7 23.8 48.5 17.2 38.4 6.9 15.9 2.9 46.0 GLM-4.7 32/355B 81.2 63.3 12.5 24.6 25.4 46.9 11.6 21.2 3.2 51.4 GLM-5 40/744B 83.2 90.0 2.5 11.2 22.2 43.4 12.2 22.6 3.1 53.2 Kimi-K2.5 32B/1T 73.1 83.3 5.0 17.9 43.7 52.2 23.1 25.7 3.8 49.7 Kimi-K2-Instruct 32B/1T 82.4 76.7 6.2 26.2 50.1 70.1 22.2 28.3 2.9 44.9 Kimi-K2-Thinking 32B/1T 73.1 80.0 - - 27.8 59.4 14.1 28.9 1.5 30.1 DeepSeek-V3.2 37/671B 76.1 77.0 18.8 55.1 39.3 52.7 17.2 21.4 3.6 53.9 Qwen3.5-397B-A17B 17/397B 62.5 86.7 11.2 38.1 35.2 59.5 16.4 28.3 3.1 53.5 Qwen3-Coder-480B-A35B-Instruct 35/480B 80.8 76.7 - - 28.9 39.5 14.8 20.6 3.0 43.9 InCoder-32B 32B 80.7 80.0 10.0 23.7 74.8 83.3 62.7 70.5 3.4 51.0 InCoder-32B-Thinking 32B 75.4 83.3 12.3 24.5 75.6 82.4 63.1 69.8 3.1 46.7 CodeSkill 32B 89.6 90.4 43.8 56.4 78.8 85.7 66.2 73.6 4.8 59.5 
+
+Closed-APIs Models Claude-Sonnet-4.6  87.7 83.3 41.2 50.0 69.2 77.7 33.5 37.2 4.4 58.2 Table 3: Performance on GPU optimization, code optimization, and 3D modeling benchmarks. InCoder-32B-Thinking results are highlighted in gray. Model Size CAD-Coder EmbedCGen Main (%) SuperCoder TritonBench KernelBench Comp. IoU Acc. (%) Spd. G-call (%) G-exe (%) T-call (%) T-exe (%) L1 L2 L3 6B+ Models Qwen3.5-9B 9B 2.0 - 10.0 36.0 1.0 × 2.7 100.0 3.6 100.0 - - -GPT-OSS-20B 3.6/21B 2.0 2.0 30.6 16.0 1.0 × 2.2 100.0 1.2 100.0 5.1 10.0 2.0 Qwen3.5-27B 27B 4.0 0.3 9.6 6.0 1.9 × 5.4 100.0 25.9 97.7 5.1 6.0 4.0 30B+ Models Qwen3-Coder-30B-A3B-Instruct 3.3/30.5B - - 15.4 50.0 1.0 × 8.7 100.0 24.1 67.5 - - -Seed-OSS-36B-Instruct 36B 2.0 2.0 10.2 8.0 1.1 × 1.6 100.0 1.8 100.0 1.0 2.0 2.0 GPT-OSS-120B 5.1/117B 4.0 1.9 17.8 8.0 1.2 × 3.8 85.7 12.7 95.2 6.1 15.0 2.0 MiniMax-M2.5 10/230B 4.0 0.4 22.2 20.0 3.5 × 5.4 100.0 15.1 100.0 7.1 14.0 8.0 GLM-4.7 32/355B 12.0 6.0 89.6 20.0 8.6 × 3.3 100.0 6.0 100.0 8.1 19.0 -GLM-5 40/744B 38.0 18.8 90.2 54.0 1.87 × 1.6 100.0 1.2 100.0 16.2 23.0 4.0 Kimi-K2.5 32B/1T 40.0 12.1 81.0 46.0 1.9 × 12.5 100.0 7.8 100.0 13.1 23.0 6.0 Kimi-K2-Instruct 32B/1T 2.0 1.1 69.6 12.0 1.1 × 15.8 96.5 13.9 91.3 6.1 - -Kimi-K2-Thinking 32B/1T 48.0 20.0 - 24.0 1.2 × 17.4 100.0 19.9 84.8 9.1 16.0 4.0 DeepSeek-V3.2 37/671B 14.0 4.6 84.4 30.0 1.8 × 19.6 100.0 18.1 13.3 3.0 - -Qwen3.5-397B-A17B 17/397B 36.0 14.2 17.8 34.0 1.2 × 7.6 100.0 16.3 92.6 4.0 10.0 -Qwen3-Coder-480B-A35B-Instruct 35/480B 10.0 4.7 9.0 64.0 2.0 × 20.1 100.0 31.9 56.6 3.0 6.0 -InCoder-32B 32B 82.0 53.5 35.2 91.0 1.3 × 18.5 100.0 19.3 93.8 22.2 36.0 14.0 InCoder-32B-Thinking 32B 84.0 48.6 47.9 93.0 3.93 × 15.2 100.0 22.9 89.5 20.2 38.0 12.0 CodeSkill 32B 87.0 56.3 93.4 95.0 1.2 × 28.4 100.0 40.7 100.0 25.2 41.0 15.0              
+
+> Closed-APIs Models Claude-Sonnet-4.6 77.0 32.4 79.0 88.0 4.6 ×26.4 98.1 36.8 1.4 11.1 28.0 2.0
+
+Table 4: Resolve rate (pass@1) on benchmarks. Results are mean ± std over three runs. For each model, the best result is highlighted in gray. Model Origin SFT PPO GRPO CodeSkill SWEBench-Verified Qwen3-4B 1.7 ( ± 0.1) 2.4 ( ± 0.3) 4.9 ( ± 0.6) 7.3 ( ± 0.8) 14.3 ( ± 0.2) Gemma-3-27b 7.1 ( ± 0.5) 7.0 ( ± 0.4) 9.3 ( ± 0.8) 11.6 ( ± 0.5) 19.7 ( ± 0.3) Qwen3-Coder-30B 37.7 ( ± 0.2) 43.8 ( ± 0.8) 48.1 ( ± 0.9) 49.5 ( ± 0.6) 58.7 ( ± 0.5) GLM-4.5-Air 51.4 ( ± 0.2) 51.5 ( ± 0.8) 52.9 ( ± 0.6) 54.2 ( ± 0.7) 62.8 ( ± 0.3) SWEBench-Lite Qwen3-4B 1.2 ( ± 0.3) 1.3 ( ± 0.5) 2.4 ( ± 0.8) 6.3 ( ± 0.5) 12.9 ( ± 0.2) Gemma-3-27b 6.0 ( ± 0.8) 5.9 ( ± 0.4) 7.0 ( ± 0.4) 8.8 ( ± 0.9) 15.3 ( ± 0.3) Qwen3-Coder-30B 28 ( ± 0.3) 33.9 ( ± 0.3) 41.4 ( ± 0.7) 42.9 ( ± 0.9) 51.7 ( ± 0.4) GLM-4.5-Air 43.5 ( ± 0.6) 43.9 ( ± 0.4) 44.5 ( ± 0.8) 47.2 ( ± 0.8) 53.4 ( ± 0.3) exhibits strong robustness across both general-purpose coding benchmarks and specialized agentic environments, indicat-ing that the learned latent skills transfer effectively across heterogeneous software engineering tasks. Overall, the re-sults suggest that CodeSkill provides a scalable and effective framework for enhancing code agents, enabling strong gener-alization across realistic coding scenarios while maintaining competitive performance efficiency at moderate model scale. 
+
+Results on Industrial Code Benchmarks. As shown in Table 2 and Table 3, CodeSkill consistently demonstrates strong generalization across diverse industrial coding do-mains, including chip design, GPU optimization, 3D mod-eling, and low-level kernel synthesis. Compared with exist-ing open-weight coding models, CodeSkill achieves more stable and competitive performance across both functional correctness and system-level engineering tasks, highlighting the effectiveness of latent skill abstraction for long-horizon technical reasoning. On chip design benchmarks, CodeSkill attains the strongest overall open-weight performance, partic-ularly on challenging repository- and module-level synthesis tasks such as RealBench, while remaining highly competitive across VeriScope, VeriRepair, and ArchXBench. The gains are especially pronounced on complex module synthesis and functional verification metrics, suggesting that hierarchical latent skills improve structured reasoning over long depen-dency chains and multi-stage hardware generation workflows. CodeSkill also exhibits clear advantages on GPU optimiza-tion and 3D engineering tasks. The model achieves leading open-weight performance on CAD-Coder and KernelBench, indicating strong capability in geometric reasoning, low-level kernel generation, and execution-aware optimization. In particular, the consistent improvements across increasing Ker-nelBench difficulty levels suggest that the learned latent skills help stabilize long-horizon optimization and code refinement processes beyond standard next-token generation. Overall, the results demonstrate that CodeSkill generalizes effectively beyond conventional functional code generation benchmarks, providing robust performance across a wide range of indus-trial engineering scenarios that require structured planning, iterative refinement, and execution-aware reasoning. 
+
+4.3 Ablation Study 
+
+We conduct comprehensive ablation experiments across two evaluation suites to systematically validate the efficacy of CodeSkill’s core components. For Table 4, which targets complex repository-level SWE agent tasks, we report the pass@1 resolution rates alongside standard deviations over three independent trials. Across all evaluated model back-bones on both SWE-bench Verified and SWE-bench Lite, CodeSkill consistently outperforms the raw base models, vanilla SFT, and standard token-level RL algorithms such as PPO and GRPO. This performance edge is fundamentally derived from our hierarchical latent skill design. Instead of re-lying on flat, token-wise trajectory modeling that exacerbates sparse reward credit assignment errors over long horizons, Table 5: Ablation study on general code generation tasks. To ensure fair comparisons, the textual skill baselines are strictly matched with the latent variants in terms of tunable parameter count and prompt context length. Model EvalPlus BigCodeBench FullStackBench HumanEval HumanEval+ MBPP MBPP+ Full Hard CodeSkill 99.2 94.8 98.3 83.7 50.3 32.6 71.5                                                                                        
+
+> Hierarchy Ablations
+> w/o hierarchy 95.8 88.7 92.1 78.4 46.9 28.5 61.8 w/o zH96.4 89.6 92.8 79.1 47.8 29.4 62.6 w/o zM95.9 88.9 92.0 78.2 46.5 27.9 61.3 w/o zL96.8 90.5 93.1 79.8 48.6 30.7 63.4
+> VAE & Modeling Ablations
+> deterministic posterior (mean only) 96.2 89.4 92.5 78.7 47.3 28.8 62.1 no boundary (fixed segmentation) 96.5 90.1 92.9 79.5 48.1 29.9 62.8
+> Learning Mechanism & Decomposition Ablations
+> token-level RL (w/o skills) 96.1 89.2 92.3 78.6 47.0 28.4 61.7 CodeSkill (SFT only, w/o RL) 95.4 87.9 91.5 77.2 45.3 26.4 60.1 textual skills + RL (w/o VAE) 95.6 88.4 91.8 77.9 46.1 27.5 60.9 textual skills (SFT only, w/o RL & VAE) 94.5 86.2 90.4 76.3 44.0 25.4 58.3
+> Data Ablations
+> success-only trajectories 96.7 90.3 93.0 79.7 48.4 30.1 63.0 failure-only trajectories 93.1 84.8 89.7 74.2 42.6 23.1 57.5
+
+CodeSkill abstracts reusable, multi-step coding subtasks into structured, continuous latent variables. By optimizing over these semantically rich latent spaces, CodeSkill mitigates the inefficient exploration inherent to token-level RL, accel-erates valid behavioral discovery, and effectively leverages counterfactual signals from failed debugging paths to prevent repetitive invalid operations. Consequently, it successfully overcomes the behavioral incoherence that plagues traditional token-wise baselines over extended interaction lengths. Table 5 further breaks down the contribution of each core module within CodeSkill on general code benchmarks. The degradation in performance upon the removal of any single component underscores that hierarchical latent skill model-ing and reinforcement learning must operate collaboratively. Ablating the multi-level hierarchy entirely precipitates the most severe performance decline, particularly on complex se-quential benchmarks like BigCodeBench and FullStackBench. Within this hierarchy, the mid-level latent variable zM proves to be the most critical element; its removal disproportionately destabilizes temporally extended subtasks, confirming its role in maintaining mid-to-long range execution coherence. Addi-tionally, the ablation results demonstrate that both stochastic VAE sampling and the execution-triggered adaptive boundary mechanism are strictly necessary. Reverting to a deterministic posterior, which utilizes only the mean, or employing fixed tra-jectory segmentation noticeably impairs the model’s ability to dynamically gate skill transitions based on runtime execution feedback. To explicitly disentangle the benefits of offline skill decomposition from RL optimization, we construct baselines with strictly matched parameter budgets and prompt lengths. Applying SFT exclusively on discrete textual skills yields only marginal improvements, and while augmenting these textual skills with RL delivers further gains, it still signif-icantly underperforms the full CodeSkill framework. This comparison validates that bridging discrete semantics into a continuous VAE latent space is indispensable for efficient and stable RL exploration. Furthermore, SFT-only training within the latent space without RL refinement underperforms, confirming that reward-based RL is mandatory to align the latent skills with repository-level success. Finally, our data ablations reveal that training on a mixture of successful and failed trajectories yields peak performance. Although training exclusively on failed trajectories induces severe behavioral regression, strategically balancing them with successful sam-ples provides the policy with crucial counterfactual skills. This integration explicitly penalizes degenerate latent behav-iors and significantly enhances the robustness of the learned skills against complex execution boundary conditions. 
+
+## 5 Conclusions 
+
+In this work, we presented CodeSkill, a novel framework for repository-level code generation that shifts reinforcement learning from low-level token optimization to high-level skill reasoning. By abstracting historical interaction trajectories into hierarchical semantic skills and grounding policy op-timization in a structured latent space, CodeSkill enables more effective long-horizon exploration while leveraging the reasoning capabilities of the underlying LLM. Exten-sive experiments on both public and industrial benchmarks demonstrate consistent improvements in repository-level code generation performance and long-horizon decision making. Moreover, the strong transferability and cross-domain general-ization of the learned hierarchical skills suggest that semantic skill abstraction provides a promising foundation for scalable and robust code agents. 
+
+## References 
+
+Agarwal, S.; Ahmad, L.; Ai, J.; Altman, S.; Applebaum, A.; Arbus, E.; Arora, R. K.; Bai, Y.; Baker, B.; Bao, H.; et al. 2025. gpt-oss-120b & gpt-oss-20b model card. arXiv preprint arXiv:2508.10925 .Alzubi, S.; Provenzano, N.; Bingham, J.; Chen, W.; and Vu, T. 2026. Evoskill: Automated skill discovery for multi-agent systems. arXiv preprint arXiv:2603.02766 .Anthropic. 2026. Introducing Claude Sonnet 4.6. Austin, J.; Odena, A.; Nye, M.; Bosma, M.; Michalewski, H.; Dohan, D.; Jiang, E.; Cai, C.; Terry, M.; Le, Q.; et al. 2021. Program synthesis with large language models. arXiv preprint arXiv:2108.07732 .Barres, V.; Dong, H.; Ray, S.; Si, X.; and Narasimhan, K. 2025. tau2-Bench: Evaluating Conversational Agents in a Dual-Control Environment. arXiv preprint arXiv:2506.07982 .ByteDance Seed Team. 2025. Seed-oss open-source models. Cao, R.; Chen, M.; Chen, J.; Cui, Z.; Feng, Y.; Hui, B.; Jing, Y.; Li, K.; Li, M.; Lin, J.; et al. 2026. Qwen3-coder-next technical report. arXiv preprint arXiv:2603.00729 .Chen, M.; Tworek, J.; Jun, H.; Yuan, Q.; Pinto, H. P. D. O.; Kaplan, J.; Edwards, H.; Burda, Y.; Joseph, N.; Brockman, G.; et al. 2021. Evaluating large language models trained on code. arXiv preprint arXiv:2107.03374 .Cheng, Y.; Chen, J.; Chen, J.; Chen, L.; Chen, L.; Chen, W.; Chen, Z.; Geng, S.; Li, A.; Li, B.; et al. 2024. Fullstack bench: Evaluating llms as full stack coders. arXiv preprint arXiv:2412.00535 .Deng, X.; Gu, Y.; Zheng, B.; Chen, S.; Stevens, S.; Wang, B.; Sun, H.; and Su, Y. 2023. Mind2web: Towards a generalist agent for the web. Advances in Neural Information Processing Systems , 36: 28091–28114. Dettmers, T.; Pagnoni, A.; Holtzman, A.; and Zettlemoyer, L. 2023. Qlora: Efficient finetuning of quantized llms. Advances in neural information processing systems , 36: 10088–10115. Du, M.; Tuan, L. A.; Ji, B.; Liu, Q.; and Ng, S.-K. 2024. Mercury: A code efficiency benchmark for code large language models. Advances in Neural Information Processing Systems ,37: 16601–16622. Feng, L.; Xue, Z.; Liu, T.; and An, B. 2025. Group-in-group policy optimization for llm agent training. arXiv preprint arXiv:2505.10978 .Gu, A.; Rozière, B.; Leather, H.; Solar-Lezama, A.; Syn-naeve, G.; and Wang, S. I. 2024. Cruxeval: A benchmark for code reasoning, understanding and execution. arXiv preprint arXiv:2401.03065 .Guan, Y.; Wang, D.; Wang, Y.; Wang, H.; Sun, R.; Zhuang, C.; Gu, J.; and Chu, Z. 2024. Explainable behavior cloning: Teaching large language model agents through learning by demonstration. arXiv preprint arXiv:2410.22916 .Guan, Y.; Wang, X.; Xing, X.; Zhang, J.; Xu, D.; and Yu, Q. 2026. Cad-coder: Text-to-cad generation with chain-of-thought and geometric reward. Advances in Neural Informa-tion Processing Systems , 38: 59765–59789. GX-Chen, A.; Prakash, J.; Guo, J.; Fergus, R.; and Ranganath, R. 2025. KL-Regularized Reinforcement Learning is De-signed to Mode Collapse. arXiv preprint arXiv:2510.20817 .Hu, E. J.; Shen, Y.; Wallis, P.; Allen-Zhu, Z.; Li, Y.; Wang, S.; Wang, L.; Chen, W.; et al. 2022. Lora: Low-rank adaptation of large language models. Iclr , 1(2): 3. Hui, B.; Yang, J.; Cui, Z.; Yang, J.; Liu, D.; Zhang, L.; Liu, T.; Zhang, J.; Yu, B.; Lu, K.; et al. 2024. Qwen2. 5-coder technical report. arXiv preprint arXiv:2409.12186 .Jain, N.; Gu, A.; Li, W.-D.; Yan, F.; Zhang, T.; Wang, S.; Solar-Lezama, A.; Sen, K.; and Stoica, I. 2025. Livecodebench: Holistic and contamination free evaluation of large language models for code. In International Conference on Learning Representations , volume 2025, 58791–58831. Jiang, J.; Wang, F.; Shen, J.; Kim, S.; and Kim, S. 2026. A survey on large language models for code generation. ACM Transactions on Software Engineering and Methodology ,35(2): 1–72. Jin, P.; Huang, D.; Li, C.; Cheng, S.; Zhao, Y.; Zheng, X.; Zhu, J.; Xing, S.; Dou, B.; Zhang, R.; et al. 2025. Realbench: Benchmarking verilog generation models with real-world ip designs. arXiv preprint arXiv:2507.16200 .Joel, S.; Wu, J.; and Fard, F. 2024. A survey on llm-based code generation for low-resource and domain-specific program-ming languages. ACM Transactions on Software Engineering and Methodology .Li, J.; Hui, B.; Qu, G.; Yang, J.; Li, B.; Li, B.; Wang, B.; Qin, B.; Geng, R.; Huo, N.; et al. 2023. Can llm already serve as a database interface? a big bench for large-scale database grounded text-to-sqls. Advances in Neural Information Pro-cessing Systems , 36: 42330–42357. Li, J.; Li, S.; Gao, Z.; Shi, Q.; Li, Y.; Wang, Z.; Huang, J.; WangHaojie, W.; Wang, J.; Han, X.; et al. 2025. Tritonbench: Benchmarking large language model capabilities for gener-ating triton operators. In Findings of the Association for Computational Linguistics: ACL 2025 , 23053–23066. Liu, A.; Mei, A.; Lin, B.; Xue, B.; Wang, B.; Xu, B.; Wu, B.; Zhang, B.; Lin, C.; Dong, C.; et al. 2025. Deepseek-v3. 2: Pushing the frontier of open large language models. arXiv preprint arXiv:2512.02556 .Liu, J.; Xia, C. S.; Wang, Y.; and Zhang, L. 2023. Is your code generated by chatgpt really correct? rigorous evaluation of large language models for code generation. Advances in neural information processing systems , 36: 21558–21572. MiniMax. 2026. Minimax m2.5: Built for real-world produc-tivity. Ouyang, A.; Guo, S.; Arora, S.; Zhang, A. L.; Hu, W.; Ré, C.; and Mirhoseini, A. 2025. Kernelbench: Can llms write efficient gpu kernels? arXiv preprint arXiv:2502.10517 .Pateria, S.; Subagdja, B.; Tan, A.-h.; and Quek, C. 2021. Hierarchical reinforcement learning: A comprehensive survey. 
+
+ACM Computing Surveys (CSUR) , 54(5): 1–35. Patil, S. G.; Mao, H.; Yan, F.; Ji, C. C.-J.; Suresh, V.; Stoica, I.; and Gonzalez, J. E. 2025. The berkeley function calling leaderboard (bfcl): From tool use to agentic evaluation of large language models. In Forty-second International Conference on Machine Learning .Purini, S.; Garg, S.; Gaur, M.; Bhat, S.; Mupparapu, S.; and Ravindran, A. 2025. ArchXBench: A Complex Digital Systems Benchmark Suite for LLM Driven RTL Synthesis. In 2025 ACM/IEEE 7th Symposium on Machine Learning for CAD (MLCAD) , 1–10. IEEE. Qwen. 2025. Qwen3-Coder: Agentic Coding in the World. https://qwenlm.github.io/blog/qwen3-coder. Seed, B.; Zhang, Y.; Su, J.; Sun, Y.; Xi, C.; Xiao, X.; Zheng, S.; Zhang, A.; Liu, K.; Zan, D.; et al. 2025. Seed-coder: Let the code model curate data for itself. arXiv preprint arXiv:2506.03524 .Sellergren, A.; Kazemzadeh, S.; Jaroensri, T.; Kiraly, A.; Traverse, M.; Kohlberger, T.; Xu, S.; Jamil, F.; Hughes, C.; Lau, C.; et al. 2025. Medgemma technical report. arXiv preprint arXiv:2507.05201 .Seo, S.; Lee, B.-J.; Lee, J.; Hwang, H.; Yang, H.; and Kim, K.-E. 2024. Mitigating covariate shift in behavioral cloning via robust stationary distribution correction. Advances in Neural Information Processing Systems , 37: 109177–109201. SweBenchVerified. 2025. SweBenchVerified. https://openai. com/index/introducing-swe-bench-verified/. Team, K.; Bai, T.; Bai, Y.; Bao, Y.; Cai, S.; Cao, Y.; Charles, Y.; Che, H.; Chen, C.; Chen, G.; et al. 2026. Kimi K2. 5: Visual Agentic Intelligence. arXiv preprint arXiv:2602.02276 .Team, K.; Bai, Y.; Bao, Y.; Charles, Y.; Chen, C.; Chen, G.; Chen, H.; Chen, H.; Chen, J.; Chen, N.; et al. 2025. Kimi k2: Open agentic intelligence. arXiv preprint arXiv:2507.20534 .Team, Q. 2026. Qwen3.5: Towards Native Multimodal Agents. Team, T. ???? Terminal-bench: A benchmark for ai agents in terminal environments, Apr 2025. URL https://github. com/laude-institute/terminal-bench .Wang, C.; Li, Z.; Bai, J.; Zhang, Y.; Cui, S.; Zhao, Z.; and Wang, Y. 2025. Arbitrary Entropy Policy Optimization Breaks The Exploration Bottleneck of Reinforcement Learning. arXiv preprint arXiv:2510.08141 .Wang, G.; Xie, Y.; Jiang, Y.; Mandlekar, A.; Xiao, C.; Zhu, Y.; Fan, L.; and Anandkumar, A. 2023. Voyager: An open-ended embodied agent with large language models. arXiv preprint arXiv:2305.16291 .Wei, A.; Suresh, T.; Tan, H.; Xu, Y.; Singh, G.; Wang, K.; and Aiken, A. 2025. SuperCoder: Assembly Program Super-optimization with Large Language Models. arXiv preprint arXiv:2505.11480 .Wen, X.; Liu, Z.; Zheng, S.; Ye, S.; Wu, Z.; Wang, Y.; Xu, Z.; Liang, X.; Li, J.; Miao, Z.; et al. 2025. Reinforcement learning with verifiable rewards implicitly incentivizes correct reasoning in base llms. arXiv preprint arXiv:2506.14245 .Xia, P.; Chen, J.; Wang, H.; Liu, J.; Zeng, K.; Wang, Y.; Han, S.; Zhou, Y.; Zhao, X.; Chen, H.; et al. 2026. Skillrl: Evolving agents via recursive skill-augmented reinforcement learning. 
+
+arXiv preprint arXiv:2602.08234 .Xu, R.; and Yan, Y. 2026. Agent skills for large language mod-els: Architecture, acquisition, security, and the path forward. 
+
+arXiv preprint arXiv:2602.12430 .Xu, Y.; Lu, D.; Shen, Z.; Wang, J.; Wang, Z.; Mao, Y.; Xiong, C.; and Yu, T. 2024. Agenttrek: Agent trajectory synthesis via guiding replay with web tutorials. arXiv preprint arXiv:2412.09605 .Yang, A.; Li, A.; Yang, B.; Zhang, B.; Hui, B.; Zheng, B.; Yu, B.; Gao, C.; Huang, C.; Lv, C.; et al. 2025a. Qwen3 technical report. arXiv preprint arXiv:2505.09388 .Yang, J.; Jimenez, C. E.; Wettig, A.; Lieret, K.; Yao, S.; Narasimhan, K.; and Press, O. 2024. Swe-agent: Agent-computer interfaces enable automated software engineering. 
+
+Advances in Neural Information Processing Systems , 37: 50528–50652. Yang, J.; Lieret, K.; Jimenez, C. E.; Wettig, A.; Khandpur, K.; Zhang, Y.; Hui, B.; Press, O.; Schmidt, L.; and Yang, D. 2025b. Swe-smith: Scaling data for software engineering agents. arXiv preprint arXiv:2504.21798 .Yang, J.; Zhang, W.; Wu, J.; Cheng, J.; Zheng, T.; Xu, F.; Gu, W.; Jing, L.; Du, Y.; Li, J.; et al. 2026. InCoder-32B-Thinking: Industrial Code World Model for Thinking. arXiv preprint arXiv:2604.03144 .Yang, Z.; Wang, S.; Fu, K.; He, W.; Xiong, W.; Liu, Y.; Miao, Y.; Gao, B.; Wang, Y.; Ma, Y.; et al. 2025c. Kimi-dev: Agentless training as skill prior for swe-agents. arXiv preprint arXiv:2509.23045 .Yu, Q.; Zhang, Z.; Zhu, R.; Yuan, Y.; Zuo, X.; Yue, Y.; Dai, W.; Fan, T.; Liu, G.; Liu, L.; et al. 2025. Dapo: An open-source llm reinforcement learning system at scale. arXiv preprint arXiv:2503.14476 .Yu, T.; Zhang, R.; Yang, K.; Yasunaga, M.; Wang, D.; Li, Z.; Ma, J.; Li, I.; Yao, Q.; Roman, S.; et al. 2018. Spider: A large-scale human-labeled dataset for complex and cross-domain semantic parsing and text-to-sql task. In Proceedings of the 2018 conference on empirical methods in natural language processing , 3911–3921. Zeng, A.; Lv, X.; Hou, Z.; Du, Z.; Zheng, Q.; Chen, B.; Yin, D.; Ge, C.; Huang, C.; Xie, C.; et al. 2026a. Glm-5: from vibe coding to agentic engineering. arXiv preprint arXiv:2602.15763 .Zeng, A.; Lv, X.; Zheng, Q.; Hou, Z.; Chen, B.; Xie, C.; Wang, C.; Yin, D.; Zeng, H.; Zhang, J.; et al. 2025. Glm-4.5: Agentic, reasoning, and coding (arc) foundation models. 
+
+arXiv preprint arXiv:2508.06471 .Zeng, J.; Fu, D.; Mi, T.; Zhuang, Y.; Huang, Y.; Li, X.; Ye, L.; Xie, M.; Hua, Q.; Huang, Z.; et al. 2026b. davinci-dev: Agent-native mid-training for software engineering. arXiv preprint arXiv:2601.18418 .Zhan, Z.; Deng, K.; Wang, J.; Zhang, X.; Tang, H.; Zhang, M.; Lai, Z.; Huang, H.; Xiang, W.; Wu, K.; et al. 2025. Kat-coder technical report. arXiv preprint arXiv:2510.18779 .Zhang, H.; Liu, X.; Lv, B.; Sun, X.; Jing, B.; Iong, I. L.; Hou, Z.; Qi, Z.; Lai, H.; Xu, Y.; et al. 2025. Agentrl: Scaling agentic reinforcement learning with a multi-turn, multi-task framework. arXiv preprint arXiv:2510.04206 .Zhang, H.; Long, Q.; Bao, J.; Feng, T.; Zhang, W.; Yue, H.; and Wang, W. 2026. MemSkill: Learning and Evolving Memory Skills for Self-Evolving Agents. arXiv preprint arXiv:2602.02474 .Zheng, Y.; Zhang, R.; Zhang, J.; Ye, Y.; and Luo, Z. 2024. Llamafactory: Unified efficient fine-tuning of 100+ language models. In Proceedings of the 62nd annual meeting of the association for computational linguistics (volume 3: system demonstrations) , 400–410. Zhipu, A. 2025. Glm-4.7: Advancing the coding capability. Zhu, Q.; Guo, D.; Shao, Z.; Yang, D.; Wang, P.; Xu, R.; Wu, Y.; Li, Y.; Gao, H.; Ma, S.; et al. 2024. Deepseek-coder-v2: Breaking the barrier of closed-source models in code intelligence. arXiv preprint arXiv:2406.11931 .Zhuo, T. Y.; Vu, M. C.; Chim, J.; Hu, H.; Yu, W.; Widyasari, R.; Yusuf, I. N. B.; Zhan, H.; He, J.; Paul, I.; et al. 2025. Bigcodebench: Benchmarking code generation with diverse function calls and complex instructions. In International Con-ference on Learning Representations , volume 2025, 66602– 66656. 
+
+## 6 Benchmark Details 
+
+6.1 Baselines 
+
+To ensure the integrity of our evaluation and strictly rule out data contamination, we conducted rigorous checks, confirm-ing zero data overlap among the training corpora (SWE-Smith and daVinci-Dev), the constructed skill library, and the final evaluation benchmarks. Our proposed CodeSkill model is trained based on the frozen Qwen2.5-Coder-32B-Instruct backbone with LoRA fine-tuning and latent skill reinforce-ment learning. Because general-code and industrial-code benchmarks target distinct skill sets, we utilize tailored baseline configura-tions for each setting, ensuring that our reference models are highly competitive and relevant to each benchmark category. For the general-code evaluations, CodeSkill is com-pared alongside a robust selection of models. These in-clude DeepSeek-Coder-V2-Lite-Instruct (Zhu et al. 2024) and DeepSeek-V3.2 (Liu et al. 2025); the Qwen2.5-Coder series (7B, 14B, and 32B variants) (Hui et al. 2024); Qwen3-235B-A22B-Instruct-2507 and Qwen3-235B-A22B-Thinking2507 (Yang et al. 2025a); Qwen3-Coder-30B-A3B-Instruct and Qwen3-Coder-480B-A35B-Instruct (Qwen 2025); SeedCoder-8B-Instruct (Seed et al. 2025); Kimi-Dev-72B (Yang et al. 2025c); Kimi-K2-Instruct-0905 and Kimi-K2-Thinking (Team et al. 2025); KAT-Dev and KAT-Dev-72B-Exp (Zhan et al. 2025); GLM-4.7 (Zhipu 2025); and InCoder-32B (Yang et al. 2026). By spanning a wide spec-trum of parameter scales and incorporating both dense and mixture-of-experts (MoE) architectures, this ensemble pro-vides a rigorous comparative standard for measuring general coding capabilities. For industrial-code evaluations, we deploy a specialized set of baselines curated specifically for their relevance to hardware-aware code generation, program optimization, and other domain-specific engineering tasks. Our comparison en-compasses a robust lineup of models, including the Qwen3.5 series (9B, 27B, and 397B-A17B) (Team 2026); the Qwen3-Coder family (30B-A3B and 480B-A35B) (Qwen 2025; Cao et al. 2026); DeepSeek-V3.2 (Liu et al. 2025); GLM-4.7 (Zhipu 2025) and GLM5 (Zeng et al. 2026a); Kimi-K2.5 (Team et al. 2026), alongside Kimi-K2-Instruct and Kimi-K2-Thinking (Team et al. 2025); MiniMax-M2.5 (Min-iMax 2026); Seed-OSS-36B-Instruct (ByteDance Seed Team 2025); and the GPT-OSS models (20B and 120B) (Agarwal et al. 2025). Furthermore, we incorporate ClaudeSonnet-4.6 (Anthropic 2026) to serve as a strong proprietary reference. This carefully selected ensemble ensures a comprehensive evaluation of CodeSkill against the leading systems in spe-cialized industrial applications. 
+
+6.2 Benchmarks 
+
+General Code Benchmarks. Following the established evaluation protocol of CodeSkill, we assess CodeSkill across a comprehensive suite of general code benchmarks. This suite is designed to test a wide array of capabilities, including code generation, reasoning, efficiency, text2SQL translation, agentic coding, and tool utilization. The evaluated bench-marks comprise EvalPlus (Liu et al. 2023) (incorporating HumanEval (Chen et al. 2021) and MBPP (Austin et al. 2021)), BigCodeBench (Zhuo et al. 2025), FullStackBench (Cheng et al. 2024), CRUXEval (Gu et al. 2024), LiveCodeBench (Jain et al. 2025), Mercury (Du et al. 2024), Spider (Yu et al. 2018), BIRD (Li et al. 2023), Terminal-Bench (Team), SWE-bench Verified (SweBenchVerified 2025), Mind2Web (Deng et al. 2023), BFCL V3 (Patil et al. 2025), and τ 2-bench (Barres et al. 2025). Detailed descriptions of these benchmarks and the corresponding evaluation methodologies are provided in Appendix. 
+
+Industrial Code Benchmarks. Our primary focus lies in the evaluation of industrial coding capabilities. To this end, we employ the rigorous benchmark suite intro-duced with CodeSkill, which targets hardware-oriented and engineering-intensive programming tasks. Specifically, we report performance on VeriScope, RealBench (Jin et al. 2025), ArchXBench (Purini et al. 2025), and VeriRepair for chip de-sign; KernelBench (Ouyang et al. 2025) and TritonBench (Li et al. 2025) for GPU kernel optimization; EmbedCGen and SuperCoder (Wei et al. 2025) for low-level code optimization; and CAD-Coder (Guan et al. 2026) for 3D modeling. These benchmarks present a substantially higher degree of difficulty compared to standard software tasks. They necessitate that models adhere to strict compilation and simulation constraints, reason deeply about hardware architecture and performance trade-offs, and generate outputs validated by specialized, domain-specific pipelines. Consequently, these benchmarks serve as our primary testbed to ascertain CodeSkill’s efficacy in complex, real-world industrial coding scenarios. 
+
+6.3 General Code Benchmarks 
+
+Code Generation. EvalPlus (Liu et al. 2023) signifi-cantly augments traditional benchmarks, specifically Hu-manEval (Chen et al. 2021) and MBPP (Austin et al. 2021), by introducing an extensive set of rigorous test cases. This enhancement effectively mitigates false positives and provides a more granular assessment of functional correctness in short Python programs. BigCodeBench (Zhuo et al. 2025) evalu-ates the capacity of models to invoke complex third-party libraries, utilizing 1,140 task-oriented prompts that necessitate cross-library orchestration and intricate API compositions. Furthermore, FullStackBench (Cheng et al. 2024) broadens the evaluation scope across 16 programming languages and Table 6: Performance comparison on agentic coding tasks (Terminal-Bench v1.0, Terminal-Bench v2.0, SWE-Verified) and general tool-use tasks (Mind2Web, BFCL V3, τ 2-bench). Model Size Agentic Coding General Tool Use Terminal-Bench SWE-bench Verified Mind2Web BFCL V3 τ 2-bench v1.0 v2.0 Airline Retail Telecom                                                                                                                                                                            
+
+> 6B+ Models
+> DeepSeek-Coder-V2-Lite-Instruct 2.4/16B 5.0 --26.7 -3.5 12.0 -Qwen2.5-Coder-7B-Instruct 7B 6.3 --38.4 54.2 ---Seed-Coder-8B-Instruct 8B 7.5 2.5 -38.2 -4.3 32.0 -Qwen2.5-Coder-14B-Instruct 14B 8.8 --42.7 59.9 ---
+> 30B+ Models
+> Qwen3-Coder-30B-A3B-Instruct 3.3/30.5B 23.8 23.8 51.9 36.1 63.4 42.0 25.4 25.4 DeepSeek-v3.2 37/671B 23.8 46.4 73.1 47.2 68.8 63.8 81.1 96.2 Qwen2.5-Coder-32B-Instruct 32B 5.0 4.5 -32.5 62.3 ---Qwen3-235B-A22B-Instruct-2507 22/235B 15.0 13.5 45.2 49.0 71.2 50.0 74.6 32.5 Qwen3-235B-A22B-Thinking-2507 22/235B 8.8 3.4 44.6 43.2 71.9 58.0 71.9 45.6 Qwen3-Coder-480B-A35B-Instruct 35/480B 37.5 23.6 67.0 54.0 68.7 60.0 77.5 65.8 Kimi-Dev-72B 72B -2.3 60.4 -55.5 21.9 32.0 35.1 Kimi-K2-Instruct-0905 32B/1T 44.5 27.8 69.2 53.4 70.3 56.5 70.6 65.8 Kimi-K2-Thinking 32B/1T 47.1 33.7 71.3 55.7 ----KAT-Dev 32B 17.5 10.1 62.4 33.7 64.7 32.0 28.0 35.1 KAT-Dev-72B-Exp 72B 21.3 7.9 74.6 -----GLM-4.7 32/355B 36.3 41.0 73.8 53.7 64.8 60.0 70.2 75.4 InCoder-32B 32B 35.0 22.5 74.8 55.8 61.0 70.0 85.1 86.8 InCoder-32B-Thinking 32B 38.8 21.6 70.4 49.1 63.9 62.0 86.0 95.6 CodeSkill 32B 42.6 29.3 76.2 57.8 68.1 76.9 89.4 97.1
+
+over 4,000 programming problems from diverse application domains, comprehensively measuring full-stack development capabilities in real-world scenarios. 
+
+Code Reasoning. To probe the underlying execution logic comprehension of language models, CRUXEval (Gu et al. 2024) formulates input and output prediction tasks on 800 concise Python programs, compelling the model to perform in-ternal execution tracing. Concurrently, LiveCodeBench (Jain et al. 2025) dynamically aggregates challenging competitive programming problems from platforms such as LeetCode, AtCoder, and Codeforces. Benefiting from its contamination-free, time-stamped data splitting mechanism, this benchmark effectively circumvents pre-training data leakage, enabling a rigorous evaluation of zero-shot algorithmic problem-solving (we evaluate on versions V5 and V6). 
+
+Code Efficiency. Transcending the conventional paradigm of merely assessing functional executability, Mercury (Du et al. 2024) focuses on whether models can generate runtime-efficient algorithmic solutions. By jointly reporting Be-yond@1 and Pass@1 metrics, this benchmark provides a dual evaluation of both logical correctness and computational efficiency. 
+
+Text2SQL. Spider (Yu et al. 2018) and BIRD (Li et al. 2023) serve as highly challenging cross-database text2SQL benchmarks, requiring models to accurately translate complex natural language queries into executable SQL statements. These benchmarks rigorously test deep schema alignment and understanding, alongside the advanced relational reasoning capabilities necessary for handling complex JOIN operations, nested queries, and intricate aggregations. 
+
+Agentic Coding. Terminal-Bench (Team) evaluates the capability of agents to engage in multi-turn, dynamic in-teractions within terminal environments for software engi-neering tasks, with its v1.0 and v2.0 iterations presenting a progressive escalation in task complexity. SWE-bench Verified (SweBenchVerified 2025) constructs an end-to-end software development scenario, challenging models to au-tonomously resolve real-world issues from authentic GitHub repositories. This comprehensively assesses repository-level code understanding, dynamic patch generation, and automated test validation capabilities. 
+
+Tool Use. Mind2Web (Deng et al. 2023) establishes a bench-mark for web navigation agents, necessitating precise element localization and the execution of complex action sequences within authentic, dynamic Document Object Model (DOM) environments. BFCL V3 (Patil et al. 2025) conducts a broad evaluation of function-calling accuracy and robustness across highly diverse API schemas. Additionally, τ 2-bench (Barres et al. 2025) focuses on agent performance in multi-turn con-versational scenarios across three customer service domains (Airline, Retail, and Telecom). In this context, the agent must persistently track user states and leverage tool-augmented dialogue strategies to successfully resolve complex, long-tail requests. 
+
+## 7 More Experiments 
+
+7.1 Implementation Details 
+
+Datasets. For SFT tuning, we use the SWE-Smith dataset (Yang et al. 2025b), which does not rely on ora-cles. For reinforcement learning training, we use daVinci-Dev dataset (Zeng et al. 2026b). Models. We evaluate a diverse set of models from three dif-ferent families, with sizes ranging from 4B to 106B: Qwen3-4B-Instruct-2507 (Yang et al. 2025a), Gemma-3-27b-it (Sel-lergren et al. 2025), Qwen3-Coder-30B-A3B-Instruct, and GLM4.5-Air-106B (Zeng et al. 2025). The parameters are in Table 7. Table 7: Hyperparameter settings for CodeSkill training and inference.                            
+
+> Category Hyperparameter Value Architecture
+> Latent Dimension ( dz)256 Soft Prompt Length 16 LoRA Rank ( r)16 LoRA Alpha ( α)32
+> Variational Inference
+> High-level KL Weight ( βH)0.1 Mid-level KL Weight ( βM)0.1 Low-level KL Weight ( βL)0.05 Boundary KL Weight ( βB)0.01 Gumbel-Softmax Temperature ( τ)0.8
+> PPO Optimization
+> PPO Clip Ratio ( ϵ)0.2 PPO Batch Size 128 PPO Optimization Epochs 4GAE Parameter ( γ,λGAE )0.99, 0.95 RL Objective Weight ( λ)1.0
+> Training & Sampling
+> Optimizer AdamW Peak Learning Rate 1e-4 Weight Decay 0.01 Teacher Model Temperature ( T)0.7
+
+Training and Inference. We train with LLaMAFac-tory (Zheng et al. 2024) and set the maximum training sequence length to 18,000 tokens to accommodate long SWE trajectories. To manage memory, we use QLoRA (Dettmers et al. 2023) for GLM-4.5-Air and LoRA (Hu et al. 2022) for the other models. During SFT and preference training, we mask system and user prompts and make the LLM response as the learning target. At inference, we allow up to 200 envi-ronment interactions per rollout and a maximum sequence length of 131,072 tokens, with temperature 0.7 and top k =20. For test-time scaling, we run N = 16 parallel rollouts for openweight models. To account for sampling randomness, all experiments on open-weight models are run three times, and we report the mean ± standard deviation. 
+
+7.2 More Results 
+
+The result is shown in Table8. 
+
+More Ablation Experiments More ablations experiments are in Table 9, Table 10, Table 11, Table 12. 
+
+7.3 Quantitative Evaluation of the Skill Library 
+
+To rigorously evaluate the practical utility of the proposed code skill library, we monitor the invocation frequency of individual skills across the evaluation dataset (see Figure 5). The usage pattern exhibits a characteristic long-tail distribu-tion. Foundational operations, such as JSON parsing and file I/O, demonstrate high invocation rates, underscoring their broad generalizability. Conversely, domain-specific skills are invoked sparsely but precisely when required, indicating that 
+
+Figure 3: Comparison of trajectory efficiency and interaction steps required to complete coding tasks with and without the skill library. the library maintains high task relevance without introducing retrieval noise. Furthermore, we extract semantic embeddings for each skill utilizing [CodeBERT/OpenAI API] and project them into a two-dimensional space via t-SNE visualization (Figure 4). Subsequent K-Means clustering analysis quantitatively substantiates that the skills self-organize into distinct func-tional categories, such as Data I/O, Array Manipulation, and API Interaction. This clustering validates that the constructed library possesses both semantic diversity and comprehensive functional coverage. To complement the automated metrics, a manual assess-ment was conducted by two independent domain experts. The experts evaluated a randomly sampled subset of 50 generated skills using a 5-point Likert scale, focusing on correctness and reusability. The evaluation yielded an average correct-ness score of 4.2 out of 5.0. To ensure the robustness of this assessment and mitigate subjective bias, we calculated Co-hen’s Kappa ( κ = 0 .82 ), demonstrating substantial inter-rater reliability. Finally, we analyze the reasoning efficiency at the trajectory level (Figure 3). Compared to the baseline agent lacking skill access, agents equipped with our skill library exhibit a 45% 
+
+reduction in the average number of interaction steps required to successfully resolve tasks (decreasing from 12 .3 to 6.8
+
+steps). Moreover, the task success rate, constrained within a 15-step limit, significantly improves from 62% to 94% . These trajectory-level improvements empirically demonstrate that predefined skills effectively prune the search space and guide the language agent toward optimal problem-solving pathways. Table 8: Performance comparison on code reasoning (CruxEval, LiveCodeBench), code efficiency (Mercury), and Text2SQL (Bird, Spider) benchmarks. Model Size Code Reasoning Code Efficiency Text2SQL CruxEval LiveCodeBench Mercury Bird Spider Input-COT Output-COT V5 V6 Beyond@1 Pass@1 
+
+6B+ Models 
+
+DeepSeek-Coder-V2-Lite-Instruct 2.4/16B 57.1 56.2 13.2 19.4 76.8 91.4 41.6 72.4 Qwen2.5-Coder-7B-Instruct 7B 66.9 66.0 14.4 18.9 69.9 84.8 53.1 79.8 Seed-Coder-8B-Instruct 8B 62.0 66.6 19.2 22.3 78.5 93.8 44.7 72.7 Qwen2.5-Coder-14B-Instruct 14B 75.6 79.2 22.8 24.6 76.7 88.3 59.1 81.3 
+
+30B+ Models 
+
+Qwen3-Coder-30B-A3B-Instruct 3.3/30.5B 76.9 80.5 43.1 36.0 81.1 95.3 59.0 80.9 DeepSeek-v3.2 37/671B 82.1 94.2 - 83.3 81.6 96.9 52.6 77.9 Qwen2.5-Coder-32B-Instruct 32B 78.8 84.0 30.5 27.4 79.1 96.1 62.1 83.9 Qwen3-235B-A22B-Instruct-2507 22/235B 62.0 89.5 53.9 51.8 80.4 96.9 62.8 81.1 Qwen3-235B-A22B-Thinking-2507 22/235B 15.2 46.9 80.2 74.1 61.2 70.3 35.2 42.6 Qwen3-Coder-480B-A35B-Instruct 35/480B 87.1 90.4 48.6 53.9 80.2 96.1 61.3 81.2 Kimi-Dev-72B 72B 33.0 64.2 46.1 40.0 59.1 69.5 - -Kimi-K2-Instruct-0905 32B/1T 86.8 89.5 52.1 53.7 76.1 90.6 60.4 81.1 Kimi-K2-Thinking 32B/1T 92.2 86.2 - 83.1 73.0 85.2 40.6 49.6 KAT-Dev 32B 42.5 65.1 32.9 32.6 75.1 89.1 52.2 77.6 KAT-Dev-72B-Exp 72B 71.4 81.1 13.8 16.0 79.0 94.5 35.2 60.3 GLM-4.7 32/355B 65.6 81.2 - 84.9 74.1 86.7 46.5 62.4 InCoder-32B 32B 62.4 73.9 53.3 49.1 71.4 85.6 55.4 79.7 InCoder-32B-Thinking 32B 88.9 95.5 81.3 77.1 62.4 73.4 47.9 66.7 CodeSkill 32B 92.8 97.3 83.7 86.1 82.3 97.8 63.2 84.9 
+
+Table 9: Ablation study on code reasoning (CruxEval, LiveCodeBench), code efficiency (Mercury), and Text2SQL (Bird, Spider) benchmarks. Model CruxEval LiveCodeBench Mercury Text2SQL Input-COT Output-COT V5 V6 Beyond@1 Pass@1 Bird Spider CodeSkill (32B) 92.8 97.3 83.7 86.1 82.3 97.8 63.2 84.9 
+
+Hierarchy Ablations 
+
+w/o hierarchy 88.5 93.6 78.4 80.6 76.5 93.9 56.4 78.5 w/o zH 89.2 94.4 79.5 81.8 77.8 94.7 57.8 79.8 w/o zM 88.7 93.8 78.7 80.9 76.9 94.1 56.7 78.9 w/o zL 90.1 95.1 80.2 82.5 78.6 95.5 58.9 81.1 
+
+VAE & Modeling Ablations 
+
+deterministic posterior (mean only) 89.0 94.1 79.1 81.3 77.3 94.4 57.2 79.3 no boundary (fixed segmentation) 89.6 94.8 79.8 82.1 78.1 95.1 58.1 80.5 
+
+Learning Mechanism & Decomposition Ablations 
+
+token-level RL (w/o skills) 88.9 93.9 78.8 81.0 77.0 94.2 56.9 79.0 CodeSkill (SFT only, w/o RL) 87.5 92.4 77.1 79.2 74.8 92.5 54.3 76.4 textual skills + RL (w/o VAE) 88.1 93.1 78.0 80.1 75.9 93.4 55.6 77.7 textual skills (SFT only, w/o RL & VAE) 86.2 91.5 75.6 77.5 73.1 91.2 52.1 74.5 
+
+Data Ablations 
+
+success-only trajectories 89.9 94.9 80.1 82.4 78.4 95.3 58.6 80.9 failure-only trajectories 83.4 88.6 72.3 74.8 69.5 88.1 49.3 71.2 Table 10: Ablation study on agentic coding tasks (Terminal-Bench, SWE-bench Verified) and general tool-use tasks (Mind2Web, BFCL V3, τ 2-bench). Model Agentic Coding General Tool Use Terminal-Bench SWE-bench Mind2Web BFCL V3 τ 2-bench v1.0 v2.0 Airline Retail Telecom CodeSkill (32B) 42.6 29.3 76.2 57.8 68.1 76.9 89.4 97.1 
+
+Hierarchy Ablations 
+
+w/o hierarchy 38.4 24.8 70.4 52.4 63.2 71.5 84.1 93.5 w/o zH 39.1 25.4 71.3 53.1 64.0 72.4 84.9 94.1 w/o zM 38.6 25.0 70.8 52.6 63.5 71.8 84.4 93.7 w/o zL 40.2 26.5 72.8 54.5 65.3 73.8 86.2 95.0 
+
+VAE & Modeling Ablations 
+
+deterministic posterior (mean only) 39.3 25.7 71.6 53.5 64.4 72.8 85.3 94.3 no boundary (fixed segmentation) 39.8 26.1 72.1 54.0 64.8 73.2 85.7 94.7 
+
+Learning Mechanism & Decomposition Ablations 
+
+token-level RL (w/o skills) 38.8 25.2 71.0 52.9 63.8 72.1 84.6 93.9 CodeSkill (SFT only, w/o RL) 36.5 22.8 68.3 50.3 60.5 68.9 81.5 91.2 textual skills + RL (w/o VAE) 37.9 24.1 69.5 51.6 62.1 70.4 82.8 92.4 textual skills (SFT only, w/o RL & VAE) 34.2 21.3 66.4 48.7 58.6 67.2 79.6 89.8 
+
+Data Ablations 
+
+success-only trajectories 40.0 26.3 72.5 54.2 65.1 73.6 86.0 94.8 failure-only trajectories 31.4 18.5 59.8 41.6 54.2 60.5 74.2 85.3 Table 11: Ablation study on chip design benchmarks. Model VeriScope Score VeriRepair Fix (%) RealBench ArchXBench System Module n t
+
+Syn@1 Syn@5 Syn@1 Syn@5 Func@1 Func@5 CodeSkill (32B) 89.6 90.4 43.8 56.4 78.8 85.7 66.2 73.6 4.8 59.5 
+
+Hierarchy Ablations 
+
+w/o hierarchy 84.5 85.3 39.4 51.2 73.2 80.5 60.8 67.9 4.2 53.4 w/o zH 85.2 86.1 40.2 52.1 74.1 81.4 61.5 68.8 4.3 54.2 w/o zM 84.8 85.7 39.7 51.6 73.6 80.9 61.1 68.3 4.2 53.8 w/o zL 86.5 87.4 41.5 53.5 75.8 83.1 63.4 70.5 4.5 56.1 
+
+VAE & Modeling Ablations 
+
+deterministic posterior (mean only) 85.4 86.3 40.5 52.4 74.4 81.7 61.8 69.1 4.3 54.5 no boundary (fixed segmentation) 86.1 87.0 41.1 53.1 75.2 82.5 62.7 69.9 4.4 55.4 
+
+Learning Mechanism & Decomposition Ablations 
+
+token-level RL (w/o skills) 85.1 85.9 40.0 51.9 73.9 81.2 61.4 68.6 4.3 54.0 CodeSkill (SFT only, w/o RL) 81.5 82.2 36.5 48.2 69.5 76.8 56.5 63.8 3.9 49.5 textual skills + RL (w/o VAE) 83.2 84.1 38.1 50.0 71.4 78.6 58.6 65.9 4.1 51.6 textual skills (SFT only, w/o RL & VAE) 79.4 80.1 34.2 45.8 66.8 73.5 53.4 60.7 3.7 46.8 
+
+Data Ablations 
+
+success-only trajectories 86.3 87.2 41.3 53.3 75.5 82.8 63.1 70.2 4.4 55.8 failure-only trajectories 71.2 72.5 28.5 39.4 58.4 64.2 45.2 51.4 3.1 38.5 Table 12: Ablation study on GPU optimization (TritonBench, KernelBench), code optimization (SuperCoder), and 3D modeling (CAD-Coder) benchmarks. Model CAD-Coder EmbedCGen Main (%) SuperCoder TritonBench KernelBench Comp. IoU Acc. (%) Spd. G-call G-exe T-call T-exe L1 L2 L3 (%) (%) (%) (%) CodeSkill (32B) 87.0 56.3 93.4 95.0 1.2 × 28.4 100.0 40.7 100.0 25.2 41.0 15.0 
+
+Hierarchy Ablations 
+
+w/o hierarchy 81.2 51.5 88.6 90.2 1.1 × 24.1 98.5 35.6 98.8 21.5 36.5 12.8 w/o zH 82.0 52.3 89.4 91.1 1.1 × 25.0 98.8 36.5 99.1 22.1 37.2 13.2 w/o zM 81.5 51.8 88.9 90.6 1.1 × 24.5 98.6 36.0 98.9 21.8 36.8 13.0 w/o zL 83.6 54.0 91.0 92.5 1.1 × 26.5 99.2 38.2 99.5 23.5 39.1 14.1 
+
+VAE & Modeling Ablations 
+
+deterministic posterior 82.5 52.8 89.8 91.5 1.1 × 25.4 98.9 36.8 99.2 22.4 37.6 13.4 no boundary 83.1 53.3 90.4 92.0 1.1 × 25.9 99.0 37.4 99.3 22.8 38.2 13.7 
+
+Learning Mechanism & Decomposition Ablations 
+
+token-level RL 82.2 52.5 89.5 91.2 1.1 × 25.2 98.9 36.6 99.1 22.2 37.4 13.3 CodeSkill (SFT only) 78.5 49.2 86.2 88.5 1.0 × 22.5 97.5 33.5 98.0 19.8 34.5 11.5 textual skills + RL 80.4 50.8 87.8 89.8 1.1 × 23.8 98.2 34.8 98.5 20.8 35.8 12.2 textual skills (SFT) 75.2 46.5 83.5 86.4 1.0 × 20.2 96.2 31.0 97.2 18.2 32.1 10.5 
+
+Data Ablations 
+
+success-only 83.8 54.2 91.2 92.8 1.1 × 26.8 99.3 38.5 99.6 23.8 39.5 14.3 failure-only 68.5 41.2 75.4 79.5 0.9 × 15.6 92.5 24.5 93.8 14.5 25.6 8.2 
+
+Figure 4: t-SNE visualization of skill embeddings, illustrating distinct functional clusters. 
+
+Figure 5: Invocation frequency of individual code skills across the evaluation dataset, demonstrating a long-tail distribution.
