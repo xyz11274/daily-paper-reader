@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-01</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-02</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 19 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 29 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>17</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-01 23:01:03 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-02 22:49:46 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读7篇、速读12篇共19篇，重点聚焦自学习具身智能体与递归自我改进。最值得看的是《RoboFoundry》和《R² Flow》两篇9分工作，均指向智能体通过系统级进化实现自我提升。普通读者可优先关注多智能体长程协作与分布式协调的速读方向。</p>
+<p>今日精读17篇、速读12篇，重点锁定VLA自改进与多智能体通信两大高分方向。最值得看的是《Find Something You Can&#x27;t Do》提出的自改进VLA强化学习，以及变带宽下鲁棒多智能体通信的信息瓶颈方法。普通读者可优先从这两篇精读入手，再按兴趣扫读速读中的多智能体优化工作。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">17 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="RoboFoundry: System-as-Policy Evolution for Self-Learning Embodied Agents">RoboFoundry: System-as-Policy Evolution for Self-Learning Embodied Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="R$^2$ Flow: Recursive Self-Improvement via Recursive Skill Evolution">R$^2$ Flow: Recursive Self-Improvement via Recursive Skill Evolution</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Skill Evolution: Self-Evolving Context Management Policies for Long-Horizon Agent Harnesses">Beyond Skill Evolution: Self-Evolving Context Management Policies for Long-Horizon Agent Harnesses</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Find Something You Can&#x27;t Do: Agentic Real-World Reinforcement Learning for Self-Improving VLA Models">Find Something You Can&#x27;t Do: Agentic Real-World Reinforcement Learning for Self-Improving VLA Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="Attention-based Hierarchical Variational Information Bottleneck for Robust Multi-Agent Communication under Variable Bandwidth">Attention-based Hierarchical Variational Information Bottleneck for Robust Multi-Agent Communication under Variable Bandwidth</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-discovering RL in the Era of Experience: Is Learning History an Asset or a Burden?">Self-discovering RL in the Era of Experience: Is Learning History an Asset or a Burden?</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>7</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>13</strong></span><span class="dpr-home-dashboard-tag">multi-agent <strong>4</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,9 +94,9 @@
     <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Multi-agent Scaling Across Disjunctive and Compensatory Tasks">Multi-agent Scaling Across Disjunctive and Compensatory Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgentWorld: Benchmarking Long-Horizon Collaboration of Multi-agent LLMs">AgentWorld: Benchmarking Long-Horizon Collaboration of Multi-agent LLMs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Symbolic Guidance for LLM Agents in Distributed Multiagent Coordination">Symbolic Guidance for LLM Agents in Distributed Multiagent Coordination</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Residual Denoising Enables Sample-Efficient Multi-Agent Coordination on Demand">Residual Denoising Enables Sample-Efficient Multi-Agent Coordination on Demand</span></li><li><span class="dpr-home-dashboard-paper-title" title="Multi-Agent System Search via Active Substructure-aware Policy Optimization">Multi-Agent System Search via Active Substructure-aware Policy Optimization</span></li><li><span class="dpr-home-dashboard-paper-title" title="MA-FPPO: Multi-Agent Flow-Pretrained Policy Optimization">MA-FPPO: Multi-Agent Flow-Pretrained Policy Optimization</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>7</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>5</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>8</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>4</strong></span></div>
 </section>
 </div>
 

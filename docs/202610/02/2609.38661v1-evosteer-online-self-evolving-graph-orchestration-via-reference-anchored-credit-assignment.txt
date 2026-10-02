@@ -1,0 +1,2189 @@
+Title: EvoSteer: Online Self-Evolving Graph Orchestration via Reference-Anchored Credit Assignment
+
+URL Source: https://arxiv.org/pdf/2609.38661v1
+
+Published Time: Thu, 01 Oct 2026 00:32:43 GMT
+
+Number of Pages: 33
+
+Markdown Content:
+Under review as a conference paper at ICLR 2027 
+
+# EVO STEER : O NLINE SELF -E VOLVING GRAPH 
+
+# ORCHESTRATION VIA REFERENCE -A NCHORED 
+
+# CREDIT ASSIGNMENT 
+
+Mingda Zhang 1, Hanwen Zhang 2, Qiang Huang 3, Zijia Wang 4,Pengfei Guo 5, Yuchen Zhang 6, Jionghao Zhu 1, Xiaoying Tang 1
+
+> 1
+
+The Chinese University of Hong Kong, Shenzhen, China 2Dalian University of Technology, China 
+
+> 3
+
+Fudan University, China 4University of Oxford, UK 5North China Electric Power University, China 
+
+> 6
+
+The University of Texas Health Science Center at Houston, USA 
+
+ABSTRACT 
+
+In recent years, LLM-based multi-agent systems have been widely applied to orchestrate tool-using agents into executable communication graphs. However, ex-isting self-evolving orchestration still faces key challenges, including post-hoc evo-lution that revises the team only after the trajectory ends, credit diffusion that gives every action the same terminal advantage under confounded baselines, and skill admission that is uncalibrated and never retired. To address these challenges, we propose EvoSteer, a new paradigm of Online Self-Evolving Graph Orchestration— the orchestrator builds a running team and repairs its plausible but failing steps from execution features and a learned value estimate. To support this paradigm, we intro-duce Anchored Trajectory Balance (AnchorTB), a regression-style flow-matching loss that assigns each orchestration action a coefficient by balancing subtrajectories against a frozen reference. Built on the learned flow, we further propose Validated Skill Admission , in which a candidate skill is tried before promotion and promoted only if paired evidence passes a sequential test under a shared nominal testing bud-get. Moreover, AnchorTB combines measured task-level reference reward statistics with prefix-dependent corrections. Experimental results on twelve datasets show that EvoSteer significantly outperforms baselines across question answering, math-ematical reasoning, code generation, and interactive decision making. Our code is available at https://github.com/beita6969/evosteer .
+
+1 INTRODUCTION 
+
+In recent years, a variety of powerful LLM-based multi-agent systems have been applied to solve a wide range of complex tasks (Yao et al., 2022b; Hong et al., 2024; Zhuge et al., 2024), gradually moving beyond a single model call toward teams of tool-using agents that complete tasks end-to-end. Search    
+
+> Plan
+> Solve
+> Tool
+> Check
+> EvoSteer With Edit
+> Without Edit
+> Add Feedback
+> Estimated Continuation Value
+> Poor Outlook Improved Outlook
+> Execution Record →
+> Learned Estimate
+> Looks good on the surface
+
+Figure 1: Outputs that look plausible can still be headed for failure. EvoSteer reads a low continuation estimate off the execution record and edits the running team, here routing the checker’s report back to the solver; dashed: the same team left unedited. In this process, graph or-chestration has become a key bridge from task goals to reproducible execution: by assigning each node a role and bound skills and each edge a communication pro-tocol on an agent commu-nication graph (Fig. 1, left), agents can complete complex tasks with improved control-lability, compositionality, and reusability (Zhang et al., 2025b; 2026b). However, in practice, orchestration still evolves only between trajectories, by revising skills, prompts, or topology after a batch of runs has ended (Li & Ramakrishnan, 2026; Pan et al., 2026), making a misconfigured team costly to detect, as its outputs still look plausible, and impossible to repair while the workflow is still being executed. To address these issues, three main lines of work have emerged, as shown in Figure 2. First, self-evolving orchestration adapts topologies, role prompts, and skill libraries from the outcomes of 1arXiv:2609.38661v1 [cs.AI] 29 Sep 2026 Under review as a conference paper at ICLR 2027 (a)  Post-hoc Graph Evolution                                   
+
+> Query Plan Tool Solve Check Answer
+> Run to completion (fixed team)
+> Trajectory
+> & Outcome
+> Revise after trajectory ends
+> ×
+> Next run with revised team
+> ×⋯
+> Estimated
+> success
+> Errors may accumulate
+> before revision Revise in next run
+> Steps in current run
+> (b) Outcome-Driven Policy Optimization
+> Query Plan Tool Solve Check Answer Trajectory
+> & Outcome
+> Shared terminal reward
+> R
+> ? ? ??
+> Which steps
+> improve the
+> outcome?
+> Estimated
+> success
+> Training iterations
+> Same credit
+> for every step
+> (c) Experience-Driven Skill Evolution
+> Skill Library
+> Web Search
+> Code Exec
+> Data Analysis
+> Reasoning
+> ⋯
+> Retrieve
+> skills
+> Query Plan Tool Solve Check Answer
+> Evaluate and
+> curate skills
+> ?
+> ?
+> ⋯
+> Add / update skills for future tasks
+> How much
+> evidence is
+> enough for
+> admission?
+> Estimated
+> success
+> Tasks over time
+> Uncertain skill utility
+> may hurt performance
+> (d) Online Self-Evolving Graph Orchestration (Ours) (EvoSteer)
+> Query
+> Tool
+> Solve Check Plan Solve Check Answer
+> Add Rerun Feedback
+> ⋯
+> EvoSteer
+> Revised
+> plan Better
+> answer
+> Estimated
+> success
+> Looks good Poor outlook
+> (before edit)
+> Online edit Recovers within this run
+> (ours)
+> Without edit: stays low
+> Steps in the same run
+> Plan
+
+Figure 2: Three lines of work and ours. (a) Post-hoc evolution revises the team only after the run. 
+
+(b) Outcome-driven optimization spreads one terminal reward over every step. (c) Skill evolution admits by judges or replay. (d) EvoSteer edits the team inside the same run, deciding from measured execution features and a reference value estimate, and admits a skill only after a sequential test. completed trajectories (Li & Ramakrishnan, 2026; Pan et al., 2026; Zhang et al., 2026d), treating the team as an object of learning. Second, credit assignment for multi-agent LLMs converts a shared terminal reward into per-agent or per-message signals through learned critics, leave-one-out baselines, counterfactual replay, and flow-matching objectives (Chen et al., 2026c; Li et al., 2026b; Shah, 2026; Zhang et al., 2026c), telling which step was responsible for the outcome. Third, skill libraries let capability grow across tasks by extracting reusable procedures from trajectories and curating them with judges, replay checks, or posteriors (Wang et al., 2023; Yang et al., 2026a; Wu et al., 2026). However, these methods still face three challenges. (i) Post-hoc evolution. Self-evolving orches-tration revises the team after the trajectory ends, by rounds or batches (Pan et al., 2026; Li & Ramakrishnan, 2026); during execution the orchestrator can only keep adding agents, and the decisive error is locally indistinguishable from a recoverable step (Zhang et al., 2026a), so a wrong agent is neither rerun nor removed until the task has failed. (ii) Credit diffusion. Under a shared terminal reward, trajectory-level methods give every action the same coefficient of a single terminal advantage (Chen et al., 2026c; Zhang, 2026), and learned state values confound how often a task is solved, execution noise, and structural choice, so the orchestrator cannot tell whether a low score came from a task the reference rarely solves or from a badly organized team; counterfactual replay localizes the failing step (Shah, 2026; Bonagiri et al., 2026) but does not provide a training signal for every decision. (iii) Uncalibrated skill admission. Skills are admitted by LLM judgement or by success counts treated as reliable belief (Yang et al., 2026a; Wu et al., 2026); such point estimates cannot separate insufficient evidence from a confirmed effect, so an accidental strategy from one trajectory is consolidated (Chen et al., 2026a), and since no test tracks whether an admitted skill still helps on later tasks, it stays in the library and is never retired. To address these challenges, we propose EvoSteer (Fig. 2d), a new paradigm of Online Self-Evolving Graph Orchestration , in which the orchestrator dynamically builds and repairs a running team from execution features and a learned value estimate—replacing the run-then-revise loop. The orchestrator issues one atomic edit per turn, rerun and drop included; each is executed at once, and its feedback and the value estimate enter the state, so a plausible but failing result can be redone mid-run. To support this paradigm, we introduce Anchored Trajectory Balance (AnchorTB), a regression-style flow-matching loss that assigns each orchestration action a coefficient by balancing subtrajectories against a frozen reference. It combines measured task-level reference reward statistics with prefix-dependent corrections. Built on the learned flow, we further propose Validated Skill Admission : a skill proposer distils candidates from scored experience, the orchestrator may try a candidate before promotion, and paired rollouts differing only in the candidate are judged by a sequential sign test under a shared nominal testing budget, which promotes, retires, or defers. Trained end-to-end on natural and paired trajectories with the reference frozen throughout, EvoSteer turns construction, repair, and skill growth into one set of learned decisions under a single training objective. We evaluate on benchmarks across question answering, mathematical reasoning, interactive decision making, and code generation. Results show EvoSteer outperforms workflow search, flow- and RL-based orchestration training, and skill-evolution methods on every benchmark and improves all seven executors—a foundation for orchestration that evolves while it runs. 2Under review as a conference paper at ICLR 2027 
+
+2 RELATED WORK 
+
+Agent Task Orchestration. Orchestration graphs are searched under execution feedback (Zhang et al., 2025b; 2026b). Later work evolves the team between runs (Dang et al., 2026; Hao et al., 2026), mutates topology between test-time rounds (Xu et al., 2026), repairs finished trajectories (Luan et al., 2026; Lu & Zhang, 2026; Zhao et al., 2026), or audits unfolding prefixes (Wang et al., 2026a; Jiang et al., 2026; Li et al., 2026d), but keeps the running team fixed. Credit comes from counterfactual replay (Chen et al., 2026b; Deshmukh et al., 2026), group-relative objectives (Mishra et al., 2026), or (sub)trajectory balance (Malkin et al., 2022; Madan et al., 2023; Venkatraman et al., 2024) and its extensions (Fawkes & Hartford, 2026; Liu et al., 2026; Wang et al., 2026b; Liang et al., 2026). EvoSteer reruns and drops agents in the running team and measures flows from a frozen reference. 
+
+Skill Self-Evolution. Skill libraries check candidates by replay (He & Yang, 2026), paired trajec-tories (Gao et al., 2026), leave-one-out attribution (Shen et al., 2026; Hu et al., 2026; Wang et al., 2026c), or success-count posteriors (Wu et al., 2026). Others couple per-skill credit to library edits (Yao et al., 2026), gate contaminated candidates (Zhang & Li, 2026), or gate self-modification with sequential or paired tests (Shawn, 2026; Sengupta, 2026; Shang & Yang, 2026). EvoSteer gates skills in a live episode under one testing budget per run, and candidates stay selectable while tested. 
+
+3 PRELIMINARIES 
+
+Definition 1: Typed Agent Communication Graph. A typed agent communication graph (hence-forth communication graph) is a directed graph G = ( V, E, o ) over agent nodes, where each node 
+
+vi = ( ci, Ki) carries a role ci from a role catalogue and a set of bound skills Ki drawn from the visible active skill set, each edge (vi, v j , π ij ) carries a communication protocol πij that decides whether and how the source’s result revises the target, and o ∈ V together with an output rule fixes the final answer (our typed edges and nodes extend the untyped topologies of Zhang et al. (2024; 2025a) and the computational graphs of Zhuge et al. (2024)). 
+
+Definition 2: Orchestration Trajectory. A complete sequence of T orchestration actions from the empty team to a legal stop defines an orchestration trajectory, in which every action is executed as soon as it is issued, before the next action is chosen: 
+
+τ = (at, o exec  
+
+> t
+
+) T −1 
+
+> t=0
+
+⇒ r(x), st+1 = st ⊕ (at, o exec  
+
+> t
+
+), (1) where at is an atomic edit with type in {ADD _AGENT , ADD _EDGE , BIND _SKILL , SET _OUTPUT ,
+
+> RERUN
+
+_AGENT , DROP _AGENT , STOP }, oexec  
+
+> t
+
+is the execution feedback returned by running the agent, communication, repair, or output that the action triggers, and x is the completed history 
+
+x = sT with task reward r(x) ∈ [0 , 1] and T ≥ 1. Action at is chosen at st and produces st+1 , for 
+
+t = 0 , . . . , T − 1. Because each state retains the full history, every non-root state has a unique parent. The deterministic feature record is suppressed here and made explicit in Eq. (3). 
+
+Problem Statement. Given a task q, a frozen executor with tools, a frozen reference policy ρ, and a skill library S, we seek an orchestrator πθ trained toward an ideal reward-proportional history distribution relative to ρ (Venkatraman et al., 2024): 
+
+P ∗(x | C) = ρ(x | C) Rβ (x)
+
+Z(C) , Rβ (x) = 1 + ( eβ − 1) r(x), (2) where 0 ≤ β < ∞, and C collects the task, tools, roles, and the skill and value-head snapshots of the current batch, ρ(x | C) is the history measure induced by the reference policy and the executor’s stochastic transitions, and Rβ keeps a positive mass for failures while weighting a full score eβ times a zero score. Equation (2) is the training target; any deterministic executor, and more generally one meeting the condition of Proposition A.10, lets action choices alone realize it. 
+
+4 METHODOLOGY : E VO STEER 
+
+As illustrated in Figure 3, this section introduces the EvoSteer framework, including online self-evolving graph orchestration (Section 4.1), anchored trajectory balance (Section 4.2), and validated skill admission (Section 4.3), all built on the frozen reference ρ.3Under review as a conference paper at ICLR 2027 EvoSteer 
+
+AnchorTB  Subtrajectory residual    
+
+> add rerun stop
+> Residuals →
+> action credit
+
+Skill admission         
+
+> Distill
+> Promote
+> ⋯
+> ⋯
+> Sign
+> test
+> Continue
+> new pair
+> Retire
+> 23
+> author model
+> 1online orchestration
+> online edit feedback
+> Planner
+> Researcher
+> Tool-user
+> Solver
+> Verifier
+> Finalizer
+> rerun + edge
+> STOP
+> Answer
+> Reference estimate
+> illustrative
+> looks good on the surface
+> poor outlook
+> online edits recovers within
+> this run
+> without edit:
+> stays low
+> Policy · next batch Skills · next batch
+> Task
+> ⋯
+> Prefix
+> ⋯
+> learned, zero-init
+> gold: the rerun step inside each span
+
+Figure 3: EvoSteer architecture. Top: πθ builds and runs the team from execution features ft and reference estimate ˆvk; rerun and new edges are ordinary actions. Bottom left: AnchorTB balances subtrajectories against ρ; ˜u, δ abbreviate trajectory-specific flow estimates and residuals. Bottom right: paired rollouts and a sign test under a shared nominal α budget promote or retire candidate σ.4.1 ONLINE SELF -E VOLVING GRAPH ORCHESTRATION 
+
+As shown in Figure 3 (top), EvoSteer follows an Orchestrator–Executor paradigm (Yao et al., 2022b; Zhu et al., 2026; Zhang et al., 2026b): a trainable orchestrator πθ organizes tool-using agents, each on a frozen executor, inside a structured environment. 
+
+Structured Environment. The environment E = ( P, S(k), Rexec , ˆvk) maintains the role catalogue 
+
+P, i.e., the roles with their tool and session permissions; the active skill set S(k) visible in training step k (slot counts in Appendix C); the executor runtime Rexec with a shared resource budget; and the reference value head ˆvk of Eq. (5). The two snapshots S(k) and ˆvk are fixed for a whole rollout batch, while the legal mask A(s) remains state-dependent. 
+
+Interleaved Execution. Each orchestrator action is validated, applied to the graph, and executed at once; its feedback and a fixed-length execution feature vector are appended to the state: 
+
+st+1 = st ⊕  at, o exec  
+
+> t
+
+, f t+1 
+
+, ft+1 = f  st, a t, o exec 
+
+> t
+
+ ∈ R30 , (3) where oexec  
+
+> t
+
+is the execution feedback of Definition 2 and f records graph size, action type, repair outcome, whether agents answered and agreed, communication revision, environment phase, and budget use. These features need no extra model call and cover the execution-side failure modes catalogued for multi-agent systems (Cemri et al., 2026); f (s) denotes the latest vector in s.
+
+Learnable Repair. Repair shares one action space and one policy at ∼ πθ (· | st) with construction: 
+
+A(st) ⊆ A con ∪ A rep ∪ { STOP }, Arep = {RERUN _AGENT , DROP _AGENT }, (4) where Acon = {ADD _AGENT , ADD _EDGE , BIND _SKILL , SET _OUTPUT } holds the construction ed-its of Definition 2, and the mask A(st) (Li et al., 2026a) follows from the current graph, roles, skill slots, output modes, and budget, admitting repairs only when valid. One objective trains all three kinds of decision: how many agents a task needs, when a result is worth redoing, and when the answer in hand suffices. Team size and repair count follow from the policy under the shared budget, and the terminal reward r(x) is computed once, after the stop, on the output node’s answer. 
+
+In-Loop Reference Value Estimate. A lightweight head uses execution features and task type to estimate reference continuation reward by squared-error regression: 
+
+ˆvω (s) = σ MLP ω [f (s); onehot(tasktype( q))] , Lv = E(s,r )∼D ρ
+
+ ˆvω (s) − r2, (5) where MLP ω is a two-layer head on 30+6 inputs (Appendix B), Dρ holds states of legal reference continuations with their terminal rewards, and ˆvk in E is the snapshot of ˆvω frozen for batch k. The estimate and its one-step change are shown to the orchestrator as feedback; both are deterministic readouts of the retained history under the frozen head and carry cross-task experience into in-loop decisions, including when to stop. Its population MSE optimum is the feature-conditional mean of the terminal reward under the training data law, and this optimum is calibrated (Proposition B.8). 4Under review as a conference paper at ICLR 2027                              
+
+> ①Score each action Eq. (6) ②Anchor each state Eq. (8) ③Balance every span Eq. (7) ④Sum into credit Prop. 2
+> s0s1s2s3
+> a0
+> ∆ℓ0
+> a1
+> ∆ℓ1
+> a2
+> ∆ℓ2
+> ∆ℓt=ℓθ(at)−ℓρ(at)
+> ℓ: log-probability summed over the executed tool-call tokens
+> ρ: same backbone, frozen; both scored at the same st
+> s0s1s2s3
+> ˜u0˜u1˜u2log Rβ
+> measured, no gradient
+> sg clip [0 ,β ]
+>  uq,x +c(g)
+
++                    
+
+> learned residual
+> bψ
+>  hρ(s), f (s)
+> uq,x : task reference anchor
+> c(g): structure correction
+> s0s1s2s3
+> δ0:1 δ1:2 δ2:3
+> δ0:2
+> δ1:3
+> δ0:3
+> δi:j= ˜ ui+Pj−1
+> t=i∆ℓt−˜uj
+> Lx=16
+> P
+> i<j δ2
+> i:jδ0:1
+> δ1:2
+> δ2:3
+> δ0:2
+> δ1:3
+> δ0:3
+> a0
+> a1
+> a2
+> ∂Lx
+> ∂ℓ θ(at) =2
+> K3
+> P
+> i≤t<j δi:j
+> rows use 3, 4, and 3 spans TB keeps only δ0:3 (boxed): one signal for all actions
+
+Figure 4: AnchorTB on a three-action history: ① score each action against the frozen reference; 
+
+② anchor each state with a measured, stop-gradient anchor (blue) and a learned residual (pink); 
+
+③ form all K3 = 6 span residuals; ④ sum each action’s spans into its coefficient. 
+
+Proposition 1. Executing every action as it is issued and placing rerun and drop in the action space lets the orchestrator edit and retry a running team through the same action interface. Proof. 
+
+Appendix C.6, via the history tree and legal actions of Lemma A.1. 4.2 ANCHORED TRAJECTORY BALANCE 
+
+As shown in Figure 3 (bottom left) and step by step in Figure 4, we train πθ on the history tree of Section 3 toward the ideal reward-proportional target of Eq. (2), relative to the frozen reference. 
+
+Action Log-Ratio. An orchestrator action is a tool call of Kt tokens sampled under a grammar mask; its log-probability and its log-ratio to the reference are computed on the executed tokens: 
+
+ℓθ (at | st) = 
+
+> Kt
+
+X
+
+> j=1
+
+log Pθ (at,j | st, a t,<j ), ∆ℓt = ℓθ (at | st) − ℓρ(at | st), (6) where ρ is the same backbone without the trainable adapter, scored under the same context, tokens, and mask. Positions with a single legal token contribute zero, so only real choices enter the ratio. 
+
+Subtrajectory Residual and Loss. Every non-root state has a unique parent, so the backward policy is identically one. Motivated by reference-relative subtrajectory balance (Madan et al., 2023; Venkatraman et al., 2024), we regress each residual toward zero: 
+
+δ(x) 
+
+> i:j
+
+= ˜ ux(si)+ 
+
+> j−1
+
+X
+
+> t=i
+
+∆ℓt −˜ux(sj ), ˜ux(sT ) = log Rβ (x), Lx = 1
+
+KT
+
+X
+
+> 0≤i<j ≤T
+
+ δ(x)
+
+> i:j
+
+2, (7) where nonterminal flows use Eq. (8) with the same trajectory index x throughout (batch index suppressed), the terminal value overrides the learned parameterization, and KT = T (T + 1) /2 counts the equally weighted subtrajectories for T ≥ 1, so each action’s coefficient sums the residuals of the spans containing it (Figure 4, ④). 
+
+Measured State Flows. The ideal relative log flow u∗(s) = log Eρ[Rβ (x) | s, C ] satisfies u∗(s0) = log Z(C). A shared flow with zero residuals recovers u∗ and P ∗ (Proposition A.8); this motivates reference anchors with a learned residual: 
+
+˜ux(s) = sg 
+
+h
+
+clip [0 ,β ]
+
+ uq,x + c(g(s)) i
+
++ bψ
+
+ hρ(s), f (s), uq,x = log 1 + ( eβ − 1) ˆ p(−x)
+
+> q
+
+, (8) For nonterminal s, ˆp(−x) 
+
+> q
+
+is a task-level partial leave-one-out shrinkage estimate of the reference mean reward on the same task, computed from reference rollout outcomes (Appendix B); c(g) is a correction read one batch behind from a bucket of canonical prefix structures g, hρ(s) the frozen reference encoding, and bψ a zero-initialized MLP. Under leave-one-out, one prefix can differ across scored trajectories. The correction averages reward ratios over prefix visits before the logarithm, 
+
+yx = Rβ (x)
+
+euq,x − 1, c(g) = clip [−cmax , c max ] log 
+
+
+
+1 + 
+
+P 
+
+> (x,t )∈V g
+
+yx
+
+ng + n0
+
+
+
+, (9) where Vg is the multiset of eligible reference prefix visits to structure g, paired prefixes included (Appendix C), ng = |V g |, and n0 ≥ 0 with ng + n0 > 0. The pseudo-count shrinks rare structures toward zero correction and cmax bounds it (values in Appendix C), and the logarithm’s argument 5Under review as a conference paper at ICLR 2027 stays positive (Lemma B.6). The measured terms are held fixed, so only πθ and bψ are updated, with 
+
+bψ carrying the remainder. 
+
+Proposition 2. AnchorTB assigns each orchestration action a regression coefficient from all subtra-jectories containing it, and combines a task-level reference anchor with prefix-dependent corrections. Proof. Appendix C.6, via the coefficient of Proposition A.14 and the corrections of Appendix B. 4.3 VALIDATED SKILL ADMISSION 
+
+Prior work admits a skill from a single trajectory, by a judge, by counting successes, or by a trust hierarchy over verifiers (Yang et al., 2026a; Chen et al., 2026a; Wu et al., 2026; Shang et al., 2026), leaving underspecified whether a candidate helps and when it may be promoted. EvoSteer answers both inside the loop: a candidate is an ordinary entry of the action set in Eq. (4) that the orchestrator may bind while its evidence accumulates, and that evidence is measured under the frozen reference of Section 4.2 (Figure 3, bottom right), so credit and admission share one reference. 
+
+Skill Proposal and Action-Set Integration. In an author window, an independent author model distils at most one candidate σ, a structured procedure, from scored, side-effect-free trajectories (proposal rules and skill format in Appendix C). A candidate occupies a candidate slot of S(k), so the action mask of Eq. (4) already exposes it to ADD _AGENT and BIND _SKILL before it is validated; the full skill text is rendered only when the bound agent executes. 
+
+Paired Counterfactual Rollouts. For every batch task in a family with a candidate, two extra trajectories are launched from the same record and the same forced first role, one binding σ and one not, and both are continued by the reference policy: 
+
+x+ ∼ ρ · | C+, ADD _AGENT (c1, σ ), x− ∼ ρ · | C−, ADD _AGENT (c1, ∅), (10) where c1 is the forced first role. The arm contexts C± share the initial task, runtime, and value-head snapshot; C− masks σ throughout. Pairs are scored by the terminal reward of Eq. (2); with b± =
+
+I[r(x±) ≥ 12 ], the comparisons accumulate as wins W = P I[b+ > b −], losses L = P I[b+ < b −],and ties T0 = P I[b+ = b−] over complete, side-effect-free pairs, which also enter AnchorTB as off-policy paths, re-scored under each arm’s own context and legal mask (Appendix C). 
+
+Sequential Validation. At validation rounds between batches, each candidate with new wins or losses gets one binomial sign-test tail per direction, exact under the fixed-look sign model (Appendix C): 
+
+p+ = PBin( D, 12 ) ≥ W , p− = PBin( D, 12 ) ≥ L , D = W + L, (11) with p+ = p− = 1 when D = 0 . A candidate whose p+ clears its boundary is promoted to validated, one whose p− clears it is retired, and otherwise it keeps accumulating. One budget covers the whole run on two levels, and the same counts give the reported effect: 
+
+αj,ℓ = αj(j + 1) ℓ(ℓ + 1) , ˆ∆ = W − LW + L + T0
+
+, (12) where ˆ∆ is reported only when W + L + T0 > 0 and measures the paired threshold-pass-rate difference. Here j globally indexes the registered comparison and ℓ its observation; each direction receives αj,ℓ /2, and the budget is spent only when new evidence arrives, so the total nominal level is at most α (Appendix C). By a union bound, family-wise error is at most α whenever each directional p-value is valid for the selection and sampling rules in use, even for dependent tests. 
+
+Proposition 3. Validated Skill Admission lets a candidate be tried before it is promoted, and promotes or retires it only when paired evidence passes a sequential test under a shared alpha-spending budget. Proof. Appendix C.6, via the candidate-slot and status-transition rules, the nominal budget accounting of Proposition C.5, and the conditional FWER result of Proposition C.6. 
+
+5 EXPERIMENTS 
+
+We evaluate EvoSteer through the following research questions (RQs). RQ1 : How does EvoSteer compare with the baselines in distribution? RQ2 : Does it generalize to held-out benchmarks? RQ3 :Does it transfer across executor backbones? RQ4 : What does each component contribute, and how do fixed orchestration paradigms compare? RQ5 : How does AnchorTB compare with other objectives, and do the measured anchor, validated admission, and in-run edits each behave as designed? 6Under review as a conference paper at ICLR 2027 
+
+Baseline SFT GRPO † AFlow Agent+RL Skill evolution Ours Dataset Metric Qwen3.5 v4-flash Qwen3.5 Qwen3.5 Qwen3.5 AgentFlow FlowSteer SkillFlow SkillOpt EvoSteer ( ∆ ↑)
+
+(a) In-Distribution (IID) benchmarks 
+
+HotpotQA Ans EM 57.66 ±1.28 70.94 ±0.35 63.59 ±1.18 69.22 ±0.43 87.34 ±0.86 86.09 ±0.86 89.22 ±0.65 89.06 ±0.00 88.28 ±0.00 92.34 ±0.35 (+34.7) Ans F1 73.75 ±1.24 82.33 ±0.47 77.70 ±1.23 81.64 ±0.50 88.97 ±0.85 88.42 ±0.88 90.30 ±0.66 92.00 ±0.11 90.34 ±0.44 92.84 ±0.35 (+19.1) 
+
+NQ-Open Ans EM 23.59 ±0.86 38.59 ±1.31 25.78 ±0.00 24.22 ±1.10 76.56 ±0.78 81.41 ±1.28 79.53 ±1.28 82.66 ±0.86 82.34 ±1.31 85.00 ±0.65 (+61.4) Ans F1 33.04 ±1.22 49.60 ±1.78 37.69 ±0.14 32.59 ±1.45 80.77 ±0.82 85.46 ±1.75 84.31 ±1.36 86.56 ±0.80 86.28 ±1.27 88.92 ±0.69 (+55.9) 
+
+MedQA Acc. 71.41 ±0.43 84.53 ±0.35 73.13 ±0.43 77.66 ±0.43 89.22 ±0.65 88.44 ±0.86 90.31 ±1.18 91.41 ±0.78 91.72 ±0.70 93.13 ±0.86 (+21.7) 
+
+AIME 2026 Acc. 48.67 ±2.98 50.67 ±1.49 32.67 ±2.79 32.00 ±1.83 53.33 ±0.00 60.67 ±2.79 64.67 ±2.98 63.33 ±2.36 66.00 ±1.49 74.67 ±1.83 (+26.0) 
+
+MBPP+ Pass@1 78.91 ±1.10 84.53 ±0.86 78.44 ±0.70 81.88 ±0.35 85.00 ±0.65 86.09 ±0.65 87.34 ±0.86 88.59 ±0.70 90.16 ±0.43 92.19 ±1.10 (+13.3) 
+
+ALFWorld SR 46.88 ±1.24 60.47 ±0.43 40.31 ±0.70 50.47 ±0.70 73.28 ±0.65 76.09 ±0.43 81.56 ±0.70 83.28 ±0.70 85.78 ±0.86 89.69 ±1.02 (+42.8) 
+
+Avg. (IID) 
+
+Ans EM 40.63 ±0.77 54.77 ±0.68 44.69 ±0.59 46.72 ±0.59 81.95 ±0.58 83.75 ±0.77 84.38 ±0.72 85.86 ±0.43 85.31 ±0.65 88.67 ±0.37 (+48.0) Ans F1 53.39 ±0.87 65.97 ±0.92 57.70 ±0.62 57.12 ±0.77 84.87 ±0.59 86.94 ±0.98 87.31 ±0.76 89.28 ±0.40 88.31 ±0.67 90.88 ±0.39 (+37.5) Acc. 61.46 ±0.86 70.05 ±0.45 56.14 ±0.75 60.50 ±0.51 75.21 ±0.28 77.82 ±0.76 80.97 ±0.85 81.65 ±0.67 83.41 ±0.48 87.42 ±0.63 (+26.0) 
+
+(b) Out-of-Distribution (OOD) benchmarks 
+
+TriviaQA Ans EM 44.22 ±0.43 70.31 ±0.00 46.09 ±0.55 47.34 ±1.18 90.94 ±1.05 89.06 ±0.00 91.25 ±0.35 90.16 ±1.05 92.34 ±1.28 95.63 ±1.18 (+51.4) Ans F1 53.46 ±0.52 80.81 ±0.21 58.77 ±0.70 58.50 ±1.45 92.34 ±1.06 90.44 ±0.04 92.71 ±0.35 91.79 ±1.07 93.41 ±1.30 96.81 ±1.23 (+43.4) 
+
+MuSiQue Ans EM 39.22 ±0.86 50.00 ±0.78 39.06 ±0.55 40.63 ±0.55 77.66 ±0.70 79.06 ±1.16 80.00 ±1.18 80.94 ±0.43 81.09 ±0.65 84.53 ±0.86 (+45.3) Ans F1 49.12 ±1.17 58.73 ±0.72 50.79 ±0.95 50.09 ±0.68 82.70 ±0.74 84.36 ±1.24 85.74 ±1.47 84.82 ±0.45 86.09 ±0.69 87.84 ±0.89 (+38.7) 
+
+GPQA Acc. 61.72 ±1.10 73.91 ±0.43 68.91 ±0.86 67.50 ±0.89 75.63 ±1.02 79.69 ±0.96 83.75 ±0.65 82.19 ±0.86 81.88 ±0.35 85.63 ±0.70 (+23.9) 
+
+MATH-Hard Acc. 89.06 ±0.78 92.19 ±0.55 88.59 ±1.31 87.50 ±0.78 91.09 ±1.05 92.66 ±0.70 93.44 ±0.70 92.34 ±1.02 94.69 ±0.65 95.47 ±0.86 (+6.4) 
+
+SWE-Bench Resolved 15.94 ±0.43 36.25 ±0.70 15.00 ±0.86 16.88 ±1.05 28.28 ±0.65 38.75 ±0.70 40.31 ±0.70 39.84 ±0.78 41.56 ±0.65 42.50 ±0.70 (+26.6) 
+
+WebShop SR 32.66 ±0.86 65.47 ±0.86 32.81 ±0.78 36.25 ±0.70 59.53 ±0.86 76.09 ±0.43 78.28 ±0.86 82.81 ±1.10 85.94 ±0.78 90.63 ±0.00 (+58.0) 
+
+Avg. (OOD) 
+
+Ans EM 41.72 ±0.48 60.16 ±0.39 42.58 ±0.39 43.98 ±0.65 84.30 ±0.63 84.06 ±0.58 85.63 ±0.62 85.55 ±0.57 86.72 ±0.72 90.08 ±0.73 (+48.4) Ans F1 51.29 ±0.64 69.77 ±0.38 54.78 ±0.59 54.29 ±0.80 87.52 ±0.65 87.40 ±0.62 89.22 ±0.76 88.31 ±0.58 89.75 ±0.74 92.32 ±0.76 (+41.0) Acc. 49.84 ±0.41 66.95 ±0.33 51.33 ±0.49 52.03 ±0.43 63.63 ±0.45 71.80 ±0.36 73.95 ±0.37 74.30 ±0.47 76.02 ±0.31 78.55 ±0.33 (+28.7) 
+
+Table 1: Main results (five-run mean ± std). All methods run on the Qwen3.5-9B executor except v4-flash (DeepSeek-V4-Flash); GRPO † trains the backbone; ∆ ↑: gain over Qwen3.5-9B. 5.1 EXPERIMENTAL SETUP 
+
+Datasets. Six in-distribution (IID) benchmarks supply the training tasks and IID tests: HotpotQA (Yang et al., 2018), NQ-Open (Kwiatkowski et al., 2019), MedQA (Jin et al., 2021), AIME 2026, MBPP+ (Liu et al., 2023), and ALFWorld (Shridhar et al., 2020). Six out-of-distribution (OOD) benchmarks are held out: TriviaQA (Joshi et al., 2017), MuSiQue (Trivedi et al., 2022), GPQA (Rein et al., 2023), MATH-Hard (Hendrycks et al., 2021), SWE-Bench Verified (Jimenez et al., 2024), and WebShop (Yao et al., 2022a). Each test set has 128 items (AIME 2026: 30) disjoint from training. 
+
+Baselines. We compare with direct prompting (Qwen3.5-9B, DeepSeek-V4-Flash), backbone training (SFT, GRPO † (Shao et al., 2024)), workflow search (AFlow (Zhang et al., 2025b)), RL-trained orchestration (AgentFlow (Li et al., 2026c), FlowSteer (Zhang et al., 2026b)), and skill evolution (SkillFlow (Zhang et al., 2026c), SkillOpt (Yang et al., 2026b)). All use Qwen3.5-9B as executor and trained model, the same training tasks, and their authors’ best configurations; DeepSeek-V4-Flash only writes EvoSteer’s candidate skills, and other authors move the averages by under 2 points. EvoSteer is tested with learned parts frozen, and every test score is a five-run mean (Appendix D). 5.2 MAIN RESULTS AND BACKBONE TRANSFER (RQ1–RQ3) 
+
+Main results. EvoSteer is best on all twelve benchmarks (Table 1), ahead of the strongest baseline by 2.81 EM and 4.01 accuracy points on IID averages and by 3.36 and 2.53 on OOD, with standard deviations at most 1.83. The lead is largest on AIME 2026 (8.67) and smallest on MATH-Hard (0.78), where the backbone is near its ceiling. Training the backbone alone (SFT, GRPO †) adds at most 6.09 points to the IID EM average, so the gain comes from orchestration over the same frozen executor, and with a 9B executor EvoSteer beats the larger DeepSeek-V4-Flash on every benchmark. 
+
+Backbone transfer. The trained orchestrator transfers unchanged to six other executors and improves all 72 backbone–benchmark scores (Figure 5a,c), so one trained policy serves every executor. Weaker executors gain more, and the IID spread across backbones shrinks from 17.5 to 4.3 points; gains are largest on interactive tasks and smallest on math, where frozen scores are already near the ceiling. 7Under review as a conference paper at ICLR 2027 
+
+Variant IID OOD 
+
+HotpotQA NQ-Open MedQA AIME MBPP+ ALFWorld TriviaQA MuSiQue GPQA MATH SWE WebShop 
+
+Ans EM Ans EM Acc. Acc. Pass@1 SR Ans EM Ans EM Acc. Acc. Resolved SR 
+
+Qwen3.5-9B (frozen) 57.66 23.59 71.41 48.67 78.91 46.88 44.22 39.22 61.72 89.06 15.94 32.66 EvoSteer arch., untrained 82.34 73.28 82.97 53.33 87.66 73.59 90.47 71.88 75.31 90.00 29.53 69.84 
+
+Fixed orchestration paradigms 
+
+Single agent with tools 75.94 67.19 80.78 48.67 85.63 70.16 86.25 61.41 70.31 89.84 27.03 66.09 Fixed multi-agent template 82.03 74.84 85.47 56.67 83.28 66.72 89.84 70.31 73.75 90.47 24.06 54.84 Plan-then-execute 80.47 72.50 81.88 51.33 84.84 65.63 90.78 68.59 71.56 89.53 25.94 57.81 Searched workflow 87.19 76.41 88.91 54.67 85.16 73.13 91.56 77.50 75.63 90.78 28.28 59.06 
+
+Online orchestration (Sec. 4.1) 
+
+− Interleaved execution 89.38 83.75 89.53 58.67 90.63 80.94 95.00 79.84 81.41 93.28 31.25 75.47 
+
+− Execution features 88.28 83.75 90.31 66.67 91.41 81.88 93.91 81.25 82.34 93.28 37.34 82.81 
+
+− Learnable repair 90.31 84.06 89.84 67.33 90.47 83.59 95.31 80.16 82.81 92.50 31.88 87.03 
+
+− Reference value head 83.28 84.22 91.09 68.00 89.84 80.16 94.22 79.22 81.09 92.81 39.22 82.66 
+
+AnchorTB (Sec. 4.2) 
+
+− Measured flows 90.16 83.59 89.22 56.67 90.00 77.81 94.38 76.25 81.88 91.09 33.75 80.63 
+
+− Flow corrections 85.94 82.66 89.84 64.00 90.31 82.50 95.00 83.75 82.81 92.19 38.13 85.16 
+
+Skill admission (Sec. 4.3) 
+
+− Skill evolution 88.28 80.94 90.16 68.67 84.53 82.81 94.38 80.63 83.28 92.81 38.59 85.16 
+
+− Sequential validation 90.47 81.72 89.22 66.00 90.00 78.59 94.84 81.25 83.28 94.53 35.00 86.09 
+
+EvoSteer (Full) 92.34 85.00 93.13 74.67 92.19 89.69 95.63 84.53 85.63 95.47 42.50 90.63 
+
+Table 2: Component ablation and paradigm comparison (untrained: initial πθ). Paradigms (same executor and budget) fix the team before execution: a ReAct-style agent with all tools, a hand-designed template, a planner that writes the graph once, and a workflow searched offline on training tasks. Ablations: − interleaved execution builds the graph first; − execution features drops f from the state of πθ ; − learnable repair masks RERUN and DROP ; − reference value head withholds ˆvk and 
+
+∆ˆ v; − measured flows learns uq as a free scalar; − flow corrections turns off c(g) and bψ ; − skill evolution runs without any skills; − sequential validation admits after k = 5 successes. HotpotQA NQ-Open MedQA AIME 2026 MBPP+ ALFWorld 
+
+gpt-5.6-luna 
+
+> With EvoSteer Frozen backbone HotpotQA NQ-Open MedQA AIME 2026 MBPP+ ALFWorld
+
+grok-4.5 
+
+> With EvoSteer Frozen backbone HotpotQA NQ-Open MedQA AIME 2026 MBPP+ ALFWorld
+
+claude-haiku-4-5 
+
+> With EvoSteer Frozen backbone HotpotQA NQ-Open MedQA AIME 2026 MBPP+ ALFWorld
+
+deepseek-v4-flash 
+
+> With EvoSteer Frozen backbone HotpotQA NQ-Open MedQA AIME 2026 MBPP+ ALFWorld
+
+gemini-3.5-flash 
+
+> With EvoSteer Frozen backbone HotpotQA NQ-Open MedQA AIME 2026 MBPP+ ALFWorld
+
+glm-5.3-flash       
+
+> With EvoSteer Frozen backbone
+> 50 80 90 100 50 80 90 100 50 80 90 100 50 80 90 100 50 80 90 100 50 80 90 100
+> 91.9 63.1 90.5 72.7 86.6 77.0 85.0 56.4 83.6 60.7 83.3 66.3 72.2 53.6 77.3 62.7 87.8 68.3 70.9 38.6 84.5 50.7 84.5 60.5 81.4 56.3 84.4 56.7 85.6 68.9 62.2 31.9 73.1 57.3 89.7 62.5
+> 97.2 94.2 95.2 91.3 96.1 92.8 95.5 88.8 93.8 82.7 92.5 90.8 94.4 88.6 94.5 80.0 94.8 91.3 93.1 89.2 94.5 80.0 94.2 91.3 93.4 88.8 95.9 84.7 94.2 89.8 94.2 84.4 93.8 82.7 95.2 90.6
+
+(a) IID benchmark profile on each frozen backbone 0 40 80 120 160 200 240 0.70 0.75 0.80 0.85 0.90 0.95 
+
+Step 
+
+> Accuracy
+
+EvoSteer (Ours) Reference 0 40 80 120 160 200 240 0.10 0.15 0.20 0.25 0.30 
+
+Training step 
+
+> Loss
+
+EvoSteer (Ours) Anchor-only (b) Training dynamics 20 40 60 80 100 
+
+> Performance (%)
+
+gpt-5.6-luna grok-4.5 claude-haiku-4-5 deepseek-v4-flash gemini-3.5-flash glm-5.3-flash 
+
+35.2 48.9 43.8 45.8 36.3 47.0 44.1 31.9 47.0 62.8 94.5 53.9 93.8 56.6 91.3 65.5 94.1 60.9 93.1 61.4 93.0 76.1 93.4 69.3 90.3 66.2 89.5 64.7 91.4 70.3 91.8 60.7 88.8 92.3 98.3 88.6 96.6 86.6 98.1 92.2 97.3 89.7 98.1 85.6 97.7 
+
+Code Interactive QA Math Frozen backbone EvoSteer gain 
+
+(c) OOD scores aggregated by task domain 
+
+Figure 5: Backbone transfer and training dynamics. (a) IID scores of six other frozen executors (dashed) and with the same trained orchestrator (solid); the radius is linear over 20–80 on the inner half and 80–100 on the outer half. (b) Accuracy of πθ and of the frozen ρ, and loss against the anchor-only level, over 240 steps. (c) OOD scores per task domain. 8Under review as a conference paper at ICLR 2027 
+
+Objective Trivia MuSiQue GPQA MATH SWE WebShop GPU ms GPU s Tokens EM EM Acc. Acc. Res. SR / episode / step / problem 
+
+No training 90.47 71.88 75.31 90.00 29.53 69.84 – – –PPO 93.59 79.22 80.63 92.81 35.94 82.97 2,002 384.4 17,834.3 GRPO 92.19 77.34 77.50 91.56 32.66 78.44 1,174 225.4 17,886.0 Trajectory balance 94.84 77.03 81.25 92.66 33.44 77.34 911 174.9 9,730.1 Tempered TB 95.63 81.09 82.50 93.75 40.00 87.81 1,737 333.5 19,373.8 
+
+AnchorTB (ours) 95.63 84.53 85.63 95.47 42.50 90.63 1,254 240.8 19,287.4 
+
+(a) Objective comparison and training cost (RQ5) No training GRPO PPO TB TTB Ours Ours TTB TB PPO GRPO No training                                 
+
+> 12.31 8.81 6.57 5.84 3.17 0.00 9.14 5.64 3.41 2.67 0.00 -3.17 6.47 2.97 0.73 0.00 -2.67 -5.84 5.73 2.23 0.00 -0.73 -3.41 -6.57 3.50 0.00 -2.23 -2.97 -5.64 -8.81 0.00 -3.50 -5.73 -6.47 -9.14 -12.31 −10 −5 0510
+> Mean IID difference (pp)
+> Pairwise mean IID differences
+
+(b) Pairwise IID differences MBPP+ NQ-Open MedQA AIME 2026 HotpotQA ALFWorld 0.0 0.2 0.4 0.6 0.8 1.0 AUC 
+
+> 0.482
+> 0.845
+> 0.531
+> 0.837
+> 0.497
+> 0.829
+> 0.504
+> 0.743
+> 0.501
+> 0.746
+> 0.519
+> 0.872
+> Same-dataset reference-policy AUC
+> Family mean Mean 0.506 Anchor (95% CI) Mean 0.812
+
+(c) Anchor AUC −4 0 4 8 12          
+
+> MBPP+ HotpotQA NQ-Open MedQA AIME 2026 ALFWorld
+> < 0 +7.51 +10.20 +2.67 +5.44 +5.73 +6.98 −1.06 +2.16 −0.46 +4.12 +2.19 +6.78
+> Reference-policy skill-admission gains
+> Reference-policy gain (pp)
+> Accept all EvoSteer
+
+(d) Admission gain Repair   
+
+> 47.1%
+> 38.0%
+> Add agent
+> 28.9%
+> 26.4%
+> Skill / feedback
+> 24.0%
+> 19.8%
+> S 5.8%
+> W 3.3%
+> S 1.7%
+> W 0.8%
+> S 1.7% W 2.5%
+> 84.2%
+> better
+> In-run edit outcomes
+> Better Same Worse
+
+(e) Edit outcomes 0 5 10 15 20    
+
+> AIME 2026 NQ-Open HotpotQA MedQA MBPP+ ALFWorld
+> Mean +6.60 Mean +7.37
+> +10.29 +13.41 +4.58 +3.14 +3.27 +1.96 +2.31 +1.89 +4.83 +6.72 +14.32 +17.09
+> Value-guided online replanning gains
+> Mean gain (pp)
+> qwen3.5-9b deepseek v4-flash
+
+(f) Replanning gain 
+
+Figure 6: Objective comparison and mechanism analysis (definitions in Appendix D). (a) OOD scores and cost per training objective. (b) Row minus column, IID mean (pp); TTB: tempered TB. (c) 
+
+AUC for predicting reference-rollout correctness. (d) Paired skill gain, admitting all or only validated candidates. (e) In-run edits by type and outcome. (f) Gain of value-guided replanning in training. 5.3 COMPONENT ANALYSIS (RQ4, RQ5) 
+
+Online orchestration (Section 4.1). Each of its mechanisms contributes (Table 2): building the graph before execution, dropping the execution features f , masking rerun and drop, and withholding the value estimate cost 5.69, 4.12, 3.57, and 5.07 IID points. Keeping interleaving, text feedback as in FlowSteer, and the value estimate but not f costs 3.91 OOD points, so f carries information the text does not. Fixed paradigms help decomposable questions but lag where results must be redone, and the best trails EvoSteer by 10.26 IID points; even untrained, the architecture leads all four on the OOD average. In-run edits mostly help: 84.2% raise the graded answer score and 6.6% lower it (Figure 6e). Repairs, the most frequent edit, raise the score in 80.7% of cases, and value-guided replanning helps both executors on every IID dataset, most on the interactive ALFWorld (Figure 6f). 
+
+AnchorTB (Section 4.2). Measured flows are the largest single contribution on IID: a free-scalar uq
+
+costs 6.59 IID points, and removing c(g) and bψ costs 5.29. The anchor is informative on its own, predicting reference outcomes before a rollout starts with AUC 0.812 against 0.506 for the task-family mean (Figure 6c), and the learned part lowers the loss below the anchor-only level (Figure 5b). With only the loss changed, AnchorTB beats tempered TB (Zhang et al., 2026c), TB (Malkin et al., 2022), PPO (Schulman et al., 2017), and GRPO by 3.17–8.81 IID points (Figure 6a,b); TB lags most on MuSiQue, SWE-Bench, and WebShop. AnchorTB needs 28% less update compute than tempered TB, at a rollout cost within 9% of PPO and GRPO, so its gains come at comparable compute. 
+
+Validated admission (Section 4.3). Removing skill evolution costs 5.27 IID and 3.26 OOD points, most on MBPP+ (7.66). A fixed success count in place of the sequential test costs 5.17 IID points, nearly the same for any count from 1 to 10 (Appendix D), and even trails the no-skill variant on MedQA, AIME 2026, and ALFWorld. Accepting every candidate helps on average (+2.76) but hurts MedQA and AIME 2026, whereas validated admission helps all six IID datasets (+5.95; Figure 6d). 
+
+Architecture and training. The untrained architecture adds 21.01 IID and 24.04 OOD points to the frozen executor, and AnchorTB training adds 12.31 and 11.22, so each supplies much of the gain. 
+
+6 CONCLUSION 
+
+EvoSteer unifies construction, repair, and skill growth in one learned loop: each action executes as it is issued, AnchorTB credits it against a frozen reference, and paired sequential tests decide which skills are kept. It beats all baselines on twelve benchmarks and improves every executor backbone. 9Under review as a conference paper at ICLR 2027 
+
+AI U SE STATEMENT 
+
+In this work, generative AI tools were used to edit and polish the text for clarity and readability, assist with L ATEX typesetting and page layout, and adjust the placement and sizing of existing figures and tables. They were also used for retrieval and discovery, to help search for and identify related work; all bibliographic entries were taken from Google Scholar. The authors manually reviewed and verified all AI-assisted text, figures, numerical values, citations, and formatting against the underlying implementation and experimental records. The authors take full responsibility for the final content of the paper and all artifacts produced with the assistance of generative AI. 
+
+ETHICS STATEMENT 
+
+This work follows the ICLR Code of Ethics. We aim to conduct and report our research with scientific integrity, transparency, and reproducibility. Experimental results are reported without fabrication, falsification, or intentional misrepresentation, and sufficient implementation and evaluation details are provided to facilitate verification and reproduction. We acknowledge prior work and use existing benchmarks, models, and associated resources in accordance with their intended research purposes and applicable licenses. This study involves no human participants or personal information. 
+
+REPRODUCIBILITY STATEMENT 
+
+We support reproducibility by documenting the orchestration environment, action space, and value estimate in Section 4.1, the AnchorTB objective in Section 4.2, and the validated skill admis-sion procedure in Section 4.3. Section 5.1 specifies the benchmarks, baselines, and evaluation setting. The appendix provides the assumptions and complete proofs of all theoretical results (Ap-pendices A–C), the training algorithm and all hyperparameters (Appendix C, Table 3), and the benchmark splits, metrics, baseline settings, evaluation protocol, and compute (Appendix D). All test scores are five-run means, and Table 1 also reports their standard deviations. Code availabil-ity. Our code, the exact training and test splits, and the full configuration are publicly available at 
+
+https://github.com/beita6969/evosteer .
+
+REFERENCES 
+
+Akash Bonagiri, Devang Borkar, Gerard Janno Anderias, Setareh Rafatirad, and Houman Homayoun. Causalflow: Causal attribution and counterfactual repair for llm agent failures. arXiv preprint arXiv:2605.25338 , 2026. Mert Cemri, Melissa Z Pan, Shuyi Yang, Lakshya A Agrawal, Bhavya Chopra, Rishabh Tiwari, Kurt Keutzer, Aditya Parameswaran, Dan Klein, Kannan Ramchandran, et al. Why do multi-agent llm systems fail? Advances in Neural Information Processing Systems , 38, 2026. Kunfeng Chen, Qihuang Zhong, Juhua Liu, and Bo Du. Skillcat: Contrastive assessment and topology-aware skill self-evolution for llm agents. arXiv preprint arXiv:2606.13317 , 2026a. Xudong Chen, Yixin Liu, Hua Wei, and Kaize Ding. Lemon: Learning executable multi-agent orchestration via counterfactual reinforcement learning. arXiv preprint arXiv:2605.14483 , 2026b. Yanjun Chen, Yirong Sun, Hanlin Wang, Jinghan Wang, Xinming Zhang, Xiaoyu Shen, Wenjie Li, and Wei Zhang. Exact is easier: Credit assignment for cooperative llm agents. arXiv preprint arXiv:2603.06859 , 2026c. Yufan Dang, Chen Qian, Xueheng Luo, Jingru Fan, Zihao Xie, Ruijie Shi, Weize Chen, Cheng Yang, Xiaoyin Che, Ye Tian, et al. Multi-agent collaboration via evolving orchestration. Advances in neural information processing systems , 38:165025–165059, 2026. Shripad Deshmukh, Jayakumar Subramanian, Raghavendra Addanki, and Nikos Vlassis. Cosac: Counterfactual credit assignment in sequential cooperative teams. arXiv preprint arXiv:2604.17693 ,2026. Jake Fawkes and Jason Hartford. f -trajectory balance: A loss family for tuning gflownets, generative models, and llms with off-and on-policy data. arXiv preprint arXiv:2605.15417 , 2026. Haowen Gao, Haoran Chen, Can Wang, Shasha Guo, Liang Pang, Zhaoyang Liu, Huawei Shen, and Xueqi Cheng. Skillaudit: Ground-truth-free skill evolution via paired trajectory auditing. arXiv preprint arXiv:2606.14239 , 2026. 10 Under review as a conference paper at ICLR 2027 Zhezheng Hao, Tianfu Wang, Huanshuo Dong, Ziyan Liu, Hong Wang, Xiankun Lin, Qiang Lin, Can Wang, Hande Dong, and Jiawei Chen. Evolve as a team: Collaborative self-evolution for llm-based multi-agent systems. arXiv preprint arXiv:2605.29790 , 2026. Yu He and Weikai Yang. Skillcommit: Evolving agent skills through behaviorally validated scope expansion. arXiv preprint arXiv:2608.15165 , 2026. Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. Measuring mathematical problem solving with the math dataset. arXiv preprint arXiv:2103.03874 , 2021. Sirui Hong, Mingchen Zhuge, Jonathan Chen, Xiawu Zheng, Yuheng Cheng, Jinlin Wang, Ceyao Zhang, Steven Yau, Zijuan Lin, Liyang Zhou, et al. Metagpt: Meta programming for a multi-agent collaborative framework. In International Conference on Learning Representations , volume 2024, pp. 23247–23275, 2024. Wentao Hu, Zhendong Chu, Yiming Zhang, Junda Wu, Ming Jin, Xiangyu Zhao, Yilei Shao, Yanfeng Wang, and Qingsong Wen. Skillbrew: Multi-objective curation of skill banks for llm agents. arXiv preprint arXiv:2605.29440 , 2026. Yanze Jiang, Mingxuan Li, Yuhao Wang, Shengfang Zhai, and Jiaheng Zhang. Don’t solve, just compare: Tiny advisors for runtime intervention in llm agents. arXiv preprint arXiv:2608.21027 ,2026. Carlos E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik Narasimhan. Swe-bench: Can language models resolve real-world github issues? In International Conference on Learning Representations , volume 2024, pp. 54107–54157, 2024. Di Jin, Eileen Pan, Nassim Oufattole, Wei-Hung Weng, Hanyi Fang, and Peter Szolovits. What disease does this patient have? a large-scale open domain question answering dataset from medical exams. Applied Sciences , 11(14):6421, 2021. Mandar Joshi, Eunsol Choi, Daniel S Weld, and Luke Zettlemoyer. Triviaqa: A large scale distantly supervised challenge dataset for reading comprehension. In Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 1601– 1611, 2017. Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, et al. Natural questions: a benchmark for question answering research. Transactions of the Association for Computational Linguistics , 7:453–466, 2019. Haoran Li, Shulun Chen, Shaoyuan Sun, and Hanchen Wang. Multi-agent coordination adaptation via structure-guided orchestration. arXiv preprint arXiv:2605.25746 , 2026a. Sha Li and Naren Ramakrishnan. Experience as a compass: Multi-agent rag with evolving orchestra-tion and agent prompts. arXiv preprint arXiv:2604.00901 , 2026. Zhongyi Li, Wan Tian, Jinju Chen, Huiming Zhang, Yang Liu, Yikun Ban, and Fuzhen Zhuang. Counterfactual credit policy optimization for multi-agent collaboration. arXiv preprint arXiv:2603.21563 , 2026b. Zhuofeng Li, Haoxiang Zhang, Seungju Han, Sheng Liu, Jianwen Xie, Yu Zhang, Yejin Choi, James Y Zou, and Pan Lu. In-the-flow agentic system optimization for effective planning and tool use. In 
+
+International Conference on Learning Representations , volume 2026, pp. 50524–50570, 2026c. Zongyue Li, Chengyue Yu, Lei Zang, Chenyi Zhuang, Linjian Mo, and Leilei Gan. Last step matters: Early uncertainty cannot predict failure in long-horizon agents. arXiv preprint arXiv:2608.29685 ,2026d. Taoran Liang, Yang Liu, Shang Luo, Yingguang Yang, Rongrong Zhang, Yingzong Min, Yulin Huang, Jianshen Zhang, Yongzhi Qi, Kefu Xu, et al. Granularity-adaptive credit assignment for long-horizon llm agent reinforcement learning. arXiv preprint arXiv:2609.12424 , 2026. Jiawei Liu, Chunqiu Steven Xia, Yuyao Wang, and Lingming Zhang. Is your code generated by chatgpt really correct? rigorous evaluation of large language models for code generation. Advances in neural information processing systems , 36:21558–21572, 2023. Xiaodong Liu, Michael Xu, Jack W Stokes, Paul Smolensky, Doug Burger, and Jianfeng Gao. Gflowrl: Scaling distribution-matching rl to large language models. arXiv preprint arXiv:2607.13394 , 2026. Hanxiao Lu and Tianyi Zhang. Autonomous repair for multi-agent systems via monte-carlo tree search. arXiv preprint arXiv:2607.29055 , 2026. Zhongwen Luan, Xiaoyu Zhang, Ming Hu, Yue Yang, Jiongchi Yu, and Xiaohong Chen. Repair or re-sample? rethinking failure debugging in llm multi-agent systems. arXiv preprint arXiv:2608.25920 ,2026. 11 Under review as a conference paper at ICLR 2027 Kanika Madan, Jarrid Rector-Brooks, Maksym Korablyov, Emmanuel Bengio, Moksh Jain, An-drei Cristian Nica, Tom Bosc, Yoshua Bengio, and Nikolay Malkin. Learning gflownets from partial episodes for improved convergence and stability. In International Conference on Machine Learning , pp. 23467–23483. PMLR, 2023. Nikolay Malkin, Moksh Jain, Emmanuel Bengio, Chen Sun, and Yoshua Bengio. Trajectory balance: Improved credit assignment in gflownets. Advances in Neural Information Processing Systems , 35: 5955–5967, 2022. Amritansh Mishra, Supriyo Chakraborty, and Berkcan Kapusuzoglu. On the policy gradient founda-tions of group relative policy optimization: Credit assignment, gradient sparsity, and rank collapse. 
+
+arXiv preprint arXiv:2606.29238 , 2026. Shuai Pan, Yixiang Liu, Jiaye Gao, Te Gao, Weiwen Liu, Jianghao Lin, Zhihui Fu, Jun Wang, Weinan Zhang, and Yong Yu. Skillmas: Skill co-evolution with llm-based multi-agent system. arXiv preprint arXiv:2605.09341 , 2026. David Rein, Betty Li Hou, Asa Cooper Stickland, Jackson Petty, Richard Yuanzhe Pang, Julien Dirani, Julian Michael, and Samuel R Bowman. Gpqa: A graduate-level google-proof q&a benchmark. 
+
+arXiv preprint arXiv:2311.12022 , 2023. John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 , 2017. Biswa Sengupta. Self-evolving agents with anytime-valid certificates. arXiv preprint arXiv:2607.00871 , 2026. Jaineet Shah. Causal agent replay: Counterfactual attribution for llm-agent failures. arXiv preprint arXiv:2606.08275 , 2026. Fangxin Shang and Yehui Yang. Hypothesis-driven skill optimization for llm agents. arXiv preprint arXiv:2606.22330 , 2026. Linfang Shang, Ming Xu, Yiding Sun, Tianle Xia, Lingxiang Hu, Lan Xu, and Ning Zheng. When self-evolution backfires: Pre-commit gating against skill contamination in llm agents. arXiv preprint arXiv:2608.05810 , 2026. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of mathemat-ical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. Zayx Shawn. Pace: Anytime-valid acceptance tests for self-evolving agents. arXiv preprint arXiv:2606.08106 , 2026. Junhao Shen, Teng Zhang, Xiaoyan Zhao, and Hong Cheng. Dynamic skill lifecycle management for agentic reinforcement learning. arXiv preprint arXiv:2605.10923 , 2026. Mohit Shridhar, Xingdi Yuan, Marc-Alexandre Côté, Yonatan Bisk, Adam Trischler, and Matthew Hausknecht. Alfworld: Aligning text and embodied environments for interactive learning. arXiv preprint arXiv:2010.03768 , 2020. Harsh Trivedi, Niranjan Balasubramanian, Tushar Khot, and Ashish Sabharwal. ♪ musique: Multihop questions via single-hop question composition. Transactions of the Association for Computational Linguistics , 10:539–554, 2022. Siddarth Venkatraman, Moksh Jain, Luca Scimeca, Minsu Kim, Marcin Sendera, Mohsin Hasan, Luke Rowe, Sarthak Mittal, Pablo Lemos, Emmanuel Bengio, et al. Amortizing intractable inference in diffusion models for vision, language, and control. Advances in neural information processing systems , 37:76080–76114, 2024. Chenyu Wang, Yunbo Lyu, Junda He, Zhou Yang, Chenxing Zhong, Yaniv Harel, and David Lo. Fail-fast, restart-smart: Early failure prediction and restart for swe agentic tasks. arXiv preprint arXiv:2608.03222 , 2026a. Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and Anima Anandkumar. Voyager: An open-ended embodied agent with large language models. arXiv preprint arXiv:2305.16291 , 2023. Tao Wang, Suhang Zheng, and Xiaoxiao Xu. Rtmc: Step-level credit assignment via rollout trees. 
+
+arXiv preprint arXiv:2604.11037 , 2026b. Yixuan Wang, Yiyang Zhou, Yiming Liang, Congyu Zhang, Fuxiao Liu, Jiawei Zhou, and Huaxiu Yao. Not all skills help: Measuring and repairing agent knowledge. arXiv preprint arXiv:2606.15390 ,2026c. Xiaojun Wu, Cehao Yang, Honghao Liu, Xueyuan Lin, Wenjie Zhang, Zhichao Shi, Xuhui Jiang, Chengjin Xu, Jia Li, and Jian Guo. Bayesian-agent: Posterior-guided skill evolution for llm agent harnesses. arXiv preprint arXiv:2606.08348 , 2026. 12 Under review as a conference paper at ICLR 2027 Chen Xu, Yicheng Hu, Ruizi Wang, Xinyu Lin, Wenjie Wang, Dongrui Liu, and Fuli Feng. Tacomas: Test-time co-evolution of topology and capability in llm-based multi-agent systems. arXiv preprint arXiv:2605.09539 , 2026. Shidong Yang, Ziyu Ma, Tongwen Huang, Xucong Wang, Renda Li, Yiming Hu, Yong Wang, and Xiangxiang Chu. Skillforge: Evolving verifiable skills for reinforcement learning agents. arXiv preprint arXiv:2608.24747 , 2026a. Yifan Yang, Ziyang Gong, Weiquan Huang, Qihao Yang, Ziwei Zhou, Zisu Huang, Yan Li, Xuemei Gao, Qi Dai, Bei Liu, et al. Skillopt: Executive strategy for self-evolving agent skills. arXiv preprint arXiv:2605.23904 , 2026b. Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William Cohen, Ruslan Salakhutdinov, and Christopher D Manning. Hotpotqa: A dataset for diverse, explainable multi-hop question answering. In Proceedings of the 2018 conference on empirical methods in natural language processing , pp. 2369–2380, 2018. Huaiyuan Yao, Xiaoou Liu, Charles Fleming, Tianlong Chen, and Hua Wei. Maskills: Continual skills optimization for multi-agent llm systems. arXiv preprint arXiv:2609.02094 , 2026. Shunyu Yao, Howard Chen, John Yang, and Karthik Narasimhan. Webshop: Towards scalable real-world web interaction with grounded language agents. Advances in Neural Information Processing Systems , 35:20744–20757, 2022a. Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. React: Synergizing reasoning and acting in language models. arXiv preprint arXiv:2210.03629 ,2022b. Boxuan Zhang, Jianing Zhu, Zeru Shi, Dongfang Liu, and Ruixiang Tang. Agentforesight: Online auditing for early failure prediction in multi-agent systems. arXiv preprint arXiv:2605.08715 ,2026a. Chenchen Zhang. Reinforcement learning for llm-based multi-agent systems through orchestration traces. arXiv preprint arXiv:2605.02801 , 2026. Guibin Zhang, Yanwei Yue, Xiangguo Sun, Guancheng Wan, Miao Yu, Junfeng Fang, Kun Wang, Tianlong Chen, and Dawei Cheng. G-designer: Architecting multi-agent communication topologies via graph neural networks. arXiv preprint arXiv:2410.11782 , 2024. Guibin Zhang, Yanwei Yue, Zhixun Li, Sukwon Yun, Guancheng Wan, Kun Wang, Dawei Cheng, Jeffrey Yu, and Tianlong Chen. Cut the crap: An economical communication pipeline for llm-based multi-agent systems. In International Conference on Learning Representations , volume 2025, pp. 75389–75428, 2025a. Jiayi Zhang, Jinyu Xiang, Zhaoyang Yu, Fengwei Teng, Xionghui Chen, Jiaqi Chen, Mingchen Zhuge, Xin Cheng, Sirui Hong, Jinlin Wang, et al. Aflow: Automating agentic workflow generation. In 
+
+International Conference on Learning Representations , volume 2025, pp. 34040–34077, 2025b. Mingda Zhang, Wenjin Liu, Tiesunlong Shen, Qika Lin, Rui Mao, Erik Cambria, Xiaoying Tang, and Haoran Luo. Flowsteer: Towards agents designing agentic workflows via reinforced progressive canvas editing. arXiv preprint arXiv:2602.01664 , 2026b. Mingda Zhang, Tiesunlong Shen, Haoran Luo, Wenjin Liu, Zikai Xiao, Erik Cambria, and Xiaoying Tang. Skillflow: Flow-driven recursive skill evolution for agentic orchestration. arXiv preprint arXiv:2605.14089 , 2026c. Yan Zhang and Shibo Li. Consistencygate: Preventing memory contamination in llm agents via self-consistency admission control. arXiv preprint arXiv:2607.22962 , 2026. Yaolun Zhang, Tianyi Xu, Shengyu Dai, Zhenwen Shao, Qingyun Wu, and Huazheng Wang. Evochamber: Test-time co-evolution of multi-agent system at individual, team, and population scales. arXiv preprint arXiv:2605.11136 , 2026d. Chenyu Zhao, Shenglin Zhang, Wenwei Gu, Yongqian Sun, Dan Pei, Chetan Bansal, Saravan Rajmohan, and Minghua Ma. Agenttether: Graph-guided diagnosis and runtime intervention for reliable llm agent operation. arXiv preprint arXiv:2607.06273 , 2026. Junze Zhu, Weihao Chen, Xuanwang Zhang, Zhen Wu, and Xinyu Dai. Recognize your orchestrator: An entropy dynamics perspective for llm multi-agent systems. arXiv preprint arXiv:2606.01351 ,2026. Mingchen Zhuge, Wenyi Wang, Louis Kirsch, Francesco Faccio, Dmitrii Khizbullin, and Jürgen Schmidhuber. Language agents as optimizable graphs. arXiv preprint arXiv:2402.16823 , 2024. 13 Under review as a conference paper at ICLR 2027 
+
+A ANCHORED TRAJECTORY BALANCE 
+
+This appendix treats three objects in turn: the reward-tilted history law, the regression loss evaluated on recorded trajectories, and the statistical procedure for skill validation. We first establish structural and distributional properties conditional on a frozen environment context, then analyze the implemented trajectory-indexed anchors and paired tests. Algebraic identities hold on every recorded trajectory, and each distributional or statistical result holds under the assumptions it states. A.1 FORMAL SETTING , H ISTORIES , AND LEGAL ACTIONS 
+
+Definition A.1 (Context and complete-history representation) . Fix a task and a rollout-batch context 
+
+C. The context includes the task, tools, role catalogue, executor configuration, skill-menu and value-head snapshots, and rules that generate legal masks. A state st retains the complete ordered history, including the current communication graph, execution records, features, and budget information. With s0 the initial state, 
+
+st+1 = st ⊕ (at, o exec  
+
+> t
+
+, f t+1 ), at : st −→ st+1 , 0 ≤ t < T, (A.1) where ft+1 = f (st, a t, o exec  
+
+> t
+
+) is the feature record produced by action at. Thus f (st+1 ) = ft+1 
+
+denotes the latest feature record; the initial state has its interface-specified initial features. The dis-played value estimate and its change are deterministic functions of this retained history and the frozen head in C; they add no transition randomness. A complete history is x = ( s0, a 0, s 1, . . . , a T −1, s T ),identified with its terminal state sT , which retains the whole record. The final STOP transition is included in T ≥ 1. Write x ⪰ s when x extends prefix s, and let |s| count appended action records. 
+
+Definition A.2 (Legal actions and fixed executor) . Let AC (s) be the nonempty legal action set at a nonterminal history. It is a state-dependent subset of the batch-frozen action vocabulary. Let 
+
+KC (s′ | s, a ) be the normalized kernel of execution, tool observations, and history updates after a legal action. For a normalized history-dependent action policy p, its joint successor kernel is 
+
+p(a | s, C )KC (s′ | s, a ). The executor is fixed: this conditional kernel is the same for every p, and its outcomes may be stochastic and history-dependent. 
+
+Lemma A.1 (Strict growth and unique parentage) . Under Definition A.1, the history graph is a rooted tree: each edge increases |s| by one and every non-root state has a unique parent. Its backward policy on parents is therefore identically one, so no backward model needs to be learned. Proof. Equation (A.1) appends exactly one action record, so |st+1 | = |st| + 1 . A directed cycle would strictly increase this integer and return to its original value, a contradiction. Deleting the last action, observation, and feature record from a non-root history recovers its preceding prefix. Any parent must produce precisely this last appended record and the same preceding ordered history, so no second parent exists. A normalized distribution on this singleton parent set has probability one. Returning to an earlier topology keeps the intervening records, so the history still grows. 
+
+Assumption A.1 (Support, normalization, and termination) . The serialized history space is finite or countable. At every reference-reachable nonterminal prefix, ρ(· | s, C ) is normalized and positive on 
+
+AC (s). A policy compared to it in a log-ratio has the same positive action support and uses the same 
+
+KC . From every such prefix, both continuation processes reach a terminal history almost surely, and every terminal record has a reward r(x) ∈ [0 , 1] , with 0 ≤ β < ∞.
+
+Proposition A.2 (Normalized terminal and prefix laws) . Under Assumption A.1, terminal histories form a probability-one partition for p ∈ { ρ, π θ }. In particular, 
+
+X
+
+> x∈X C
+
+Pp(x | C) = 1 , Pp(s | C) = X
+
+> x⪰s
+
+Pp(x | C), Pp(s0 | C) = 1 , (A.2) 
+
+where Pp denotes the history law induced by p and the executor. Proof. Normalized local kernels define the successive action and observation probabilities. Different terminal histories describe disjoint events: a terminal record cannot be a proper prefix of a later executed history. Almost-sure termination makes their union a probability-one event. The same reasoning, restricted to the event of reaching s, partitions that event by its terminal descendants. Countable additivity proves both sums; the root is reached with probability one. 
+
+Remark A.1 (Legal actions and horizon) . A frozen snapshot fixes the interface and the rules that generate masks, and the legal set AC (s) at each state follows from them; for example, a rerun or drop 14 Under review as a conference paper at ICLR 2027 action requires an applicable agent and sufficient resources. The communication graph may contain cycles. Finite-horizon results below assume a bound T ≤ H.A.2 PATH LAWS AND POSITIVE AFFINE TILTING 
+
+Lemma A.3 (Path factorization and kernel cancellation) . Under Assumption A.1, 
+
+Pp(x | C) =  
+
+> T−1
+
+Y
+
+> t=0
+
+p(at | st, C )KC (st+1 | st, a t). (A.3) 
+
+For a supported continuation of s = sm, define ∆ℓt = log πθ (at | st, C ) − log ρ(at | st, C ). Then 
+
+Pθ (x | s, C )
+
+Pρ(x | s, C ) = 
+
+> T−1
+
+Y
+
+> t=m
+
+πθ (at | st, C )
+
+ρ(at | st, C ) = exp  
+
+> T−1
+
+X
+
+> t=m
+
+∆ℓt
+
+!
+
+. (A.4) 
+
+Here Pθ = Pπθ and Pρ(x | C) is the quantity written ρ(x | C) in Eq. (2) .Proof. Apply the probability chain rule, conditioning each action on the history before it and each observation on that history and action. This gives Eq. (A.3); starting at sm gives the corresponding suffix product. On the common support every executor factor in numerator and denominator is equal and positive, so it cancels. The remaining product consists of the action ratios, whose logarithm is the displayed sum. This cancellation compares two policies on the same recorded history. 
+
+Lemma A.4 (Masked token likelihoods) . Suppose legal actions have unique finite token serializations, including any required action-ending symbol, and masked token generation terminates almost surely. Use the same legal token sets for both policies, with each policy normalized on each such set. The sum of executed token log-probabilities is the log-probability of that action. Singleton legal sets contribute zero to its log-ratio, since both policies give them probability one. Proof. For action a = ( a1, . . . , a K ), the autoregressive chain rule gives 
+
+p(a | s, C ) = 
+
+> K
+
+Y
+
+> j=1
+
+p(aj | s, a <j , C ),
+
+with any termination probability included in the serialization. Taking logarithms gives the sum, and taking the difference for the two policies gives the action log-ratio. If a legal token set is a singleton, both normalized probabilities equal one. Its two log-probabilities are zero. Each model’s normalization constant on the common mask remains part of its normalized probability. 
+
+Proposition A.5 (Affine tilt, normalizer, and ideal reward gain) . Let μ = Eρ[r(X) | C] and 
+
+aβ = eβ − 1. The target in Eq. (2) is normalized, has the same terminal support as Pρ, and satisfies 
+
+1 ≤ Rβ (x) ≤ eβ , Z(C) = 1 + aβ μ ∈ [1 , e β ], (A.5) 
+
+EP ∗ [r(X) | C] − μ = aβ Var ρ(r(X) | C)1 + aβ μ ≥ 0. (A.6) 
+
+At β = 0 , P ∗ = Pρ. For β > 0, strict gain in Eq. (A.6) occurs exactly when the reference reward has positive variance, which holds whenever the reference both succeeds and fails. Proof. The reward range follows from r ∈ [0 , 1] and aβ ≥ 0. Summing Pρ(x)(1 + aβ r(x)) gives 
+
+Z = 1 + aβ μ; it is finite and positive, so dividing by Z normalizes the target and keeps its support. Moreover, 
+
+EP ∗ r = Eρr + aβ Eρr2
+
+1 + aβ μ .
+
+Subtracting μ gives aβ (Eρr2 − μ2)/(1 + aβ μ), and the equality and strictness statements follow from a0 = 0 and aβ > 0 for β > 0.
+
+Remark A.2 (Meaning of the target) . The tilt is affine in r and equals exp( βr ) on binary rewards, where μ is the success probability; for continuous scores μ is a mean reward. Equation (A.6) describes the training target P ∗, and skill validation uses the threshold-pass probability of Appendix C.1. 15 Under review as a conference paper at ICLR 2027 A.3 CONDITIONAL RELATIVE FLOWS AND UNIQUENESS 
+
+Definition A.3 (Unnormalized target flow and relative flow) . For Pρ(s | C) > 0, define 
+
+F ∗(s | C) = X
+
+> x⪰s
+
+Pρ(x | C)Rβ (x), U ∗(s | C) = F ∗(s | C)
+
+Pρ(s | C) , (A.7) and u∗(s | C) = log U ∗(s | C). Thus F ∗ is unnormalized. The normalized target prefix probability is P ∗(s | C) = F ∗(s | C)/Z (C), so P ∗(s | C)/P ρ(s | C) = U ∗(s | C)/Z (C).
+
+Lemma A.6 (Prefix partition and conditional recursion) . Under Assumption A.1, at every supported prefix, 
+
+U ∗(s | C) = Eρ[Rβ (X) | s, C ] = 1 + aβ Eρ[r(X) | s, C ] ∈ [1 , e β ]. (A.8) 
+
+For nonterminal s, writing Ch( s) for its supported children, 
+
+F ∗(s) = X
+
+> s′∈Ch( s)
+
+F ∗(s′), (A.9) 
+
+U ∗(s) = X 
+
+> a∈A C(s)
+
+ρ(a | s, C ) X
+
+> s′
+
+KC (s′ | s, a )U ∗(s′). (A.10) 
+
+The boundaries are U ∗(x) = Rβ (x) and U ∗(s0) = Z(C).Proof. Divide the descendant sum defining F ∗(s) by the positive prefix probability. By Eq. (A.2), the resulting weights are the normalized reference continuation law, yielding Eq. (A.8). Descendants of a nonterminal s partition by their unique first child, proving Eq. (A.9). Each child retains its incoming action, so Pρ(s′) = Pρ(s)ρ(a | s, C )KC (s′ | s, a ). Substitute F ∗(s′) = Pρ(s′)U ∗(s′) in the child sum and divide by Pρ(s) to obtain Eq. (A.10). No additional transition weight belongs in the sum of F ∗(s′), since it already includes the probability of reaching the child. A terminal has only itself as a terminal descendant; the root descendant sum is Z.
+
+Proposition A.7 (Uniqueness with an appropriate horizon condition) . On a history tree with a uniform finite action horizon H, U ∗ is the unique finite-valued solution of Eq. (A.10) with terminal boundary V (x) = Rβ (x). On a possibly infinite-depth tree with almost-sure reference termination from every supported prefix, U ∗ is the unique bounded solution with this boundary. Proof. For the finite-horizon statement, terminal values coincide. Suppose V = U ∗ at all supported successors of a nonterminal s. Applying the same recursion to both functions gives equality at 
+
+s. Induct backward through the at most H remaining transitions. This proves equality at every supported history, also for countably many children since their already identified bounded values have well-defined weighted sums, so the backward induction goes through unchanged. For the infinite-depth statement, start a reference continuation at s, and let τ be its remaining termination time. Extend the state process mathematically by retaining its terminal state after τ . The recursion and iterated conditional expectation give V (s) = Eρ[V (Sn∧τ ) | s, C ] for every integer 
+
+n. Almost-sure termination implies V (Sn∧τ ) → Rβ (X). Boundedness permits passage to the expectation, so V (s) = Eρ[Rβ (X) | s, C ] = U ∗(s). The same argument holds at each supported prefix. Equation (A.8) already ensures that U ∗ itself is bounded. 
+
+Remark A.3 (Why infinite-tree boundedness matters) . Consider a single action that, at nonterminal depth n, terminates with probability 1/2 and boundary value one, or advances to depth n + 1 .Termination is almost sure. Nevertheless, for any c > 0, the unbounded finite-valued function 
+
+Vn = 1 + c2n obeys Vn = 12 + 12 Vn+1 and the same terminal boundary. It differs from U ∗ = 1 .Boundedness in Proposition A.7 is therefore what makes the solution unique. A.4 IDEAL ZERO -R ESIDUAL CONSISTENCY 
+
+Definition A.4 (Shared-flow residual) . A shared flow is a real-valued function u(s) assigning one value to a prefix independently of which later continuation is scored. Its terminal boundary is 
+
+u(sT ) = log Rβ (x). For 0 ≤ i < j ≤ T , set 
+
+δui:j (x) = u(si) + 
+
+> j−1
+
+X
+
+> t=i
+
+∆ℓt − u(sj ), Lux = 1
+
+KT
+
+X
+
+> i<j
+
+(δui:j (x)) 2, KT = T (T + 1) 2 . (A.11) 16 Under review as a conference paper at ICLR 2027 This is Eq. (7) with a common state function; Appendix B treats the trajectory-indexed estimate. 
+
+Proposition A.8 (Ideal reference-relative consistency) . Under Assumption A.1, suppose a shared u
+
+satisfies the terminal boundary and δut:t+1 (x) = 0 on every supported complete history and every action in that history. Then 
+
+eu(s) = U ∗(s | C), u(s0) = log Z(C), Pθ (x | C) = P ∗(x | C) (A.12) 
+
+on the reference support. Requiring zero residual for all subtrajectories is equivalent here to requiring it for all singleton intervals, so checking one-step residuals suffices. Proof. Fix a supported prefix s = sm. Adding the singleton equalities along any supported complete continuation gives  
+
+> T−1
+
+X
+
+> t=m
+
+∆ℓt = 
+
+> T−1
+
+X
+
+> t=m
+
+(u(st+1 ) − u(st)) = log Rβ (x) − u(s).
+
+By Lemma A.3, eu(s)Pθ (x | s, C ) = Pρ(x | s, C )Rβ (x). Sum over all terminal descendants. The shared value eu(s) can be taken outside the sum, and the policy continuation probabilities sum to one by termination. Hence 
+
+eu(s) = X
+
+> x⪰s
+
+Pρ(x | s, C )Rβ (x) = U ∗(s | C).
+
+At terminal s, this equality follows directly from the boundary; at the root, it yields the normalizer 
+
+u(s0) = log Z(C), and substituting this into the root-to-terminal identity gives Pθ = P ∗. Finally, the same finite sum of singleton equalities telescopes on any interval i : j. The reverse implication follows because singleton intervals are included among all subtrajectories. 
+
+Corollary A.9 (Population zero loss under full coverage) . Suppose the preceding shared-flow and history-law assumptions hold and a fixed sampling law ν assigns positive mass to every reference-supported terminal history. If Eν [LuX ] = 0 , then Proposition A.8 applies. Proof. Every loss is nonnegative. A positive loss at a history of positive ν-mass would give a positive expectation, so each supported history has zero loss. Its finite sum of squared residuals then has every term zero, in particular each singleton term. The consistency proposition therefore applies. A.5 FIXED -E XECUTOR REALIZABILITY AND ITS OBSTRUCTION 
+
+Proposition A.10 (Action-only realizability criterion) . Under the reference-law and reward premises of Assumption A.1, define, on its support, 
+
+M ∗(s, a ) = X
+
+> s′
+
+KC (s′ | s, a )U ∗(s′), (A.13) 
+
+Q∗(a, s ′ | s) = ρ(a | s, C )KC (s′ | s, a ) U ∗(s′)
+
+U ∗(s) , (A.14) 
+
+π∗(a | s) = ρ(a | s, C ) M ∗(s, a )
+
+U ∗(s) ,
+
+K∗(s′ | s, a ) = KC (s′ | s, a ) U ∗(s′)
+
+M ∗(s, a ) . (A.15) 
+
+Here Q∗ is the target joint successor law and Q∗ = π∗K∗. Some arbitrary complete-history action policy using the fixed executor realizes P ∗ if and only if 
+
+U ∗(s′) = M ∗(s, a ) KC (· | s, a )-almost surely (A.16) 
+
+for every supported (s, a ). If realizable, that action policy is uniquely π∗ on the reference support. A deterministic executor satisfies Eq. (A.16) automatically. Proof. The target probability of a supported child divided by the target probability of its parent is 
+
+F ∗(s′)/F ∗(s). Substitute the reference prefix factorization from Lemma A.6; since the child records its action, this gives Eq. (A.14). Summing over children for a fixed action gives π∗, and dividing by this positive action marginal gives K∗. Both normalize by M ∗ and the flow recursion. 17 Under review as a conference paper at ICLR 2027 For necessity, a policy π realizing the complete target law must also realize its prefix and joint successor probabilities. Its joint kernel is π(a | s)KC (s′ | s, a ). Equating it to Q∗ and canceling a positive executor factor yields π(a | s) = ρ(a | s)U ∗(s′)/U ∗(s). The left side does not vary with 
+
+s′, so U ∗(s′) is constant on this successor support. Averaging that constant gives M ∗(s, a ), proving Eq. (A.16) and π = π∗.For sufficiency, under this condition K∗ = KC and π∗KC = Q∗. Multiplying these joint transitions on a complete history telescopes the U ∗ ratios, yielding Pρ(x)U ∗(x)/U ∗(s0) = P ∗(x). These terminal probabilities sum to one, so the constructed process terminates almost surely and realizes the target. Uniqueness follows from its already determined action marginals. A deterministic kernel has only one supported successor, which proves the last statement. 
+
+Proposition A.11 (Irreducible executor contribution to relative entropy) . Under the reference-law and reward premises of Assumption A.1, suppose the supported tree has a uniform finite hori-zon H. Let ΠC contain all normalized complete-history action policies supported on the refer-ence legal actions, including policies with some zero action probabilities. For π ∈ ΠC , where 
+
+DKL (p∥q) = P 
+
+> z
+
+p(z) log[ p(z)/q (z)] , zero-p terms contribute zero, and a positive-p, zero-q term gives infinite divergence, 
+
+DKL (P ∗∥Pπ ) = EP ∗
+
+"T −1X
+
+> t=0
+
+DKL (π∗(· | St)∥π(· | St)) 
+
+#
+
++ IC , (A.17) 
+
+IC = EP ∗
+
+"T −1X
+
+> t=0
+
+DKL (K∗(· | St, A t)∥KC (· | St, A t)) 
+
+#
+
+, (A.18) 
+
+inf 
+
+> π∈ΠC
+
+DKL (P ∗∥Pπ ) = IC . (A.19) 
+
+The infimum is attained by using the action marginal π∗ with the fixed executor. Moreover, IC = 0 
+
+exactly when Eq. (A.16) holds on the reference support. Proof. Factor the target with π∗K∗ and the comparison process with πKC . Their log density ratio is  
+
+> T−1
+
+X
+
+> t=0
+
+log π∗(At | St)
+
+π(At | St) + 
+
+> T−1
+
+X
+
+> t=0
+
+log K∗(St+1 | St, A t)
+
+KC (St+1 | St, A t) .
+
+For the first sum, condition on each nonterminal St and average over its target action law; the result is the action KL term in Eq. (A.17). For the second, condition on (St, A t) and average over K∗; the result is Eq. (A.18). Variable lengths cause no additional term: for this calculation only, histories may be padded to H with deterministic terminal coordinates of log-ratio zero. These steps remain valid as extended expectations. For probability vectors p, q , the negative part of P p log( p/q ) is bounded by P 
+
+> p<q
+
+q(p/q ) log( q/p ) ≤ 1/e , since z log(1 /z ) ≤ 1/e on [0 , 1] . There are at most 2H conditional terms. Also U ∗, M ∗ ∈ [1 , e β ], so the executor log-ratio is bounded in absolute value by β. No subtraction of two infinite positive expectations is required. Each conditional KL is nonnegative. Taking π = π∗ makes every action term zero and proves the infimum formula; finite horizon makes this fixed-executor policy a terminating member of ΠC . The remaining sum is zero precisely when K∗ = KC at every target-supported state-action pair. The target and reference have the same support, and Eq. (A.15) makes this equality equivalent to Eq. (A.16). 
+
+Remark A.4 (A stochastic-executor counterexample) . Let there be one legal action, after which the executor terminates with r = 0 or r = 1 , each with probability 1/2. Every action policy has success probability 1/2, whereas for β > 0 the target has success probability eβ /(1 + eβ ) > 1/2. Target realizability therefore needs the condition of Proposition A.10 in addition to kernel cancellation. A.6 SUBTRAJECTORY ALGEBRA AND CREDIT COEFFICIENTS 
+
+Fix a recorded trajectory x of length T ≥ 1. All action log-ratios and endpoint values are finite. Write vi for the value used at si on this record, allowing vi = eux(si); reuse that same value in every interval of the record. Put et = vt + ∆ ℓt − vt+1 , 0 ≤ t < T , and δ(x) 
+
+> i:j
+
+= vi + Pj−1 
+
+> t=i
+
+∆ℓt − vj .
+
+Lemma A.12 (Within-trajectory telescoping) . For every interval 0 ≤ i < j ≤ T , δ(x) 
+
+> i:j
+
+= Pj−1 
+
+> t=i
+
+et.
+
+18 Under review as a conference paper at ICLR 2027 
+
+Proof. Expand the sum of et. Each internal value vi+1 , . . . , v j−1 appears once with each sign and cancels; only vi − vj and the action log-ratios remain. No other trajectory is used. 
+
+Proposition A.13 (Matrix form, positive definiteness, and zero loss) . For all 0 ≤ i < j ≤ T and 
+
+0 ≤ t < T , let AT [( i, j ), t ] = 1{i ≤ t < j }. With GT = AT 
+
+> T
+
+AT ,
+
+δ(x) = AT e, Lx = 1
+
+KT
+
+eTGT e, (GT )rs = (min( r, s ) + 1)( T − max( r, s )) , (A.20) 
+
+where 0 ≤ r, s < T . The matrix GT is positive definite and 
+
+Lx ≥ 1
+
+KTT −1X
+
+> t=0
+
+e2 
+
+> t
+
+, Lx = 0 ⇐⇒ e = 0 ⇐⇒ δ(x) 
+
+> i:j
+
+= 0 for every i < j. (A.21) 
+
+Proof. Lemma A.12 gives the matrix multiplication and hence the quadratic form. Entry (r, s ) counts intervals containing both actions: there are min( r, s ) + 1 possible left endpoints and T − max( r, s )
+
+possible right endpoints. This proves the entry formula. The rows indexed by (t, t + 1) form an identity matrix, so AT has full column rank. For any nonzero e, ∥AT e∥22 > 0, proving positive definiteness. Retaining only the singleton squares proves the lower bound and forces e = 0 if the loss is zero. Conversely, e = 0 gives every interval residual zero and therefore zero loss. 
+
+Proposition A.14 (Action coefficients and cumulative-sum identity) . Holding the endpoint values fixed when differentiating with respect to action log-ratios, the coefficient for action t is 
+
+Γt(x) := ∂Lx
+
+∂∆ℓt
+
+= 2
+
+KT
+
+X
+
+> i≤t<j
+
+δ(x) 
+
+> i:j
+
+= 2
+
+KT
+
+(GT e)t. (A.22) 
+
+There are (t + 1)( T − t) intervals in this sum. If h0 = 0 and hj = Pj−1 
+
+> t=0
+
+et, then 
+
+KT Lx = ( T + 1) 
+
+> T
+
+X
+
+> j=0
+
+h2 
+
+> j
+
+−
+
+
+
+> T
+
+X
+
+> j=0
+
+hj
+
+
+
+> 2
+
+. (A.23) 
+
+Proof. The partial derivative of δ(x) 
+
+> i:j
+
+with respect to ∆ℓt is 1{i ≤ t < j }. Differentiate the finite sum of squared residuals to obtain the first coefficient formula; AT 
+
+> T
+
+δ(x) = GT e gives the second. An interval containing t has t + 1 possible starts and T − t possible ends. For the cumulative identity, telescoping gives δ(x) 
+
+> i:j
+
+= hj − hi. Therefore 
+
+X
+
+> i<j
+
+(hj − hi)2 = 12
+
+> T
+
+X
+
+> i=0
+> T
+
+X
+
+> j=0
+
+(hj − hi)2 = ( T + 1) 
+
+> T
+
+X
+
+> j=0
+
+h2 
+
+> j
+
+−
+
+
+
+> T
+
+X
+
+> j=0
+
+hj
+
+
+
+> 2
+
+,
+
+where the last equality expands the two square terms and the cross term. 
+
+Remark A.5 (Local coverage) . For T = 2 , e0 = c and e1 = −c give a zero full-trajectory residual but Lx = 2 c2/3 > 0 when c̸ = 0 . Singleton intervals expose such local errors. Equation (A.23) also allows an algebraic linear-time evaluation once e is known. A.7 APPROXIMATE CONSISTENCY UNDER UNIFORM RESIDUAL CONTROL 
+
+Proposition A.15 (Root, log-density, and total-variation bounds) . Under Assumption A.1, let u be shared with the exact terminal boundary. If |δu 
+
+> 0: T(x)
+
+(x)| ≤ ε for every reference-supported complete history, where ε ≥ 0, then 
+
+|u(s0) − log Z(C)| ≤ ε, (A.24) 
+
+log Pθ (x | C)
+
+P ∗(x | C) ≤ 2ε, (A.25) 
+
+TV( Pθ , P ∗) ≤ tanh( ε), (A.26) 
+
+where TV( P, Q ) = 12
+
+P 
+
+> x
+
+|P (x) − Q(x)|.Proof. Write d(x) = δu 
+
+> 0: T(x)
+
+(x). Equation (A.4) and the terminal boundary give 
+
+Pθ (x)/P ∗(x) = exp  d(x) + log Z − u(s0).
+
+19 Under review as a conference paper at ICLR 2027 Summing against P ∗ and using normalization shows 
+
+u(s0) − log Z = log EP ∗ ed(X).
+
+Because e−ε ≤ ed(X) ≤ eε, this logarithm lies in [−ε, ε ], proving the root bound. Subtract it from 
+
+d(x) to obtain the log-density bound. In particular, for g(x) = Pθ (x)/P ∗(x), e−2ε ≤ g(x) ≤ e2ε.For any positive z in this interval, 
+
+|z − 1|
+
+z + 1 ≤ e2ε − 1
+
+e2ε + 1 = tanh( ε).
+
+The fraction increases for z ≥ 1 and decreases for z ≤ 1, so its maximum is at an interval endpoint. Integrating |g − 1| ≤ tanh( ε)( g + 1) under P ∗ with EP ∗ g = 1 gives Eq. (A.26). 
+
+Corollary A.16 (A uniformly controlled all-subtrajectory loss) . If additionally η ≥ 0, T (x) ≤ H, and 
+
+Lux ≤ η2 for every supported complete history, the preceding bounds hold with ε = pH(H + 1) /2 η.Proof. The full-path square is one nonnegative summand of KT Lux, so Proposition A.15 applies with 
+
+|δu 
+
+> 0: T
+
+| ≤ pKT η ≤ pH(H + 1) /2 η = ε. 
+
+A.8 MIXED -B EHAVIOR REGRESSION AND GRADIENT BOUNDS 
+
+Remark A.6 (Gradient coefficients and data regime) . The action coefficient in Proposition A.14 is a partial derivative on a recorded trajectory. In the implemented objective, θ receives gradients through recomputed action log-probabilities and ψ through nonterminal residual-head values. The reference encodings and measured anchor statistics are detached. Trajectories are collected asynchronously, so the behavior adapter may lag the trained one by one update; paired rollouts have a forced first action. 
+
+Lemma A.17 (Record-conditioned gradient routing) . Condition on a recorded batch, its contexts, and detached statistics. Assume bψ (hρ(s), f (s)) has no θ-dependence. The AnchorTB sample gradients are 
+
+∇θ Lx = 
+
+> T−1
+
+X
+
+> t=0
+
+Γt(x)∇θ log πθ (at | st, C ), (A.27) 
+
+∇ψ Lx = 2
+
+KT
+
+X
+
+> i<j
+
+δ(x)
+
+> i:j
+
+ ∇ψ eux(si) − ∇ ψ eux(sj ), (A.28) 
+
+where ∇ψ eux(sT ) = 0 because the terminal reward boundary overrides the learned head. Proof. Differentiate each squared residual using the chain rule. For θ, the endpoint values and reference log-probabilities are fixed, leaving only the current action log-probabilities; collecting terms for the same action gives Eq. (A.27). For ψ, the action log-ratios are fixed and the two endpoints have opposite signs, giving Eq. (A.28). Stop-gradient sets the derivative of the measured part to zero, and the calculation conditions on the sampled history and its terminal reward. 
+
+Proposition A.18 (A bounded-Jacobian gradient second-moment bound) . Let ξ be any chosen trainable parameter vector, with the record and detached statistics held fixed. At differentiability points suppose 1
+
+KT
+
+X
+
+> i<j
+
+∥∇ ξ δ(x) 
+
+> i:j
+
+∥22 ≤ G2
+
+for a constant G < ∞. Then 
+
+∥∇ ξ Lx∥22 ≤ 4G2Lx. (A.29) 
+
+For a fixed distribution of recorded inputs satisfying this bound and ELX < ∞,
+
+tr Cov( ∇ξ LX ) ≤ E∥∇ ξ LX ∥22 ≤ 4G2ELX . (A.30) 
+
+Proof. Apply vector Cauchy–Schwarz to the sample gradient: 
+
+2
+
+KT
+
+X
+
+> i<j
+
+δ(x) 
+
+> i:j
+
+∇ξ δ(x)
+
+> i:j
+> 22
+
+≤ 4
+
+ 1
+
+KT
+
+X
+
+> i<j
+
+(δ(x) 
+
+> i:j
+
+)2
+
+ 1
+
+KT
+
+X
+
+> i<j
+
+∥∇ ξ δ(x) 
+
+> i:j
+
+∥22
+
+ .
+
+The first factor is the loss and the second is at most G2. Taking expectation proves the second-moment bound. The identity tr Cov( V ) = E∥V ∥22 − ∥ EV ∥22 for square-integrable V gives the rest. 20 Under review as a conference paper at ICLR 2027 
+
+Sampling law. With a fixed data law ν, AnchorTB is a regression of recorded residuals under ν.Under full coverage its exact shared zero is characterized by Corollary A.9, and nonzero optima depend on the sampling weights. These sample-gradient identities concern the AnchorTB loss; the value head and the diagnostic heads are fitted separately. 
+
+B SHRINKAGE BASELINES , S TRUCTURAL POOLING , AND THE VALUE HEAD 
+
+The ideal conditional mean in Eq. (A.8) is a property of a specified reference continuation law. Measured task statistics, lagged structural buckets, and a feature-based value head are different estimators with different data sources. We give their algebraic properties and population conditions. B.1 IMPLEMENTED TRAJECTORY -I NDEXED FLOWS 
+
+Definition B.1 (Implemented flow and terminal override) . For batch k and scored trajectory x, put 
+
+uq,k,x = log[1 + aβ ˆp(−x) 
+
+> q,k
+
+]. The flow estimate in Eq. (8), with its terminal boundary made explicit, is 
+
+euk,x (si) = 
+
+(
+
+sg 
+
+h
+
+clip [0 ,β ](uq,k,x + ck−1(g(si))) 
+
+i
+
++ bψ (hρ(si), f (si)) , 0 ≤ i < T, 
+
+log Rβ (x), i = T. (B.1) The second branch overrides the entire learned parameterization at the terminal, including bψ . We suppress the fixed batch index and write eux, u q,x , ˆp(−x) 
+
+> q
+
+, c when unambiguous. The symbol g(s)
+
+denotes the canonical structure bucket of the history. 
+
+Proposition B.1 (When a trajectory-indexed family is shared) . On a given collection of scored prefixes, the family {eux(s)} defines a single state function if and only if 
+
+eux(s) = eux′ (s) whenever x ⪰ s and x′ ⪰ s belong to that collection . (B.2) 
+
+Within every record, Lemma A.12 and Propositions A.13–A.14 apply using Eq. (B.1) .Proof. If a single function exists, evaluating it at s gives the same value for every continuation, which proves necessity. Conversely, define its value at each represented prefix by selecting any one continuation. Equation (B.2) makes the definition independent of that selection. This proves sufficiency on the specified collection. The within-record identities only require that a fixed endpoint value be reused in each interval of that record, which the definition provides. 
+
+Remark B.1 (Partial LOO is numerically trajectory dependent) . For two same-task reference records with rewards one and zero, take m0 = 1 /2 and the configured κq = 0 .5. Removing the successful record from its task-level statistic gives ˆp(−x1) 
+
+> q
+
+= 1 /6; removing the failure gives ˆp(−x2) 
+
+> q
+
+= 5 /6.With c = 0 , bψ = 0 , and β > 0, the common root receives two distinct values log(1 + aβ /6) and 
+
+log(1 + 5 aβ /6) , both inside [0 , β ]. Stop-gradient leaves these numerical values unchanged. B.2 HIERARCHICAL SHRINKAGE AND ITS RANGE 
+
+Definition B.2 (Hierarchical task baseline) . Let S and N be reward sums and trajectory counts from the healthy, non-paired reference pool, with subscripts g, c, q for global, category, and task statistics. Here g in Sg , N g , m g means the global level, not a structure bucket. Define 
+
+mg =
+
+Sg /N g , Ng > 0,
+
+1/2, Ng = 0 , mc = Sc + κg mg
+
+Nc + κg
+
+, (B.3) 
+
+m0 = n′
+
+> d
+
+pd + κcmc
+
+n′ 
+
+> d
+
++ κc
+
+, ˆp(−x) 
+
+> q
+
+= S(−x) 
+
+> q
+
++ κq m0
+
+N (−x) 
+
+> q
+
++ κq
+
+. (B.4) The optional record prior is (pd, n d), with n′ 
+
+> d
+
+= min( nd, 20) ; absence of that prior gives n′ 
+
+> d
+
+= 0 .The configured strengths are (κg , κ c, κ q ) = (2 , 4, 0.5) . If the scored record is in the eligible task pool, it is removed once from that task sum and count; otherwise no subtraction is made. Leave-one-out applies at the task level. The estimate is clipped to [0 , 1] before the reward transform. For bounded nonbinary rewards, ˆp estimates a mean score, and for binary rewards a success probability. 21 Under review as a conference paper at ICLR 2027 
+
+Lemma B.2 (Range of the hierarchical estimate) . Assume nonnegative counts, 0 ≤ S ≤ N at every used level, a valid task-level deletion, pd ∈ [0 , 1] , n′ 
+
+> d
+
+≥ 0, and positive shrinkage strengths. Then 
+
+mg , m c, m 0, ˆp(−x) 
+
+> q
+
+∈ [0 , 1] and 0 ≤ uq,x ≤ β.Proof. A nonempty empirical mean S/N lies in [0 , 1] , and the empty global convention does too. For Nc > 0, mc is the convex combination of Sc/N c and mg with weights Nc/(Nc + κg ) and 
+
+κg /(Nc +κg ); if Nc = 0 it equals mg . The same argument applies to m0 and the task estimate, includ-ing zero-count cases because their shrinkage denominators stay positive. Finally p 7 → log(1 + aβ p)
+
+is nondecreasing on [0 , 1] , with endpoint values 0 and β. This holds for any reward in [0 , 1] .
+
+Proposition B.3 (Fixed-prior shrinkage moments and sensitivity) . For fixed n ≥ 0, m ∈ [0 , 1] ,
+
+κ > 0, and rewards Yi ∈ [0 , 1] , let ˆp = ( Pni=1 Yi + κm )/(n + κ). If the Yi are i.i.d. with mean μ
+
+and variance σ2, then 
+
+Eˆp − μ = κ(m − μ)
+
+n + κ , Var(ˆ p) = nσ 2
+
+(n + κ)2 , (B.5) 
+
+E(ˆ p − μ)2 = nσ 2 + κ2(m − μ)2
+
+(n + κ)2 . (B.6) 
+
+For a fixed record set, changing one bounded reward changes ˆp by at most 1/(n + κ). Changing only 
+
+m to m′ changes it by exactly κ|m − m′|/(n + κ). When n ≥ 1, deleting record i while holding the prior fixed gives ˆp − ˆp−i = ( Yi − ˆp−i)/(n + κ), again of magnitude at most 1/(n + κ).Proof. Linearity gives Eˆp = ( nμ + κm )/(n + κ). Independence makes the variance of the sum 
+
+nσ 2; division by the squared denominator gives its variance. Squared bias plus variance proves the MSE expression, also at n = 0 . The replacement and prior sensitivities follow by subtracting the two numerators over their common denominator. For deletion, write P 
+
+> h̸=i
+
+Yh + κm = ( n − 1 + κ)ˆ p−i
+
+and substitute in ˆp; subtracting ˆp−i gives the identity, bounded as Yi, ˆp−i ∈ [0 , 1] .
+
+Pooled estimand. The moment formulas above condition on a fixed prior and sample size. If records come from contexts Ch and pass a health event Ah, their conditional means are E[r | Ch, A h],and for fixed mixture weights wh the pooled population mean is P 
+
+> h
+
+whE[r | Ch, A h].B.3 ANCHOR SENSITIVITY AND RESIDUAL STABILITY 
+
+Lemma B.4 (Reward-transform sensitivity and clipping) . For p, p ′ ∈ [0 , 1] , let fβ (p) = log(1 + aβ p)
+
+and A(p, c ) = clip [0 ,β ](fβ (p) + c). Then 
+
+|fβ (p) − fβ (p′)| ≤ aβ |p − p′|, |A(p, c ) − A(p′, c ′)| ≤ aβ |p − p′| + |c − c′|. (B.7) 
+
+Proof. For β > 0, f ′ 
+
+> β
+
+(p) = aβ /(1 + aβ p) ≤ aβ , so integration between p and p′ proves the first inequality. At β = 0 , both sides of that inequality are zero. Projection onto a closed interval is nonexpansive: ordering the two inputs shows that clipping can only shorten their distance. This holds for [0 , 0] too. This and the triangle inequality give the second bound. 
+
+Proposition B.5 (Endpoint perturbations, loss, and credit stability) . Compare two endpoint arrays 
+
+vi, ¯vi on one fixed trajectory with the same action log-ratios, and suppose max 0≤i≤T |¯vi − vi| ≤ ε.Then 
+
+|¯δi:j − δi:j | ≤ 2ε, |p ¯Lx − pLx| ≤ 2ε, (B.8) 
+
+|¯Γt − Γt| ≤ 4εKT
+
+(t + 1)( T − t), 0 ≤ t < T. (B.9) 
+
+If only the measured anchor changes by inputs satisfying |p − p′| ≤ εp, |c − c′| ≤ εc, while bψ and terminal rewards are fixed, these bounds hold with ε = aβ εp + εc.Proof. The difference of interval residuals is (¯ vi − vi) − (¯ vj − vj ), bounded by 2ε. There are KT
+
+residuals, so the Euclidean distance between their vectors is at most 2ε√KT . Divide the reverse triangle inequality for their norms by √KT to obtain the loss bound. By Eq. (A.22), the coefficient difference is the sum of (t + 1)( T − t) residual differences times 2/K T ; bounding each summand gives Eq. (B.9). Lemma B.4 gives the rest, the terminal being fixed. 
+
+Remark B.2 (The residual head lies outside clipping) . The measured part of Eq. (B.1) lies in [0 , β ]
+
+and bψ is added outside it; a changing head adds its perturbation to ε in Proposition B.5. 22 Under review as a conference paper at ICLR 2027 B.4 RATIO -F IRST STRUCTURAL POOLING 
+
+Definition B.3 (Visit-multiplicity pooling) . For a structural bucket g, let Vg be the multiset of eligible prefix visits (x, t ) assigned to that bucket, and set ng = |V g |. Each included occurrence is counted in both the sum and the denominator. Put Bx = euq,x and zx,t = Rβ (x)/B x. For n0 ≥ 0, cmax ≥ 0,and ng + n0 > 0, define 
+
+Ag = 1 + 
+
+P 
+
+> (x,t )∈V g
+
+(zx,t − 1) 
+
+ng + n0
+
+, c(g) = clip [−cmax ,c max ](log Ag ). (B.10) These are the exact-arithmetic quantities before the positive-domain numerical safeguard in the implementation description. Buckets use a canonical graph and an open/stop marker, fall back to coarse node and edge counts below eight visits, and are read one batch behind. The configured values are n0 = 8 and cmax = 0 .25 .
+
+Lemma B.6 (Positive denominator algebra and bounds) . Under Definition B.3, if each zx,t > 0 is finite, then 
+
+Ag = n0 + P 
+
+> (x,t )∈V g
+
+zx,t 
+
+ng + n0
+
+> 0. (B.11) 
+
+If Rβ (x), B x ∈ [1 , e β ], then Ag ∈ [e−β , e β ] and |c(g)| ≤ min( β, c max ). If ng = 0 < n 0, then 
+
+Ag = 1 and c(g) = 0 , and the formula defines no value when ng = n0 = 0 .Proof. The number of subtracted ones is exactly ng , so combining terms over the common denom-inator gives Eq. (B.11). If ng > 0, its numerator contains a positive term; if ng = 0 , the positive denominator forces n0 > 0. This proves strict positivity. The ratio is a weighted average of the values 
+
+zx,t and the pseudo-observation one. Each lies in [e−β , e β ] under the additional bounds. The same interval contains their weighted average; logarithm and clipping give the stated bound. Substituting 
+
+ng = 0 into the ratio gives Ag = 1 and c(g) = 0 , which proves the empty-bucket case. 
+
+Proposition B.7 (A visit-weighted population interpretation) . For this proposition only, suppose the tuples (Xh, B h, V h) are i.i.d. under a fixed law, where zh = Rβ (Xh)/B h > 0 and Vh counts the eligible visits to a fixed bucket in record h. Assume 0 < EVh < ∞ and E[Vhzh] < ∞. With a fixed finite n0, pooling the first m records satisfies 
+
+n0 + Pmh=1 Vhzh
+
+n0 + Pmh=1 Vh
+
+−→ E[Vhzh]
+
+EVh
+
+almost surely . (B.12) 
+
+The log and clipped-log quantities converge to the corresponding transforms of this positive limit. Proof. The strong law applied to Vhzh and Vh makes their averages converge to the two expectations. Divide numerator and denominator by m; n0/m → 0, and the limiting denominator is strictly positive, so the quotient converges. Its limiting numerator is positive because zh > 0 on the positive-probability event Vh > 0. Continuity of log at a positive limit and of clipping gives the rest. 
+
+Three sources of statistical discrepancy. First, ratio-first pooling targets an arithmetic ratio average, and the finite-sample Jensen gap remains: for a positive random average ¯z, E log ¯ z ≤ log E¯z.Second, random denominators matter even before taking a logarithm: 
+
+E[R/B ] = E[R]E[B−1] + Cov( R, B −1), (B.13) when these moments exist. This identity is the definition of covariance; with R = 1 and B equally likely to be one or two, E[R/B ] = 3 /4 while E[R]/E[B] = 2 /3. For β ≥ log 2 these denominators obey the preceding bounded range; shrinkage and clipping add further differences. Third, visit pooling weights a record by Vh, so its limiting ratio in Eq. (B.12) is a visit-weighted average. Repeated visits share the terminal reward and can be strongly correlated. For a fixed number 
+
+n > 0 of random visit ratios with finite second moments, 
+
+Var 1
+
+n
+
+> n
+
+X
+
+> v=1
+
+zv
+
+!
+
+= 1
+
+n2
+
+> n
+
+X
+
+> v=1
+> n
+
+X
+
+> w=1
+
+Cov( zv , z w),
+
+by bilinearity of covariance, so a visit count measures visits rather than independent tasks. Structural reads lag one batch, and buckets also include paired reference prefixes (Section C.5). 23 Under review as a conference paper at ICLR 2027 B.5 VALUE -H EAD PROJECTION AND CALIBRATION 
+
+Definition B.4 (Feature-level regression distribution) . Let D be the actual distribution of scored training pairs (S, Y ) for the value head, where X is the terminal continuation record from S and 
+
+Y = r(X) ∈ [0 , 1] its reward. For Eq. (5), D denotes the actual scored-pair law represented by 
+
+Dρ, including its stated data filters. The input is z(S) = [ f (S); onehot(tasktype( q))] ∈ R30+6 .Write Zf = z(S) for the random feature vector; it is unrelated to the normalizer Z(C). Define 
+
+mD (Zf ) = ED [Y | Zf ].
+
+Proposition B.8 (Feature-conditional MSE projection and calibration) . Over measurable square-integrable functions of Zf , the population risk in Eq. (5) decomposes as 
+
+ED (v(Zf ) − Y )2 = ED (v(Zf ) − mD (Zf )) 2 + ED Var( Y | Zf ). (B.14) 
+
+Its unique minimizer up to D-null sets is mD , and 
+
+ED [Y | mD (Zf )] = mD (Zf ). (B.15) 
+
+For any such predictor v(Zf ), its squared mean-calibration error is at most its excess risk above this unrestricted optimum: 
+
+ED
+
+(ED [Y | v(Zf )] − v(Zf )) 2 ≤ ED (mD (Zf ) − v(Zf )) 2. (B.16) 
+
+Proof. Write v − Y = ( v − mD ) + ( mD − Y ) and expand its square. The cross term has conditional expectation zero given Zf because E[Y − mD | Zf ] = 0 . The remaining conditional squared error is Var( Y | Zf ), proving the risk identity. The first term is nonnegative and vanishes exactly when 
+
+v = mD almost surely, which proves the minimizer claim. Since mD is measurable with respect to 
+
+Zf , the tower property gives Eq. (B.15). For the last bound, v is also a function of Zf , and hence 
+
+E[Y | v] − v = E[mD − v | v].
+
+Conditional Jensen’s inequality for the square followed by expectation gives Eq. (B.16). 
+
+Complete-history values and a finite sigmoid network. Equality of mD (z(s)) with the ideal reference value μρ(s, C ) = Eρ[r(X) | s, C ] holds when the continuation-data law is compatible and the features are sufficient for that conditional mean; two histories that share features but have values 
+
+1/4 and 3/4 show why sufficiency is needed. Calibration above is with respect to D.The implemented head is the sigmoid MLP of Eq. (5) with 30 + 6 inputs and hidden width 32: the 30 execution features and a six-slot task-type one-hot, one slot per IID benchmark. Finite logits produce outputs strictly between zero and one; an unrestricted sigmoid predictor approaches a conditional mean of zero or one by clipping it to [ϵ, 1 − ϵ] and taking its logit, with squared excess risk at most 
+
+ϵ2. The head estimates a success probability for binary rewards and an expected score otherwise. Its weights are exported per batch and evaluated on CPU with no extra encoder call. The two larger outcome heads on [hρ(s); f (s)] serve as diagnostics. B.6 THE IMPLEMENTED OPTIMUM AND THE IDEAL FLOW 
+
+Proposition B.9 (Squared-log regression and the arithmetic normalizer) . In the one-action executor of Remark A.4, take a shared scalar root value u0 and the exact terminal boundary. Taking expectation under that reference executor law, for β > 0 the population AnchorTB loss is minimized at u0 = β/ 2,not at the ideal root log[(1 + eβ )/2] , and its minimum is β2/4 > 0.Proof. There is one action and both policies assign it probability one, so ∆ℓ0 = 0 , T = KT = 1 .The terminal log reward is zero or β, each with probability 1/2. Consequently 
+
+L(u0) = 12 u20 + 12 (u0 − β)2 = ( u0 − β/ 2) 2 + β2/4.
+
+This proves the minimizer and minimum; also Z = (1 + eβ )/2. Strict concavity of log on the two distinct rewards gives E log Rβ = β/ 2 < log ERβ for β > 0, and both vanish at β = 0 .
+
+Remark B.3 (Why sharedness is needed) . For any fixed pair of supported policies, define the artificial family vx(si) = log Rβ (x) − PT −1 
+
+> t=i
+
+∆ℓt on each complete record. The empty sum at i = T gives the exact terminal boundary, and subtraction shows vx(si) + ∆ ℓi − vx(si+1 ) = 0 at every step. Thus all its within-record losses are zero whether or not Pθ = P ∗, and the family is generally not shared across continuations; distributional results therefore rely on sharedness. 24 Under review as a conference paper at ICLR 2027 The ideal u∗(s | C), the measured task anchor uq,x , the implemented eux(s), and a population regression minimizer are distinct objects. The first is identified by a conditional expectation and a recursion; the next two are specified estimators; the last on its function class and training law. 
+
+C SEQUENTIAL VALIDATION AND THE TRAINING LOOP 
+
+Paired validation compares two specified rollout regimes. We identify that effect, prove fixed-look directional tests and the error accounting of an adaptive run, and close with the training loop. C.1 PAIRED INTERVENTION REGIMES AND EFFECT ESTIMANDS 
+
+Definition C.1 (Paired regimes, counts, and empty samples) . For a registered candidate, the two arms start from the empty team with the same task record, runtime configuration, value-head snapshot, and forced first role. The candidate arm binds the candidate at its first ADD _AGENT ; the control arm does not, and keeps the candidate unavailable later. Both arms subsequently use the reference policy under their respective histories. They share the other validated skills, and their later decisions and observations may differ. For complete pair i, set b± 
+
+> i
+
+= 1{r(x± 
+
+> i
+
+) ≥ 1/2} and define 
+
+W =
+
+> N
+
+X
+
+> i=1
+
+1{b+ 
+
+> i
+
+= 1 , b − 
+
+> i
+
+= 0 }, L =
+
+> N
+
+X
+
+> i=1
+
+1{b+ 
+
+> i
+
+= 0 , b − 
+
+> i
+
+= 1 },T0 =
+
+> N
+
+X
+
+> i=1
+
+1{b+ 
+
+> i
+
+= b− 
+
+> i
+
+}, D = W + L, N = W + L + T0. (C.1) When N > 0, ˆ∆ = ( W − L)/N . For N = 0 the empirical effect is undefined, rather than an estimate of zero. With D = 0 , both directional p-values below are defined to be one, and there is no rejection. 
+
+Lemma C.1 (Paired effect identity) . For N > 0,
+
+ˆ∆ = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+(b+ 
+
+> i
+
+− b− 
+
+> i
+
+), | ˆ∆| ≤ 1. (C.2) 
+
+For a specified pair distribution, let pW and pL be its win and loss probabilities. Its threshold-pass effect is 
+
+∆ = P(b+ = 1) − P(b− = 1) = pW − pL. (C.3) 
+
+Neither identity requires independence of the two arms within a pair. Proof. A win contributes one to b+ 
+
+> i
+
+− b− 
+
+> i
+
+, a loss contributes minus one, and a tie contributes zero. Summing proves the sample identity, and boundedness of each summand proves its range. Taking expectations gives the population identity without factoring joint arm probabilities. 
+
+Remark C.1 (The intervention and the reward threshold) . The intervention begins at the first action of an empty team, and the control keeps the candidate unavailable throughout, so ∆ is the full-regime threshold-pass effect, later decisions included. For continuous scores ∆ counts threshold crossings on r: a reward moving from 0.49 to 0.51 gives ∆ = 1 but changes the mean by 0.02 .C.2 EXACT FIXED -L OOK DIRECTIONAL TESTS 
+
+Assumption C.1 (Registered fixed-look i.i.d. pair model) . Let Gj denote information available at registration of comparison j. Conditional on it, the candidate, arm protocols, target pair distribution, and a finite nonnegative integer N of complete pairs for this look are fixed. The future pair outcomes are conditionally i.i.d. under that distribution. Within-pair dependence is allowed. No data used to choose the candidate are reused as its future validation outcomes under this assumption. Denote the conditional win and loss probabilities by pW , p L, and the corresponding mean threshold effect by 
+
+∆j = pW − pL.
+
+Proposition C.2 (Both composite directional nulls at a fixed look) . Under Assumption C.1, define 
+
+p+ = P{BD ≥ W }, p− = P{BD ≥ L}, BD ∼ Bin( D, 1/2) , (C.4) 25 Under review as a conference paper at ICLR 2027 
+
+Here probabilities in the displayed tails are over the auxiliary binomial variable with the observed 
+
+D, W, L held fixed; use the D = 0 convention of Definition C.1. For every u ∈ [0 , 1] ,
+
+H+ 
+
+> j
+
+: ∆ j ≤ 0 =⇒ P(p+ ≤ u | G j ) ≤ u, (C.5) 
+
+H− 
+
+> j
+
+: ∆ j ≥ 0 =⇒ P(p− ≤ u | G j ) ≤ u. (C.6) 
+
+Each inequality holds on its null event, so each tail is valid for its whole composite directional null. Proof. All probabilities in the proof condition on Gj . Put pD = pW + pL. If pD = 0 , then D = 0 
+
+almost surely and p+ = p− = 1 , which satisfies both inequalities; the same conclusion holds if 
+
+N = 0 . Otherwise, for d of positive probability and 0 ≤ w ≤ d, the multinomial law of wins, losses, and ties gives 
+
+P(W = w, L = d − w, D = d) = N !
+
+w!( d − w)!( N − d)! pwW pd−wL (1 − pD )N −d,
+
+P(D = d) = 
+
+Nd
+
+
+
+pdD (1 − pD )N −d.
+
+Dividing, with the usual limiting conventions when a cell probability is zero, proves 
+
+W | D = d ∼ Bin( d, ϑ ), ϑ = pW /p D , L | D = d ∼ Bin( d, 1 − ϑ).
+
+Under H+ 
+
+> j
+
+we have pW ≤ pL, so ϑ ≤ 1/2. With independent uniform variables U1, . . . , U d, the sum 
+
+P 
+
+> i
+
+1{Ui ≤ ϑ} is pointwise at most P 
+
+> i
+
+1{Ui ≤ 1/2}. Hence the former binomial is stochastically dominated by the latter. Define 
+
+ku(d) = min {k ∈ { 0, . . . , d } : P(Bd ≥ k) ≤ u},
+
+using ku(d) = d + 1 if the set is empty. The tail is nonincreasing in its observed count, so 
+
+{p+ ≤ u} = {W ≥ ku(d)} conditional on D = d, and stochastic domination then gives 
+
+P(p+ ≤ u | D = d) ≤ P(Bd ≥ ku(d)) ≤ u. 
+
+For d = 0 , the assigned value one has the same validity property. Averaging over D proves Eq. (C.5). Under H− 
+
+> j
+
+, ϑ ≥ 1/2, so 1 − ϑ ≤ 1/2. Apply the same uniform coupling to the conditional law of L.The event {p− ≤ u} is {L ≥ ku(d)}, whose probability is at most the corresponding fair-binomial upper tail and thus at most u. Averaging over D, including D = 0 , proves Eq. (C.6). 
+
+Lemma C.3 (A stronger fixed-context conditional-sign model) . Fix a candidate and a prespecified finite collection of complete pairs. Condition on the full vector of contexts C, the full discor-dance vector D = ( 1{b+
+
+> i
+
+̸ = b− 
+
+> i
+
+})i, and registration information. Suppose the retained win signs 
+
+Yi = 1{b+ 
+
+> i
+
+= 1 , b − 
+
+> i
+
+= 0 } are conditionally independent. If every retained sign has conditional prob-ability pi ≤ 1/2, then p+ is conditionally super-uniform. If every pi ≥ 1/2, then p− is conditionally super-uniform. If all pi = 1 /2, then W | (C, D, Gj ) is exactly Bin( D, 1/2) .Proof. After conditioning, the retained index set and its size D = d are fixed. For the positive direction construct independent uniforms and represent each independent sign as Yi = 1{Ui ≤ pi}.When pi ≤ 1/2, each sign is bounded above by 1{Ui ≤ 1/2}, so their sum is stochastically dominated by Bin( d, 1/2) . Using the cutoff ku(d) from the preceding proof gives the super-uniform upper tail. When pi ≥ 1/2, the independent loss signs 1 − Yi instead have probabilities at most 1/2;the same argument applies to p−. When every pi = 1 /2, independence identifies the sum as precisely the fair binomial. The zero-discordance convention handles an empty set. 
+
+Corollary C.4 (Two-direction accounting at one look) . If each valid direction receives level b/ 2,the probability of any false directional rejection at that look is at most b. Also, for the p-values in Eq. (C.4) , both directions cannot simultaneously satisfy p± ≤ a when a < 1/2.Proof. Sum the error probabilities only over directions whose nulls are true. There are at most two, each bounded by b/ 2, so the union bound gives b, without independence. For the second claim, fair-binomial symmetry and L = D − W imply p− = P(BD ≤ W ), so 
+
+p+ + p− = 1 + P(BD = W ) ≥ 1,
+
+which no two numbers at most a < 1/2 satisfy. If D = 0 , both p-values equal one. 26 Under review as a conference paper at ICLR 2027 
+
+Two null models. The i.i.d. pair proposition tests an average threshold effect under the registered pair distribution, possibly averaging over randomly sampled tasks. The fixed-context lemma assumes the stronger sign inequalities for every retained pair after conditioning on all contexts and discordance indicators; equally weighted contexts with certain wins in one and certain losses in the other show that an average zero effect can coexist with opposite deterministic conditional signs. C.3 ADAPTIVE SELECTION , R EPEATED PROBLEMS , AND REPEATED LOOKS 
+
+Remark C.2 (Correlated-sign counterexample) . Draw one fair Bernoulli variable Y , and for 
+
+i = 1 , . . . , 8 set (b+ 
+
+> i
+
+, b − 
+
+> i
+
+) = ( Y, 1 − Y ). Every pair has zero marginal effect, but all eight signs agree. The observed direction always has p-value 2−8 = 0 .00390625 . At the configured α = 0 .05 and the first allocation j = ℓ = 1 , its threshold is α/ 8 = 0 .00625 . Thus one false directional rejection occurs with probability one, although the nominal spending formula is obeyed. Correlated duplicates therefore carry the evidence of one pair rather than eight, and validity depends on the conditional outcome and dependence model. 
+
+Remark C.3 (Candidate-selection counterexample) . For integers M ≥ 2 and d ≥ 1, consider M true zero-effect candidates, each with d independent fair validation signs, independent across candidates. Use these same signs to select a candidate with all wins whenever one exists, and then report its ordinary fixed-candidate p-value. The event of at least one all-win candidate has probability 
+
+1 − (1 − 2−d)M , while the selected p-value on this event is 2−d. For M > 1 this exceeds its nominal tail probability and can approach one. The invalidity arises from selection and reuse of screening outcomes. The protocol below selects from registration information and validates on future data. 
+
+Planned looks and cumulative data. Suppose a fixed candidate has valid p-values at prespecified cumulative sample sizes n1, n 2, . . . , with deterministic levels a1, a 2, . . . . Although the looks reuse data and their p-values are correlated, 
+
+P{some true-null look rejects } ≤ X
+
+> ℓ
+
+P(pℓ ≤ aℓ) ≤ X
+
+> ℓ
+
+aℓ.
+
+Independence between looks is unnecessary, and early stopping only removes potential later rejections. What matters is that the actual look indexed by ℓ retains a valid null law; renumbering selected looks, choosing the sample size by favorable signs, reusing candidate-selection outcomes, or filtering complete pairs on outcomes can change that law. The registration-based protocol below conditions on registration information, which is all the union bound requires. C.4 NOMINAL SPENDING AND CONDITIONAL COUNTABLE FWER 
+
+Proposition C.5 (Alpha-spending accounting) . Let 0 < α < 1, and assign each registered compari-son j ≥ 1 and look ℓ ≥ 1 two directional allocations 
+
+aj,ℓ,d = α
+
+2j(j + 1) ℓ(ℓ + 1) , d ∈ { +, −} . (C.7) 
+
+If each directional index is globally unique and used at most once, any realized run spends at most α.Proof. For every integer M ≥ 1, PMn=1 1/[n(n + 1)] = PMn=1 (1 /n − 1/(n + 1)) = 1 − 1/(M + 1) .Therefore, for finite J, L ,
+
+> J
+
+X
+
+> j=1
+> L
+
+X
+
+> ℓ=1
+
+X
+
+> d∈{ +,−}
+
+aj,ℓ,d = α
+
+
+
+1 − 1
+
+J + 1 
+
+  
+
+1 − 1
+
+L + 1 
+
+
+
+.
+
+Monotone limits give total allocation α, and the consumed indices, a subset, sum to at most α.
+
+Proposition C.6 (Conditional-validity family-wise error bound) . For each registered j, let Hj,d be the event that its directional null is true, measurable with respect to registration information Gj . Let 
+
+Ej,ℓ,d be the event that the directional test is actually performed and rejects a true null. Unregistered or unperformed tests have empty rejection events. Suppose the actual selection, sampling, and observation rules ensure 
+
+P(Ej,ℓ,d | G j ) ≤ aj,ℓ,d 1Hj,d almost surely for every j, ℓ, d. (C.8) 
+
+Then the probability of any false directional rejection is at most α. More generally, if a pre-run information field F0 is contained in every Gj , the same bound holds conditional on F0.
+
+27 Under review as a conference paper at ICLR 2027 
+
+Proof. By the tower property, Eq. (C.8) gives P(Ej,ℓ,d ) ≤ aj,ℓ,d . For a finite rectangle of indices, the probability of the union is at most their summed probabilities. Increasing these rectangles to all positive indices and using continuity of probability from below gives 
+
+P
+
+ [
+
+> j,ℓ,d
+
+Ej,ℓ,d 
+
+ ≤ X
+
+> j,ℓ,d
+
+P(Ej,ℓ,d ) ≤ X
+
+> j,ℓ,d
+
+aj,ℓ,d = α. 
+
+For the conditional version, the tower property with F0 ⊆ G j first gives P(Ej,ℓ,d | F 0) ≤ aj,ℓ,d .Apply the finite conditional union bound and conditional monotone convergence to the same in-creasing sequence of unions. This proves the bound almost surely given F0. The argument uses no independence between comparisons or looks, so it covers dependent tests. 
+
+Assumption C.2 (A sufficient registration-and-future-data protocol) . For each comparison j, the protocol consists of the following conditions. The candidate may be chosen adaptively from Gj ,but its content, arm protocols, response law, and target pair distribution are then fixed for that comparison. Conditional on Gj , future complete pairs form the i.i.d. stream in Assumption C.1; past screening outcomes are not reused, and pair inclusion does not selectively retain favorable outcomes. A nondecreasing countable sequence of finite nonnegative integer cumulative sample sizes nj,ℓ is 
+
+Gj -measurable and fixed before those future outcomes are seen. Each potential p-value is computed from the first nj,ℓ pairs, and keeps its original planned index and allocation. Whether a planned test is ultimately performed may depend on available information, but cannot change that potential test or its data law. Unperformed planned tests consume no level. 
+
+Corollary C.7 (FWER under the sufficient protocol) . Assumption C.2, the unique indices of Proposi-tion C.5, and rejection at the allocations in Eq. (C.7) imply the bound of Proposition C.6. Proof. Conditional on Gj , each nj,ℓ is fixed. Apply Proposition C.2 to the corresponding future-data prefix to obtain, on Hj,d , P(pj,ℓ,d ≤ aj,ℓ,d | G j ) ≤ aj,ℓ,d . The actual false rejection event is a subset of Hj,d ∩ { pj,ℓ,d ≤ aj,ℓ,d }, even when the decision to execute a planned look uses earlier outcomes. Since Hj,d is registration-measurable, this subset relation proves Eq. (C.8). The preceding proposition then gives the claimed bound, also when cumulative prefixes overlap. 
+
+Remark C.4 (Error accounting for the online procedure) . The implemented observation index ad-vances when new wins or losses exist. For this procedure we establish nominal accounting (Proposi-tion C.5) and whole-run FWER under the premise of Eq. (C.8). Dependence between valid planned tests leaves the union bound intact. These results bound false directional rejections. C.5 TRAINING ALGORITHM AND DATA ROUTING 
+
+Skill proposal rules. The author model runs only in an author window and distils at most one candidate per window from scored, side-effect-free trajectories, preferring task families with few skills and contrasting a high-scoring run with a same-task failure when one exists. A candidate is a structured procedure with name, description, trigger, plan, pitfall, and constraint fields, and is filtered for duplicates and answer leakage. Candidate slots are ordered by fewest paired observations. Paired rollouts enter AnchorTB and structural buckets as off-policy paths but not the task, category, and global baseline statistics, and the forced first action is scored at its true probability under θ and ρ.The following algorithm describes the frozen implementation. It is distinct from the sufficient testing protocol in Assumption C.2. The same trajectory-indexed endpoint values are reused across all intervals of each scored trajectory. For paired records, “the same context” in the re-scoring step means that θ and ρ use that record’s actual arm context, C+ or C−, and its legal mask. 
+
+Remark C.5 (Implementation details) . The paired design intervenes only at the first ADD _AGENT ,and the active skill set exposes slot identifiers rather than full skill text. 
+
+Data routing. Natural healthy non-paired reference trajectories supply the hierarchical task, cate-gory, and global statistics. Natural and paired paths can supply the AnchorTB regression. Structural buckets also receive paired reference prefixes, without the forced-prefix filter of the value-head data and with their visit multiplicities retained. Conditional flow statements apply to a fixed C.28 Under review as a conference paper at ICLR 2027 
+
+Algorithm 1 One training step of EvoSteer 1. Sample 32 task records balanced over sources. 2. Roll out 2θ + 2 ρ natural trajectories per record, plus one candidate and one control rollout per record in a family with a candidate, under fixed skill-menu and value-head snapshots; execute every action on issue and append feedback and features. 3. Gate the batch on completeness and risk; publish the current adapter to the sampling service and prefetch the next batch. 4. Re-score every action under θ and ρ with the same context, tokens, and grammar mask. 5. Fit the value head and auxiliary heads on legal reference states. 6. Build same-task shrinkage baselines; read structural buckets from earlier batches; accumulate this batch’s ratios. 7. Compute all subtrajectory residuals of Eq. (7) and update θ and bψ .8. Accumulate paired wins, losses, and ties; at each validation round, run the author window and the sequential tests of Eq. (11). 9. Save a checkpoint with adapter, heads, optimiser, statistics, skills, and test state. C.6 PROOFS OF THE MAIN -T EXT PROPOSITIONS 
+
+The first main-text proposition is procedural: legal repairs execute before the next decision and preserve the history representation (Lemma A.1). The second follows from the action coefficient in Proposition A.14 and the estimator components in Definition B.1. The third combines candidate-slot and status-transition rules with Proposition C.5’s nominal accounting; its statistical interpretation is fixed-look validity in Proposition C.2 and the conditional whole-run result of Proposition C.6. 
+
+D EXPERIMENTAL DETAILS 
+
+Benchmarks and splits. The six IID benchmarks (HotpotQA, NQ-Open, MedQA, AIME 2026, MBPP+, ALFWorld) supply the training tasks, and their test items are disjoint from those tasks; all 30 AIME 2026 problems are test items, and the mathematics training tasks are compiled from earlier AIME problems. The six OOD benchmarks (TriviaQA, MuSiQue, GPQA, MATH-Hard, SWE-Bench Verified, WebShop) are evaluation-only. Every other test set has 128 items, so one run’s 0/1 metric lies on a k/ 128 grid ( k/ 30 for AIME 2026) and a reported five-run mean on a k/ 640 grid ( k/ 150 ); GPQA uses 128 random Diamond questions, and MATH-Hard is the level-5 subset of MATH. The exact training and test splits and the full configuration are released in our code repository. 
+
+Metrics. Answer exact match (Ans EM) and token-level F1 (Ans F1) use SQuAD-style answer normalization and the maximum over reference aliases. Accuracy (Acc.) is the share of correct final answers: the chosen option on MedQA and GPQA and the final value on AIME 2026 and MATH-Hard. Pass@1 on MBPP+ and the success rate (SR) on WebShop follow the official evaluators; SR on ALFWorld is the share of episodes that complete the task within 50 steps. The resolved rate is the share of SWE-Bench Verified issues whose patch passes the official tests. 
+
+Baselines and fairness. Unless a column is labeled otherwise, every method uses Qwen3.5-9B both as the frozen executor and as the model it trains, and every trained method uses the same training tasks; SFT fits the reference answers of those tasks. Each baseline runs in the best configuration reported by its authors. The DeepSeek-V4-Flash column prompts that model directly, as a larger reference point. GRPO † in Table 1 fine-tunes the backbone itself, whereas GRPO in Figure 6(a,b) trains πθ inside the EvoSteer architecture with the same harness, actions, and tools. 
+
+Ablation variants and fixed paradigms. Each ablation in Table 2 removes one mechanism and restores the usual alternative: − interleaved execution builds the whole graph before running it; −
+
+execution features keeps interleaved execution and the textual feedback oexec  
+
+> t
+
+but removes the feature vector f from the state of πθ, so the orchestrator reads the textual history and the value estimate but not f , while the value head and bψ are unchanged; − learnable repair masks RERUN and DROP ;
+
+− reference value head withholds ˆvk and ∆ˆ v from the state; − measured flows learns uq as a free 29 Under review as a conference paper at ICLR 2027                                               
+
+> Group Setting Backbones orchestrator, reference, executor: one shared base model (Qwen3.5-9B); skill author: DeepSeek-V4-Flash, called only in author windows Adapter LoRA rank 64, α= 128 , on q/k/v/o_proj, out_proj, and in_proj_qkv; AdamW (β1= 0 .95 ), lr 5×10 −6
+> Heads bψ: zero-initialized MLP on [hρ;f]; value head: two-layer MLP on 30+6 inputs (one task-type slot per IID benchmark) AnchorTB β= 2 ; all subtrajectories equally weighted; gradient-norm clip 1.0 Baselines (κq, κ c, κ g) = (0 .5,4,2) ; prior success rate capped at 20 counts; bucket minimum 8; pseudo-count n0= 8 ; correction bound cmax = 0 .25
+> Skill slots at most three validated skills and one candidate per task type Batch 32 tasks per step, each with 2θ+ 2 ρnatural trajectories, plus paired rollouts (192 episodes per step); asynchronous prefetch Orchestration team size, repair count, and episode length chosen by the policy; bounded only by the shared budget and the learned STOP
+> Budget shared resource budget of 98,304 tokens, 50 tool calls, and 600 s per episode Temperatures orchestrator 1.0; executor 0.3 Skills at most one new candidate per author window; library ≤60 ;≤12 per family Validation sequential sign test at each validation round; α= 0 .05 with two-level alpha spending
+
+Table 3: Configuration of the frozen implementation used for the experiments. scalar instead of reading it from ˆpq ; − flow corrections turns off c(g) and bψ ; − skill evolution removes the whole skill mechanism (no author window, no candidates, no paired rollouts, and an empty skill library), so the team uses roles and tools only; − sequential validation admits a candidate after a fixed number of successes. The four fixed paradigms decide the team before execution, on the same executor and budget as EvoSteer: a ReAct-style agent with all tools (Yao et al., 2022b), one hand-designed multi-agent template for all tasks, a planner that writes the graph once and then runs it, and a workflow searched offline on the training tasks and then frozen. 
+
+Test-time protocol and transfer. At test time EvoSteer runs the trained πθ with the value head and the skill library frozen; no reference, paired, or validation rollouts are drawn. The transfer study of Figure 5 reuses this orchestrator unchanged and swaps only the executor, called through its API identifier: gpt-5.6-luna (GPT-5.6 Luna), grok-4.5 (Grok 4.5), claude-haiku-4-5 (Claude Haiku 4.5), deepseek-v4-flash (DeepSeek-V4-Flash), gemini-3.5-flash (Gemini 3.5 Flash), and glm-5.3-flash (GLM-5.3-Flash). Frozen-backbone scores prompt each model directly, as in the v4-flash column of Table 1. Each OOD benchmark uses its IID counterpart’s task type (e.g., MuSiQue that of HotpotQA, SWE-Bench that of MBPP+), so OOD results test generalization across matched task types. 
+
+Skill author. The skill author only writes candidate skills in author windows; validation, training, and testing are unchanged. Table 4 replaces DeepSeek-V4-Flash with a stronger author, GPT-5.6-Luna, and with the executor itself, Qwen3.5-9B, and reports the averages of Table 1. The stronger author raises every average, self-written skills lower them by at most 1.56 points, and all three settings stay above the strongest baseline of Table 1 in every column.                  
+
+> IID avg. OOD avg. Skill author Ans EM Acc. Ans EM Acc. DeepSeek-V4-Flash (main setting, Table 1) 88.67 87.42 90.08 78.55 GPT-5.6-Luna 90.16 89.28 90.55 79.34 Qwen3.5-9B (the executor) 87.81 86.64 88.98 76.99
+
+Table 4: EvoSteer with different skill authors: five-run means averaged as in Table 1 (Ans EM over the question-answering benchmarks, Acc. over the others). 
+
+Objectives and cost. In Figure 6(a,b) every objective trains the same untrained architecture of Table 2, with the harness, action space, tool set, and skill library unchanged. Tempered TB follows the implementation of Zhang et al. (2026c): the log reward is tempered as β log( R + ϵ), log Z and the backward policy are learned, and each edge’s log-probability is normalized by its token count. GPU time per episode is the compute of the parameter update (PPO’s counts actor and critic, GRPO’s includes its KL term). Tokens per problem is the rollout cost, prefill plus decode; training rollouts 30 Under review as a conference paper at ICLR 2027 run the same orchestration as inference, so it is also the inference cost. Training EvoSteer for 240 steps used 95.98 H800 GPU hours and 1,580,691,323 tokens in total. The fixed-count admission of Table 2 admits a candidate after k = 5 successes; every k from 1 to 10 gives nearly the same results. 
+
+Diagnostics. In Figure 5(b), the reference curve is the accuracy of the frozen ρ on the natural reference rollouts of the same batch, which changes with the batch although ρ does not; the anchor-only level evaluates the AnchorTB loss with bψ = 0 and ∆ℓt = 0 , so that each flow equals its measured part clip [0 ,β ](uq,x + c(g)) . In Figure 6(c), the predictor is the leave-one-out task anchor ˆpq
+
+(equivalently uq , a monotone transform with the same AUC), the target is the final correctness of every natural reference rollout after step 2, and the prediction is made before the episode starts; the task-family mean uses the same reference statistics at the same step. In Figure 6(d), the gain of a skill is its paired effect: the same task and initial state, the first action forced to bind the skill or not, and both arms continued by the frozen ρ. In Figure 6(e), an edit is better, the same, or worse when the task grader’s score of the designated answer rises, stays, or falls from just before to just after the edit on the same trajectory. In Figure 6(f), the orchestrator is trained once with each of the Qwen3.5-9B and DeepSeek-V4-Flash executors, and the gain of value-guided replanning is measured during training. 
+
+Runs and aggregation. Every test score is the mean over five independent runs. Table 1 also reports their standard deviation; for the Avg. rows it is pP  
+
+> b
+
+σ2 
+
+> b
+
+/n over n benchmarks. 
+
+E CASE STUDY 
+
+E.1 CODE THAT PASSES THE VISIBLE TEST 
+
+We present a case from MBPP+ in which the executor returns code that looks finished: it is short, it runs, and it passes the only test given in the task. The code is wrong, and ˆv falls by 0.216 at that point; the orchestrator reruns the agent instead of submitting, and the rerun passes every hidden test. 
+
+MBPP+ Problem 801 (training step 87) 
+
+Write a python function to count the number of equal numbers from three given integers. Your code should pass this test: 
+
+assert test_three_equal(1,1,1) == 3
+
+Ground Truth (hidden tests; only the first is shown in the task): test_three_equal(1,1,1) == 3, test_three_equal(-1,-2,-3) == 0, test_three_equal(1,2,2) == 2
+
+Final Team: planner n0 with the skill below (output agent) (6 rounds, 4 executor calls) 
+
+Skill on the Menu: Implement small Python functions from behavioral specifications Purpose: Translate the task wording into the simplest function that preserves the specified semantics, especially indexing, ordering, and duplicate-handling rules, then return executable code rather than planning or verification prose. 
+
+Use when: Use when asked to write a short Python function from a natural-language requirement and one or more example assertions. 
+
+Steps: 
+
+1. Extract the exact function name, parameters, return value, and indexing convention from the prompt. 2. Identify semantic keywords before coding: positional “kth element” means access the original sequence unless sorting is explicitly requested; [. . . ] 3. Choose the direct operation or standard algorithm matching those semantics. [. . . ] 4. Mentally test more than the supplied example, including empty or boundary positions where applicable, duplicates for insertion behavior, unsorted input for positional retrieval, and negative values for extrema. 5. Return a complete, syntactically valid function definition with the exact requested name. Keep the final response focused on executable code. 
+
+Pitfalls to avoid: Do not infer behavior solely from a single assertion: sorting an array can accidentally pass a positional-access example while changing the required semantics. Do not confuse right insertion with lower-bound insertion; [. . . ] Do not output only a plan, review, or statement that code is correct. [. . . ] Avoid adding arbitrary validation or changed exception behavior unless required by the specification. 
+
+Constraint: Preserve the input’s order unless the task explicitly requests sorting or an order statistic. Match the requested function name and argument order exactly. Provide closed, valid Python code and ensure the 
+
+31 Under review as a conference paper at ICLR 2027 
+
+function returns the result rather than merely printing it. Do not include source-specific answers or rely only on the visible test case. 
+
+ROUND -BY -R OUND INTERACTION LOG 
+
+Round 1–2: Planner n0 Writes a Plan Round 1 - Observation: Empty team; ˆv = 0 .605 ; 15 legal actions; the menu holds the skill above and one other Python skill. 
+
+Round 1 - Action: {"kind":"ADD_AGENT", "node_id":"n0", "role_id":"planner"} 
+
+Round 1 - Input Prompt: 
+
+Role: Write a short step-by-step plan for the public task. Do not solve it. Task: ⟨problem above ⟩
+
+Perform your role using the task. Return your result. 
+
+Round 2 - Observation: n0 holds a plan without code; ˆv = 0 .623 (∆ˆ v = +0 .018 ); 20 legal actions. 
+
+Round 2 - Action: {"kind":"RERUN_AGENT", "node_id":"n0"} 
+
+Round 1 - Executor Output: (951 characters; excerpt) [. . . ] 3. Compare Pairs : Check if the first number equals the second. [. . . ] Note: Depending on the specific interpretation of “equal numbers” in the context of the test case 
+
+test_three_equal(1,1,1) == 3, the logic likely needs to count every matching pair found. [. . . ] 
+
+Round 2 - Executor Output: (981 characters; excerpt) [. . . ] Note: To satisfy the test case test_three_equal(1,1,1) == 3, the logic must count every unique pair comparison that results in equality. 4. Increment Logic : If any of the pair comparisons are true, increment the count variable by 1. [. . . ] 
+
+Round 1–2 - Feedback: [Status]: answered, no code | [Tokens]: 86 in, 243 out; 338 in, 256 out 
+
+Team State: (empty) → planner n0: plan 
+
+Grader (hidden): ✗ no code 
+
+Round 3: Bind the Skill to n0; the Code Looks Finished Round 3 - Observation: n0 holds a plan that counts equal pairs; ˆv = 0 .569 (∆ˆ v = −0.054 ); 20 legal actions. 
+
+Round 3 - Action: {"kind":"BIND_SKILL", "node_id":"n0", "skill_id":"evosteer-2744c58b1d3dd27b8cb7"} 
+
+Round 3 - Input Prompt: (the role asks for a plan and the skill asks for executable code) 
+
+Role: Write a short step-by-step plan for the public task. Do not solve it. Task: ⟨problem above ⟩
+
+Procedure to follow (skill evosteer-2744c58b1d3dd27b8cb7): ⟨skill above ⟩
+
+Your previous output: ⟨the plan of Round 2 ⟩
+
+Perform your role using the task, the procedure and your previous output. Return your result. 
+
+Round 3 - Executor Output: (177 characters; full) 
+
+def test_three_equal(a, b, c): count = 0if a == b: count += 1if b == c: count += 1if a == c: count += 1return count 
+
+Round 3 - Feedback: [Status]: answered | [Answer]: code | [Tokens]: 872 in, 65 out 
+
+Surface Check: passes the visible test (1 , 1, 1) 7 → 3; also (−1, −2, −3) 7 → 0
+
+Grader (hidden): ✗ wrong: (1 , 2, 2) 7 → 1, expected 2
+
+32 Under review as a conference paper at ICLR 2027 
+
+Round 4: ˆv Falls, and n0 Is Rerun Instead of Submitted Round 4 - Observation: n0 holds the code above in full, with an answer present and no failure; 
+
+ˆv = 0 .353 (∆ˆ v = −0.216 ), the largest drop of the episode; 19 legal actions, including SET _OUTPUT .
+
+Round 4 - Action: {"kind":"RERUN_AGENT", "node_id":"n0"} 
+
+Round 4 - Input Prompt: 
+
+Role: ⟨planner instruction ⟩
+
+Task: ⟨problem above ⟩
+
+Procedure to follow (skill evosteer-2744c58b1d3dd27b8cb7): ⟨skill above ⟩
+
+Your previous output: ⟨the code of Round 3 ⟩
+
+Perform your role using the task, the procedure and your previous output. Return your result. 
+
+Round 4 - Executor Output: (162 characters; full) 
+
+def test_three_equal(a, b, c): if a == b == c: return 3elif a == b or b == c or a == c: return 2else: return 0
+
+Round 4 - Feedback: [Status]: answered | [Answer]: code | [Tokens]: 681 in, 59 out 
+
+Team State: planner n0: corrected code 
+
+Grader (hidden): ✓ correct (3 of 3 tests) 
+
+Round 5–6: Set Output and Stop Round 5 - Observation: ˆv = 0 .396 (∆ˆ v = +0 .043 ); 19 legal actions. 
+
+Round 5 - Action: {"kind":"SET_OUTPUT", "node_id":"n0"} 
+
+Round 6 - Observation: n0 is the output agent; ˆv = 0 .521 (∆ˆ v = +0 .125 ); 18 legal actions. 
+
+Round 6 - Action: {"kind":"STOP"} 
+
+Final Status: [Output agent]: planner n0 | [Tests]: 3 of 3 | [Reward]: 1.0 
+
+Key Observations: At Round 4 every visible sign says the task is done: the call returned an answer without failure, the code is short and valid, and it passes the only test in the task. The code is still wrong, because it counts equal pairs and returns 1 on (1 , 2, 2) . ˆv, which reads execution features and the task type, not the code, falls by 0.216 to 0.353 at this state, its largest drop in the episode, and the orchestrator reruns the agent instead of setting it as the output. The rerun rewrites the function to count equal numbers and passes all three hidden tests, and ˆv rises by 0.043 and 0.125 . The rewrite follows the bound skill’s first pitfall, which warns against inferring behavior from a single assertion. Four of the other five rollouts of this problem in the same batch fail: three, including both reference rollouts, submit code that passes the visible test and fails a hidden one, and one returns a Boolean. The only other rollout that passes is the paired one that binds the same skill. 33
