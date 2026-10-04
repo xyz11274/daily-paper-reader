@@ -48,7 +48,7 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-03</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-04</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 19 篇</strong>
@@ -58,7 +58,7 @@
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-03 22:43:36 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-04 21:53:53 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读7篇、速读12篇，重点聚焦自进化智能体与多智能体系统。最值得看的是《AnyAct》和《Topological Coherence》两篇9分工作，均指向智能体自主演化与拓扑协同。建议普通读者优先从这两篇精读入手，再扫速读中的异步协作与偏好学习方向。</p>
+<p>今日精读7篇、速读12篇共19篇，重点聚焦Raven组合式智能体框架与自进化编程智能体。最值得看的是9分的Raven与自进化编程智能体，以及8分的多智能体辩论剪枝和匿名局部法则。普通读者可优先从Raven入手，理解智能体如何组合复用。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,9 +81,9 @@
     <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="AnyAct: Universal Action for Self-Evolving Agents">AnyAct: Universal Action for Self-Evolving Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Topological Coherence for Self-evolving Multi-agent Systems">Topological Coherence for Self-evolving Multi-agent Systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="CollabFlow: Recursive Self-Improvement of Agent Collaboration">CollabFlow: Recursive Self-Improvement of Agent Collaboration</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Raven: The Harness of Harnesses for Composable Agentic Intelligence">Raven: The Harness of Harnesses for Composable Agentic Intelligence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Coding Agents: From Digital Programs to Physical-World Intelligence">Self-Evolving Coding Agents: From Digital Programs to Physical-World Intelligence</span></li><li><span class="dpr-home-dashboard-paper-title" title="CollabFlow: Recursive Self-Improvement of Agent Collaboration">CollabFlow: Recursive Self-Improvement of Agent Collaboration</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>5</strong></span><span class="dpr-home-dashboard-tag">multi-agent <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>6</strong></span><span class="dpr-home-dashboard-tag">multi-agent <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,9 +94,9 @@
     <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="AsynCodeBench: Benchmarking Collaboration of Asynchronous Multi-Agent Systems in Software Engineering">AsynCodeBench: Benchmarking Collaboration of Asynchronous Multi-Agent Systems in Software Engineering</span></li><li><span class="dpr-home-dashboard-paper-title" title="CAIRN: Dynamic Fact-Intent DAGs for Multi-Agent Exploration">CAIRN: Dynamic Fact-Intent DAGs for Multi-Agent Exploration</span></li><li><span class="dpr-home-dashboard-paper-title" title="Improving LLM Collaboration via Multi-Agent Preference Learning">Improving LLM Collaboration via Multi-Agent Preference Learning</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Hierarchical Multi-agent Reinforcement Learning for Warehouse Robot Coordination under Communication Loss">Hierarchical Multi-agent Reinforcement Learning for Warehouse Robot Coordination under Communication Loss</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Solo and Consistency: Vindicating Multi-Agent Debate via Conditional Progressive Pruning">Beyond Solo and Consistency: Vindicating Multi-Agent Debate via Conditional Progressive Pruning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Waggle: Learning One Anonymous Local Law for Self-Organizing LLM Swarms">Waggle: Learning One Anonymous Local Law for Self-Organizing LLM Swarms</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>8</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>4</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>7</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>5</strong></span></div>
 </section>
 </div>
 
