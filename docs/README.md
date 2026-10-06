@@ -48,7 +48,7 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-04</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-06</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 19 篇</strong>
@@ -58,7 +58,7 @@
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-04 21:53:53 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-06 00:34:43 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读7篇、速读12篇共19篇，重点聚焦Raven组合式智能体框架与自进化编程智能体。最值得看的是9分的Raven与自进化编程智能体，以及8分的多智能体辩论剪枝和匿名局部法则。普通读者可优先从Raven入手，理解智能体如何组合复用。</p>
+<p>今日精读7篇、速读12篇，重点聚焦自进化编码智能体与多智能体测试时演化。最值得看的是《Self-Evolving Coding Agents》和《Inherit-MAS》，均获9.0分，指向从数字程序到物理世界智能、以及工作流与执行继承的演化路径。普通读者可优先关注多智能体协作与演化方向，留意后续在真实任务中的验证进展。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,9 +81,9 @@
     <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Raven: The Harness of Harnesses for Composable Agentic Intelligence">Raven: The Harness of Harnesses for Composable Agentic Intelligence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Coding Agents: From Digital Programs to Physical-World Intelligence">Self-Evolving Coding Agents: From Digital Programs to Physical-World Intelligence</span></li><li><span class="dpr-home-dashboard-paper-title" title="CollabFlow: Recursive Self-Improvement of Agent Collaboration">CollabFlow: Recursive Self-Improvement of Agent Collaboration</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Coding Agents: From Digital Programs to Physical-World Intelligence">Self-Evolving Coding Agents: From Digital Programs to Physical-World Intelligence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Inherit-MAS: Test-Time Evolution of Multi-Agent Systems through Workflow and Execution Inheritance">Inherit-MAS: Test-Time Evolution of Multi-Agent Systems through Workflow and Execution Inheritance</span></li><li><span class="dpr-home-dashboard-paper-title" title="Raven: The Harness of Harnesses for Composable Agentic Intelligence">Raven: The Harness of Harnesses for Composable Agentic Intelligence</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>6</strong></span><span class="dpr-home-dashboard-tag">multi-agent <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>5</strong></span><span class="dpr-home-dashboard-tag">multi-agent <strong>2</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,9 +94,9 @@
     <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Hierarchical Multi-agent Reinforcement Learning for Warehouse Robot Coordination under Communication Loss">Hierarchical Multi-agent Reinforcement Learning for Warehouse Robot Coordination under Communication Loss</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Solo and Consistency: Vindicating Multi-Agent Debate via Conditional Progressive Pruning">Beyond Solo and Consistency: Vindicating Multi-Agent Debate via Conditional Progressive Pruning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Waggle: Learning One Anonymous Local Law for Self-Organizing LLM Swarms">Waggle: Learning One Anonymous Local Law for Self-Organizing LLM Swarms</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MASTraceBench: Diagnosing Collaboration Gains through Proposal Trajectories in LLM-Based Multi-Agent Systems">MASTraceBench: Diagnosing Collaboration Gains through Proposal Trajectories in LLM-Based Multi-Agent Systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="Cooperative Multi-Agent Vision-Language-Action Models via Reinforced Fine Tuning">Cooperative Multi-Agent Vision-Language-Action Models via Reinforced Fine Tuning</span></li><li><span class="dpr-home-dashboard-paper-title" title="FlowMAS: Learning Multi-Agent Workflow Topology via Information-guided Generative Flow Network">FlowMAS: Learning Multi-Agent Workflow Topology via Information-guided Generative Flow Network</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>7</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>5</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>8</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>4</strong></span></div>
 </section>
 </div>
 

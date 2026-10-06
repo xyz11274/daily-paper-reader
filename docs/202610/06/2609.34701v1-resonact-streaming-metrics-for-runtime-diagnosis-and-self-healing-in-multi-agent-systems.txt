@@ -1,0 +1,1117 @@
+ResonAct: Streaming Metrics for Runtime Diagnosis and Self-Healing in
+Multi-Agent Systems
+Tarun Chintada1,2∗, Neelamadhav Gantyat1, Ishaan Romil1,3∗, Renuka Sindhgatta1, Soujanya
+Soni1, Sameep Mehta1
+1IBM, India
+2Indian Institute of Technology Patna, India
+3International Institute of Information Technology Hyderabad, India
+tarunchintada1@gmail.com, neelamadhav@in.ibm.com, ishaan.romil@research.iiit.ac.in, {renuka.sr,
+soujanya.soni}@ibm.com, sameepmehta@in.ibm.com
+Abstract
+Multi-agent systems (MAS) are increasingly used to automate
+enterprise workflows involving multiple specialized agents,
+external tools, and long-running task execution. Failures may
+arise from tool degradation, context propagation errors, co-
+ordination breakdowns, or repeated agent interactions that
+prevent task completion. While existing observability frame-
+works provide traces and logs, diagnosis and remediation are
+largely performed after execution completes, limiting oppor-
+tunities for recovery during runtime. We present ResonAct, a
+runtime self-healing framework that enables continuous mon-
+itoring, diagnosis, and remediation of multi-agent systems
+through streaming operational metrics. ResonAct ingests ex-
+ecution traces, agent interactions, and tool invocations into
+a streaming analytics layer that continuously derives task
+progress, context health, and tool reliability metrics. These
+metrics serve as runtime control signals for detecting anoma-
+lous execution patterns and localizing root causes using a
+structured failure model. Based on the diagnosed failure, Res-
+onAct dynamically selects remediation policies and performs
+actions. The framework operates as an external control plane,
+enabling intervention without modifying application agents
+or orchestration logic. We evaluate ResonAct across enter-
+prise workflow scenarios and AppWorld benchmarks. The
+results show that the streaming metric-based analysis identi-
+fies execution degradations and localizes faults. Furthermore,
+policy-driven remediation improves task completion rates by
+up to 10.00 percentage points, with detection precision rang-
+ing from 70.59% to 82.91%, recall from 63.09% to 100%,
+recovery rates from 10.48% to 46.67%, and runtime over-
+head ranging from −0.25% to 14.12% across the evaluated
+configurations.
+Introduction
+Large Language Model (LLM)-based multi-agent systems
+(MAS) are increasingly being used to automate complex
+workflows, such as software development, tool orchestra-
+tion, and data-intensive tasks (Qian et al. 2024; Luo et al.
+2026). By coordinating specialized agents with external tools
+over extended execution horizons, these systems can per-
+form tasks that require multiple interdependent decisions
+∗Work done during an internship at IBM.
+Copyright © 2027, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.
+and actions. However, increasing autonomy also introduces
+reliability challenges. Failures in MAS can arise not only
+from conventional software faults, but also from interactions
+among agents, tool failures, context propagation errors, co-
+ordination breakdowns, and deviations from the intended
+execution trajectory (Cemri et al. 2025; Huang et al. 2025).
+Recent empirical work provides evidence that failures in
+MAS are both diverse and systematic (Cemri et al. 2025).
+Failures arise due to execution-time behaviors such as step
+repetition, loss of conversation history, reasoning-action mis-
+match, task derailment, and premature termination. Exist-
+ing operational approaches provide mechanisms for observ-
+ing and recording such executions through traces, logs, and
+other telemetry (Moshkovich and Zeltyn 2025). However,
+failure detection and root cause analysis are often carried
+out after an execution has failed or produced an undesirable
+outcome (Solomon et al. 2025). This post-hoc paradigm is
+particularly problematic for long-running enterprise agentic
+workflows, where anomalous behavior can incur substan-
+tial computational cost. Recent work has also shown that
+agentic workflows can incur substantial and highly variable
+token consumption as a result of recursive behavior, context
+growth, and repeated tool interactions, with large cost dif-
+ferences possible even for identical inputs (Bai et al. 2026).
+Consequently, post-execution analysis can result in unnec-
+essary computational expenditure and increased execution
+latency. Hence, conventional observability mechanisms pri-
+marily provide visibility into system behavior but do not
+provide a general mechanism for intervening in an ongoing
+agent execution.
+To address these challenges, we present ResonAct (Res-
+onate and Act), a runtime self-healing framework for LLM-
+based multi-agent systems. ResonAct continuously ingests
+execution traces, agent interactions, and tool invocations
+through a streaming analytics layer and derives dynamic
+health signals, including task progress, context reliability,
+and tool health. These signals are used to identify emerg-
+ing execution anomalies and localize potential failure causes.
+Policy-driven remediation actions are then applied during ex-
+ecution, enabling automated intervention without requiring
+modifications to individual agent implementations. Reson-
+Act further separates monitoring, failure analysis, and reme-
+diation policies from the application agents and orchestrators
+arXiv:2609.34701v1  [cs.AI]  28 Sep 2026
+
+
+through an external control plane.
+Contributions: To summarize, we make the following con-
+tributions:
+(1) We propose ResonAct, a runtime self-healing frame-
+work for LLM-based multi-agent systems that enables con-
+tinuous failure detection, diagnosis, and policy-driven reme-
+diation during task execution.
+(2) We introduce a streaming metrics-based control mech-
+anism that transforms execution telemetry, including agent
+interactions, tool invocations, and execution traces, into met-
+rics representing task progress, context health, tool reliabil-
+ity, and execution state. These signals enable detection and
+localization of emerging failures before task termination.
+(3) We develop a policy-driven remediation mechanism
+that maps diagnosed failure conditions to targeted runtime
+interventions, enabling the system to recover from execution
+failures while preserving the underlying task objective.
+(4) We evaluate ResonAct across enterprise workflow sce-
+narios and the AppWorld benchmark, measuring failure de-
+tection, task completion and recovery, and runtime overhead.
+Our evaluation shows improved task completion and recov-
+ery while maintaining low operational overhead.
+Related Work
+We position ResonAct within prior work on multi-agent sys-
+tems, MAS failure analysis, and runtime observability and
+self-healing.
+Multi-Agent Systems
+LLM-based multi-agent frameworks provide abstractions
+for agent specialization, communication, task decomposi-
+tion, and workflow orchestration. Frameworks including
+AutoGen (Wu et al. 2024), CAMEL (Li et al. 2023),
+MetaGPT (Hong et al. 2024), CrewAI (Moura and Contrib-
+utors 2024), and LangGraph (Wang and Duan 2024) support
+increasingly complex agentic workflows. While these frame-
+works provide mechanisms for coordinating agents and exe-
+cuting tasks, runtime reliability is generally not their primary
+focus. In particular, they do not provide general mechanisms
+for continuously detecting failures, diagnosing their causes,
+and applying automated recovery actions during execution.
+Failure Analysis and Reliability
+Recent work has established that MAS failures are diverse
+and arise from interactions among agents, system compo-
+nents, and execution state. Multi-Agent System Failure Tax-
+onomy (MAST) provides an empirically grounded taxonomy
+of 14 failure modes, developed from 150 execution traces and
+evaluated on 1,600 traces across seven frameworks (Cemri
+et al. 2025). Complementary work studies failure propaga-
+tion, fault injection, memory inconsistency, and agent collab-
+oration reliability (Lin et al. 2026; Jia et al. 2026; Wang et al.
+2023; Zhang et al. 2024). Collectively, these studies demon-
+strate that MAS reliability requires systematic failure detec-
+tion and diagnosis rather than isolated application-level fixes.
+However, they primarily focus on characterizing, analysing,
+or injecting failures rather than providing mechanisms for
+automated runtime recovery.
+Observability and Self-Healing Systems
+Observability provides visibility into system behavior
+through logs, metrics, traces, and events (Silva Fontes, An-
+drikopoulos, and Yumi Nakagawa 2026). AIOps extends ob-
+servability with automated fault detection and root cause
+analysis, demonstrating the value of closed-loop manage-
+ment for deterministic software and infrastructure (Pei et al.
+2025). However, LLM-based MAS introduces additional fail-
+ure modes involving agent reasoning, coordination, context
+propagation, and tool-mediated execution that are not directly
+addressed by traditional infrastructure-oriented approaches.
+Recent work addresses runtime observability specifically
+for MAS. AgentOps introduces a pipeline spanning observa-
+tion, metric collection, issue detection, root-cause analysis,
+and optimization, highlighting the need for runtime interven-
+tion in agentic workflows (Moshkovich and Zeltyn 2025; Al-
+Sayyad, Huang, and Pal 2026). LumiMAS provides platform-
+agnostic runtime monitoring using an LSTM autoencoder
+for anomaly detection, followed by failure classification and
+root-cause analysis using the MAST taxonomy (Solomon
+et al. 2025). SentinelAgent models MAS execution as a dy-
+namic interaction graph and combines graph-based anomaly
+detection with an LLM-powered oversight agent for runtime
+analysis and intervention (He et al. 2025).
+Existing work demonstrates the feasibility of runtime mon-
+itoring for MAS, but differs from ResonAct in its detection
+and intervention mechanisms. ResonAct uses interpretable
+streaming operational metrics as runtime control signals and
+does not require model training or per-step LLM judgement.
+The ResonAct Framework
+ResonAct operates as an external control plane alongside
+application agents and their orchestrator, separating runtime
+monitoring, failure analysis, and remediation policies from
+task-specific agent reasoning and tool implementations. As
+illustrated in Figure 1, ResonAct forms a closed control loop
+comprising: (1) runtime event capture, (2) streaming metric
+construction, (3) failure detection, (4) stability filtering, (5)
+remediation selection, and (6) corrective guidance injection.
+The components communicate through an event stream and
+can therefore operate independently of the underlying agent
+framework.
+Failure Taxonomy and Runtime Events Capture
+ResonAct builds on existing empirical characterizations of
+MAS failures (Cemri et al. 2025) and organizes runtime
+conditions into three operational categories:
+• Common Failures: transient errors, timeouts, and retry
+failures;
+• Silent Failures: context decay, state divergence, redun-
+dant execution, and other degradations without explicit
+errors;
+• Critical Failures: coordination breakdowns, unbounded
+loops, and cascading failures threatening task completion
+or resource bounds;
+Additionally, three principal forms of execution evidence:
+agent interactions, tool invocations, and LLM execution
+
+
+APPLICATION PLANE
+(Multi-Agent System)
+RESONACT CONTROL PLANE
+(Monitoring · Detection · Diagnosis · Remediation · External to Agents)
+Next agent
+invocation / retry
+(with guidance)
+User Task
+(goal, query, instructions)
+Orchestrator
+Agent A
+(e.g., planner)
+Agent B
+(e.g., executor)
+Agent C
+(e.g., analyst)
+Tools / External APIs
+(databases, web services)
+Agent interactions and task coordination
+Runtime Telemetry (from application plane)
+Agent interactions
+(messages, delegation)
+Tool invocations
+(calls, results, errors)
+LLM execution traces
+(spans, tokens, context)
+1
+2
+3
+4
+5
+6
+Event Capture
+Streaming Metric
+Construction
+Failure Assessment
+(Detection + Stability)
+Runtime Reﬂection
+and Diagnosis
+Remediation
+Decision Engine
+Guidance Injection
+•
+Ingest OpenTelemetry spans
+• Stream via Kafka
+• Correlate events
+by execution context (c)
+• Agent loop index
+• Average steps
+• Unnecessary path ratio
+• Delegation eﬃciency
+• Tool health / latency
+• Agent health / latency
+• Apply metric-speciﬁc
+detection rules
+• Generate failure signal
+Fc,f
+(k)
+• Apply stability ﬁlters
+(require r consecutive
+detections)
+• Suppress transient
+violations
+• Reﬂect over failure signal
+and execution evidence
+• Characterize observed
+failure pattern
+• Identify likely implicated
+agents, tools, or paths
+• Produce diagnostic
+summary Dc,f
+(k)
+LLM-based policy
+(decision generation)
+OR
+Deterministic policy
+(rule-based)
+•
+Determine intervene? (b ∈ {0,1})
+•
+Select target agent/tool (aₜ)
+•
+Select strategy (s)
+•
+Generate guidance (g)
+•
+Deﬁne retry policy (ρᵤ)
+• Create guidance message
+• Associate with context c
+and target u
+• Include corrective context,
+strategy, and retry policy
+• Publish to remediation
+stream
+event
+stream
+metric
+snapshot
+Mc
+(k)
+stable
+failure
+Sc,f
+(k)=1
+!
+diagnostic
+summary
+Dc,f
+(k)
+remediation
+decision
+Ac,f
+(k)
+Closed-loop runtime self-healing
+Figure 1: Architecture of the proposed ResonAct framework.
+traces are used. In the current implementation, events are
+generated through an observability platform1 and forwarded
+to an event-streaming platform2.
+Streaming Metric Construction
+Individual runtime events are often insufficient to determine
+whether an agent workflow is progressing normally or ap-
+proaching a failure state. Hence, the event stream is processed
+to incrementally compute metrics that summarize execution
+behavior. An execution context c groups the runtime events
+associated with one attempt to fulfil a user request, includ-
+ing executions that complete, fail, time out, or are otherwise
+terminated. It defines the scope over which runtime metrics
+are computed. The metric state for context c at time t is
+Mc(t) = [m1(c, t), m2(c, t), . . . , mK(c, t)] ,
+(1)
+where K is the number of available runtime metrics and each
+mj(c, t) is computed from the events observed for c up to
+time t.
+The metrics are updated incrementally as events arrive
+and are organized along two axes. The first specifies the unit
+of analysis: query-level metrics summarize the state of an
+entire execution context, agent-level metrics characterize an
+individual agent, and tool-level metrics characterize the re-
+liability and performance of an external tool. The second
+specifies the computation mechanism: count-based metrics
+aggregate structured runtime events, embedding-based met-
+rics compare semantic representations, and LLM-as-judge
+metrics assess properties that cannot be derived directly from
+structured telemetry. Query-, agent-, and tool-level metrics
+are updated continuously as runtime events arrive and are
+evaluated at configurable intervals, such as every x seconds
+or after a configurable number of execution steps. Table 1
+1https://langfuse.com/
+2https://kafka.apache.org/
+Category
+Failure Mode
+Driving Metric
+Detection Rule
+Critical
+agent_loop
+agent_loop_index
+≥τL
+unbounded_loop
+average_steps
+> P95
+task_incomplete
+task_completion_rate
+< τC
+Silent
+redundant_execution
+unnecessary_path_ratio
+≥τU
+context_propagation_gap
+delegation_efficiency
+< τD
+decision_repetition
+agent_loop_index
+recurrent
+Common
+tool_degradation
+tool_health / latency
+fail-rate ≥τT
+agent_degradation
+agent_health / latency
+fail-rate ≥τA
+API call drift
+call_efficiency
+Moving-Avg. ratio ≥τP
+Table 1: Metric-driven runtime failure signatures considered.
+summarizes the metrics used to construct the runtime failure
+signatures. Metric computation is independent of remedia-
+tion policy. A metric describes observed execution behavior
+but does not determine whether an intervention should oc-
+cur. This separation allows metrics to be reused across failure
+detectors and enables remediation policies to change with-
+out modifying the streaming analytics layer. Detailed metric
+definitions are provided in the Appendix.
+Failure Assessment
+At evaluation cycle k, occurring at time tk, the Failure As-
+sessment component reads the latest metric snapshot and
+applies each failure-specific detector df:
+M(k)
+c
+= Mc(tk),
+d(k)
+c,f = df
+
+M(k)
+c
+
+∈{0, 1}.
+(2)
+The evaluation cadence is configurable and may be defined
+using a wall-clock interval or a specified number of execution
+steps. The detection conditions are defined in Table 1. If
+d(k)
+c,f = 1, the component constructs the candidate failure
+signal
+F (k)
+c,f =
+
+f, c, M(k)
+c
+
+,
+(3)
+which identifies the failure type and execution context and
+retains the supporting metric evidence. To suppress transient
+
+
+violations, a failure must be detected for r consecutive eval-
+uation cycles:
+S(k)
+c,f =
+r−1
+Y
+ℓ=0
+d(k−ℓ)
+c,f
+.
+(4)
+Thus, S(k)
+c,f = 1 only when the failure is detected in the cur-
+rent cycle and the preceding r −1 cycles. The corresponding
+signal F (k)
+c,f is then treated as stable and forwarded for further
+diagnosis. The persistence parameter r controls the trade-off
+between early intervention and resistance to transient detec-
+tions.
+Runtime Reflection and Diagnosis
+When S(k)
+c,f = 1, the stable failure signal F (k)
+c,f is passed to the
+diagnosis component. Because an expected execution path is
+not generally available at runtime, an LLM reflects over the
+failure signal and available execution evidence, including
+recent agent interactions, tool outcomes, execution history,
+and the current metric state. It produces
+D(k)
+c,f = (q, e),
+(5)
+where q characterizes the observed failure pattern and e sum-
+marizes the supporting evidence, including likely implicated
+agents, tools, or execution paths. This output represents an
+evidence-based interpretation, not a definitive root-cause de-
+termination.
+Remediation Decision Engine
+The Remediation Decision Engine consumes the stable fail-
+ure signal F (k)
+c,f and diagnostic output D(k)
+c,f to produce
+A(k)
+c,f = (b, u, s, g, ρa) ,
+(6)
+where b ∈{0, 1} indicates whether to intervene, u identifies
+the target agent or tool, s specifies the remediation strat-
+egy, g contains the corrective guidance, and ρa ∈{0, 1}
+indicates whether a retry is authorized. The engine sup-
+ports LLM-based and deterministic remediation policies.
+The LLM-based policy generates a context-specific decision
+from the diagnostic output, while the deterministic policy
+maps recognized failure types to predefined, bounded ac-
+tions. Deterministic remediation is also used when the LLM
+is unavailable or fails to generate the output. Guidance is
+published for runtime injection only when b = 1.
+Runtime Guidance Injection
+The remediation decision A(k)
+c,f is published as a guidance
+message on a dedicated remediation stream (when b = 1).
+An agent-side integration component retrieves guidance as-
+sociated with execution context c and incorporates it into the
+applicable agent’s prompt before the next invocation or retry.
+The guidance may instruct the agent to avoid a failing execu-
+tion path, invoke an alternative agent or tool, recover missing
+context, or restrict further retries. ResonAct does not modify
+an LLM generation already in progress; intervention occurs
+only at an agent invocation boundary.
+RQ
+Metric
+Definition
+RQ1
+Recall
+Labelled failed executions detected / all labelled failed execu-
+tions
+Precision
+Correctly detected failed executions / all detected executions
+FPR
+Labelled healthy executions detected as failures / all labelled
+healthy executions
+RQ2
+Completion
+Successfully completed tasks / all evaluated tasks
+Recovery
+Failed executions completed after remediation / detected failed
+executions
+RQ3
+Runtime
+Relative latency increase over the corresponding baseline
+CPU
+Change in CPU utilization relative to the corresponding base-
+line
+Memory
+Change in memory utilization relative to the corresponding
+baseline
+Table 2: Evaluation metrics for detection, recovery, overhead.
+Experiments
+We evaluate ResonAct framework by answering the follow-
+ing three research questions:
+RQ1: Detection. Can streaming metrics reliably detect
+multi-agent failures during task execution?
+RQ2: Remediation. Does policy-driven remediation im-
+prove task completion and recovery from detected failures?
+RQ3: Efficiency. Can task reliability improve while main-
+taining low runtime and resource overhead?
+Models:
+We
+use
+two
+compact,
+open-weight
+LLMs,
+granite-4.1-8b
+(Granite-8B)3
+and
+qwen3-8b
+(Qwen3-8B)4, to evaluate the framework. We focus in-
+tentionally on 8B-scale models because they are more
+representative of practical industry deployments, where
+constraints on latency, inference cost, memory footprint,
+and on-premises serving often make larger models less
+feasible. This enables us to assess the effectiveness of the
+proposed architecture and remediation framework under
+realistic resource-constrained deployment settings.
+Evaluation Metrics
+Table 2 defines the metrics used for RQ1–RQ3. Detection
+is evaluated against independently labelled execution out-
+comes. A task is considered recovered only when a detected
+failed execution completes successfully after remediation.
+Experimental Setup
+We present our results on two multi-agent system settings.
+AppWorld MAS
+The original AppWorld benchmark em-
+ploys a single ReAct agent that independently reasons
+over tasks and interacts directly with all application APIs
+within a unified conversation loop. We extend this archi-
+tecture to a distributed multi-agent system (MAS) com-
+prising an OrchestratorAgent and nine application-specific
+worker agents. The orchestrator delegates app-related sub-
+tasks to specialized agents, each restricted to a single appli-
+cation, provisioned with the required access credentials, and
+3https://huggingface.co/ibm-granite/granite-4.1-8b
+4https://huggingface.co/Qwen/Qwen3-8B
+
+
+equipped with application-specific API knowledge. Agent-
+to-environment interactions are handled through a traced ex-
+ecution layer that enables efficient tool attribution.
+All experiments were performed using the benchmark’s
+test_normal evaluation split, providing a standardized and
+consistent basis for comparing the performance of the MAS
+and MAS+ResonAct configurations.
+Sales MAS
+The setup consists of ten agents that model an
+end-to-end B2B sales fulfillment workflow. A Host Agent
+orchestrates execution by decomposing natural-language re-
+quests and routing subtasks to specialized agents (via the
+A2A protocol), passing intermediate outputs between agents
+until all requested business functions are completed. The
+system comprises ten domain-specific agents covering or-
+der management, inventory tracking, payments, order fulfill-
+ment, warehouse operations, pricing, vendor management,
+procurement, shipping, and returns, each encapsulating its
+own tools and business logic and exposed as an independent
+HTTP service.
+The validation dataset is a 600-query ground-truth bench-
+mark spanning all ten domain agents, with queries evenly
+split across Medium, Difficult, and Complex difficulty tiers.
+It was deliberately engineered so that approximately 60%
+of the queries represent failure-oriented stress scenarios by
+incorporating policy edge cases, missing context, and multi-
+agent dependency chains, making it the canonical evaluation
+set for measuring system correctness under realistic stress
+conditions.
+MAS with ResonAct
+To improve robustness, we integrate
+the ResonAct remediation layer into the AppWorld and Sales
+use case, where streamed agent events are analyzed to de-
+tect persistent failures and automatically generate correc-
+tive guidance that is injected into both worker and orches-
+trator reasoning loops, enabling adaptive self-healing while
+remaining fully optional and preserving the baseline MAS
+when disabled.
+Results and Discussion
+We evaluate ResonAct along three dimensions: (RQ1) the re-
+liability of its metric-driven failure detector, (RQ2) its effect
+on end-to-end task completion and recovery, and (RQ3) the
+runtime cost introduced by continuous diagnosis and reme-
+diation. We evaluate detection, remediation, and efficiency
+end-to-end across Sales MAS and AppWorld.
+RQ1: Runtime Failure Detection
+Detection performance
+varies across workloads and model backends. On Sales MAS,
+Granite-8B achieves 76.21% precision and 69.15% recall,
+while Qwen3-8B achieves 72.11% precision and 63.09% re-
+call. The corresponding F1 scores are 72.51% and 67.30%.
+AppWorld has a greater coverage of failures. Recall
+reaches 100% for both models, with precision of 82.91%
+for Granite-8B and 70.59% for Qwen3-8B. However, this
+sensitivity is accompanied by elevated false-positive rates,
+particularly for Granite-8B (72.97%). These results expose
+a sensitivity-selectivity trade-off: ResonAct captures a larger
+fraction of failures on AppWorld but can also intervene on
+healthy executions.
+Figure 2: Operational failure-type distribution across Sales
+MAS and AppWorld MAS.
+Figure 2 further shows that failure composition differs
+substantially across workloads. Agent degradation and agent
+loops constitute the dominant combined failure classes,
+whereas AppWorld contains a comparatively larger propor-
+tion of agent failures. This variation helps explain why a sin-
+gle detector configuration does not behave identically across
+benchmarks.
+RQ1 Summary. ResonAct detects failures across both
+workloads and model families, with precision ranging from
+70.59 - 82.91% and recall from 63.09 - 100%. The variation
+in FPR indicates that workload-aware detector calibration
+remains important.
+RQ2: Runtime Remediation and Task Completion
+As
+shown in Table 3, ResonAct improves task completion across
+all four benchmark–model configurations. The largest gain
+occurs on Sales MAS with Qwen3-8B, increasing from
+73.67% to 83.67% (+10.00 pp), while Granite-8B improves
+from 80.83% to 88.00% (+7.17 pp). Recovery among de-
+tected failed executions reaches 37.97% and 46.67%, respec-
+tively.
+AppWorld also shows positive gains. Granite-8B improves
+from 2.01% to 7.14% (+5.13 pp), with 32.06% recovery,
+while Qwen3-8B improves from 11.31% to 16.07% (+4.76
+pp), with 10.48% recovery. The lower recovery rates indicate
+that longer, tool-intensive AppWorld trajectories are harder
+to repair than the Sales workflows.
+Post-trigger execution is substantially more reliable. In
+the Granite-8B Sales run, 43 of 44 initiated top-level retries
+succeed (97.7%), including 7/7 Medium, 19/20 Difficult, and
+17/17 Complex cases. This distinguishes retry success from
+recovery: the former measures executions where a retry is
+actually initiated, whereas recovery considers all detected
+failed executions.
+RQ2 Summary. ResonAct improves completion by 4.76–
+10.00 percentage points across all evaluated configurations,
+with stronger recovery on Sales than AppWorld.
+RQ3: Runtime and Resource Overhead
+ResonAct intro-
+duces additional computation through monitoring, diagno-
+sis, and remediation. On Sales MAS, mean execution time
+increases from 22.43 s to 23.70 s for Granite-8B (+5.66%)
+and from 23.58 s to 24.06 s for Qwen3-8B (+2.04%). On Ap-
+pWorld, Granite-8B remains essentially unchanged (122.32 s
+vs. 122.01 s, −0.25%), whereas Qwen3-8B increases from
+143.54 s to 163.82 s (+14.12%).
+
+
+Benchmark
+Model
+Detection (%)
+Completion (%)
+Gain Recovery
+Avg Time (s)
+Overhead
+Precision
+Recall
+F1
+FPR
+Base ResonAct
+(pp)
+(%)
+Base ResonAct
+(%)
+AppWorld MAS
+Granite-8B
+82.91 100.00 90.65 72.97
+2.01
+7.14
++5.13
+32.06
+122.32
+122.01
+-0.25
+Qwen3-8B
+70.59 100.00 82.76 41.67
+11.31
+16.07
++4.76
+10.48
+143.54
+163.82
++14.12
+Sales MAS
+Granite-8B
+76.21
+69.15 72.51 53.83
+80.83
+88.00
++7.17
+46.67
+22.43
+23.70
++5.66
+Qwen3-8B
+72.11
+63.09 67.30 51.18
+73.67
+83.67
++10.00
+37.97
+23.58
+24.06
++2.04
+Table 3: End-to-end detection, task completion, recovery, and runtime performance. Runtime overhead is computed relative to
+the corresponding baseline execution time.
+Figure 3: Dashboard reporting failures through ResonAct.
+Resource overhead remains modest. Across the Sales runs,
+aggregate CPU utilisation increases by approximately 4.84%,
+while memory consumption decreases by approximately
+2.55%. For AppWorld with Qwen3-8B, CPU utilisation in-
+creases by 4.18 percentage points and RAM utilisation by
+2.33 percentage points, while mean physical RAM usage
+decreases by 3.36%. Thus, the additional cost is driven pri-
+marily by longer execution and increased compute activity
+rather than sustained memory growth.
+The overhead should be considered together with the reli-
+ability gains: Sales achieves completion improvements of
+7.17-10.00 pp with only 2.04–5.66% additional runtime,
+while AppWorld shows greater model-dependent variation.
+RQ3 Summary. Runtime overhead ranges from negli-
+gible to 14.12%, while CPU and memory changes remain
+comparatively modest.
+Overall Implications.
+ResonAct consistently improves
+task completion while exposing a clear trade-off between de-
+tection quality, recovery difficulty, and runtime cost. Recov-
+ery is stronger on the structured Sales workload, whereas Ap-
+pWorld’s longer and more heterogeneous trajectories make
+both remediation and overhead more variable. The high post-
+trigger retry success further suggests that failure selection
+and calibration are currently more limiting than the execu-
+tion of remediation itself. These findings support workload-
+aware detector calibration and selective intervention policies
+that apply additional computation when recovery is likely to
+improve the final outcome.
+Deployment Plan
+ResonAct is integrated with IBM watsonx Orchestrate
+(WXO)5 as a technical preview for streaming runtime di-
+agnosis in an enterprise agent platform. The operational
+5https://www.ibm.com/products/watsonx-orchestrate
+Figure 4: Distribution of identified operational failure classes
+motivation is based on an analysis of 904 issues from an
+internal WXO support repository, including issue descrip-
+tions and discussion threads. Approximately 160 issues were
+mapped to capabilities involving runtime event capture, met-
+ric computation, failure detection, or remediation. Recurring
+classes included agent and flow loops, intermittent tool fail-
+ures, non-deterministic routing, context-propagation gaps,
+and incomplete traces (Figure 4). This analysis establishes
+the operational relevance of the targeted failure classes. In
+the current detection-only preview, WXO runtime events are
+streamed through Confluent Kafka6 to ResonAct’s metric-
+construction and failure-detection components. The imple-
+mented integration incrementally computes the agent-loop
+index and per-tool failure rates, enabling potential execution
+loops and sustained tool degradation to be identified dur-
+ing execution. Figure 3 shows how the resulting signals are
+surfaced in the technical-preview dashboard.
+Progression beyond the current preview is planned with a
+controlled evaluation of remediation effectiveness and oper-
+ational overhead. In particular, the latency, token consump-
+tion, and cost of LLM-based decision generation will be
+weighed against improvements in task recovery for pilot cus-
+tomers. Because remediation can alter an execution path and
+impact the task outcome, its usefulness will also be assessed
+with platform users. The evidence through pilot customers
+will guide the safeguards of the deployment.
+Conclusion
+We presented ResonAct, an external control plane that de-
+rives continuous operational metrics from multi-agent exe-
+cution events and uses them to drive failure-specific runtime
+interventions. Its streaming architecture enables detection
+and remediation at agent invocation boundaries without em-
+bedding control logic in individual agents. Integration with
+the agent runtime platform provides a technically grounded
+path to controlled operational deployment.
+6https://www.confluent.io/cloud-kafka/
+
+
+References
+AlSayyad, A.; Huang, K. Y.; and Pal, R. 2026. AgentTrace:
+A Structured Logging Framework for Agent System Observ-
+ability. arXiv:2602.10133.
+Bai, L.; Huang, Z.; Wang, X.; Sun, J.; Mihalcea, R.; Brynjolf-
+sson, E.; Pentland, A.; and Pei, J. 2026. How Do AI Agents
+Spend Your Money? Analyzing and Predicting Token Con-
+sumption in Agentic Coding Tasks. arXiv:2604.22750.
+Cemri, M.; Pan, M. Z.; Yang, S.; Agrawal, L. A.; Chopra,
+B.; Tiwari, R.; Keutzer, K.; Parameswaran, A.; Klein, D.;
+Ramchandran, K.; Zaharia, M.; Gonzalez, J. E.; and Stoica, I.
+2025. Why Do Multi-Agent LLM Systems Fail? In Advances
+in Neural Information Processing Systems, volume 38.
+He, X.; Wu, D.; Zhai, Y.; and Sun, K. 2025. SentinelAgent:
+Graph-based Anomaly Detection in Multi-Agent Systems.
+arXiv:2505.24201.
+Hong, S.; Zhuge, M.; Chen, J.; Zheng, X.; Cheng, Y.; Wang,
+J.; Zhang, C.; Wang, Z.; Yau, S. K. S.; Lin, Z.; Zhou, L.; Ran,
+C.; Xiao, L.; Wu, C.; and Schmidhuber, J. 2024. MetaGPT:
+Meta Programming for A Multi-Agent Collaborative Frame-
+work. In The Twelfth International Conference on Learning
+Representations.
+Huang, J.-T.; Zhou, J.; Jin, T.; Zhou, X.; Chen, Z.; Wang, W.;
+Yuan, Y.; Lyu, M. R.; and Sap, M. 2025. On the Resilience of
+LLM-Based Multi-Agent Collaboration with Faulty Agents.
+In Proceedings of the 42nd International Conference on
+Machine Learning, volume 267 of Proceedings of Machine
+Learning Research, 26202–26226. PMLR.
+Jia, J.; Deng, Z.; Chen, Z.; Wang, Y.; and Zheng, Z. 2026.
+MAS-FIRE: Fault Injection and Reliability Evaluation for
+LLM-Based Multi-Agent Systems. arXiv:2602.19843.
+Li, G.; Hammoud, H. A. A. K.; Itani, H.; Khizbullin, D.;
+and Ghanem, B. 2023. CAMEL: Communicative Agents for
+”Mind” Exploration of Large Language Model Society. In
+Thirty-seventh Conference on Neural Information Process-
+ing Systems.
+Lin, B.; Yang, K.; Tan, Z.; Lai, Y.; Zhang, C.; Zhang, G.; Yu,
+X.; Yu, M.; Wang, X.; Zhang, Y.; and Wang, Y. 2026. Agen-
+tAsk: Multi-Agent Systems Need to Ask. In Proceedings of
+the 64th Annual Meeting of the Association for Computa-
+tional Linguistics (Volume 1: Long Papers), 28055–28077.
+San Diego, California, United States: Association for Com-
+putational Linguistics. ISBN 979-8-89176-390-6.
+Luo, Y.; Li, G.; Fan, J.; and Tang, N. 2026. Data Agents: Lev-
+els, State of the Art, and Open Problems. arXiv:2602.04261.
+Moshkovich, D.; and Zeltyn, S. 2025.
+Taming Uncer-
+tainty via Automation: Observing, Analyzing, and Optimiz-
+ing Agentic AI Systems. arXiv:2507.11277.
+Moura, J.; and Contributors. 2024.
+CrewAI: Framework
+for orchestrating role-playing, autonomous AI agents. https:
+//github.com/crewAIInc/crewAI.
+Pei, C.; Wang, Z.; Liu, F.; Li, Z.; Liu, Y.; He, X.; Kang, R.;
+Zhang, T.; Chen, J.; Li, J.; Xie, G.; and Pei, D. 2025. Flow-
+of-Action: SOP Enhanced LLM-Based Multi-Agent System
+for Root Cause Analysis. arXiv:2502.08224.
+Qian, C.; Liu, W.; Liu, H.; Chen, N.; Dang, Y.; Li, J.; Yang,
+C.; Chen, W.; Su, Y.; Cong, X.; Xu, J.; Li, D.; Liu, Z.; and
+Sun, M. 2024. ChatDev: Communicative Agents for Software
+Development. arXiv:2307.07924.
+Silva Fontes, G.; Andrikopoulos, V.; and Yumi Nakagawa, E.
+2026. Open Source Software Ecosystem for Cloud Observ-
+ability: An Overview and Trends. In Proceedings of the 14th
+IEEE/ACM International Workshop on Software Engineer-
+ing for Systems-of-Systems and Software Ecosystems, SESoS
+’26, 9–15. New York, NY, USA: Association for Computing
+Machinery. ISBN 9798400723957.
+Solomon, R.; Levi, Y. Y.; Vaknin, L.; Aizikovich, E.; Baras,
+A.; Ohana, E.; Giloni, A.; Bose, S.; Picardi, C.; Elovici, Y.;
+and Shabtai, A. 2025. LumiMAS: A Comprehensive Frame-
+work for Real-Time Monitoring and Enhanced Observability
+in Multi-Agent Systems. arXiv:2508.12412.
+Wang, J.; and Duan, Z. 2024. Agent AI with LangGraph:
+A Modular Framework for Enhancing Machine Translation
+Using Large Language Models. arXiv:2412.03801.
+Wang, W.; Dong, L.; Cheng, H.; Liu, X.; Yan, X.; Gao, J.;
+and Wei, F. 2023. Augmenting Language Models with Long-
+Term Memory. arXiv:2306.07174.
+Wu, Q.; Bansal, G.; Zhang, J.; Wu, Y.; Li, B.; Zhu, E.; Jiang,
+L.; Zhang, X.; Zhang, S.; Liu, J.; Awadallah, A. H.; White,
+R. W.; Burger, D.; and Wang, C. 2024. AutoGen: Enabling
+Next-Gen LLM Applications via Multi-Agent Conversations.
+In First Conference on Language Modeling.
+Zhang, K.; Peng, L.; Wang, C.; Go, A.; and Liu, X. 2024.
+LLM Cascade with Multi-Objective Optimal Consideration.
+arXiv:2410.08014.
+Appendix
+Metric Definitions and Computation
+A query/context is identified by its context_id. Metrics are
+computed over recent observation windows, with default
+windows of 20 queries, 50 calls per tool, and 50 calls per
+worker agent unless otherwise specified.
+Agent loop index.
+For execution context c, with A denot-
+ing the set of worker agents, the agent loop index is
+L(c) = Nrepeated(c)
+Ncalls(c)
+,
+(7)
+where Ncalls(c) is the number of worker-agent calls and
+Nrepeated(c) is the number of calls to an agent after its first
+occurrence within c. Equivalently,
+Nrepeated(c) =
+X
+a∈A
+max(Na(c) −1, 0).
+(8)
+The metric is zero when no worker-agent calls are ob-
+served. A high value indicates repeated activation but does
+not establish that the repetition is erroneous.
+
+
+Average steps.
+For query q, execution steps are defined as
+S(q) = Nagent(q) + Ntool(q),
+(9)
+where the two terms count worker-agent calls and tool
+invocations. The window-level average is
+S =
+1
+|Q|
+X
+q∈Q
+S(q).
+(10)
+ResonAct uses this metric to identify executions whose
+step count exceeds the expected workload distribution. The
+current implementation uses the empirical P95 as the upper
+reference for unbounded execution.
+Execution and Path Efficiency
+Unnecessary path ratio.
+The unnecessary path ratio pro-
+vides a proxy for wasted execution by combining repeated
+worker-agent calls and failed tool invocations:
+U(q) = Nrepeated agent(q) + Nfailed tool(q)
+Nagent(q) + Ntool(q)
+.
+(11)
+The metric is zero when no counted execution occurs.
+It is intentionally a heuristic measure: legitimate repeated
+agent calls may be classified as unnecessary, and repeated
+successful tool calls do not contribute to the numerator.
+Delegation efficiency.
+Delegation efficiency measures suc-
+cessful worker completion relative to delegation activity:
+D(q) = Nsuccessful worker(q)
+Ndelegated(q)
+.
+(12)
+Here, Ndelegated counts worker-agent delegation events
+and Nsuccessful worker counts worker completions with suc-
+cessful outcomes. The metric provides evidence about the
+effectiveness of information and work transfer across agent
+boundaries, but does not match individual assignments to
+completions or independently verify answer quality.
+Compactness.
+Compactness measures execution length
+relative to the shortest positive-step completed context in
+the current window. Let
+Smin =
+min
+q∈Qcompleted,S(q)>0 S(q).
+(13)
+For a completed context q with S(q) > 0,
+C(q) = Smin
+S(q).
+(14)
+The value is zero when the context is incomplete, has no
+steps, or no positive-step completed baseline exists. Com-
+pactness therefore measures relative execution efficiency
+rather than optimality.
+API call efficiency.
+API call efficiency measures recent
+tool-call volume relative to a longer moving baseline. Let
+Qs ⊆Qℓdenote the short and long windows of execution
+contexts, ordered by their most recent update time. Using
+Ntool(q) for the number of tool invocations in context q,
+define
+µs =
+1
+|Qs|
+X
+q∈Qs
+Ntool(q),
+µℓ=
+1
+|Qℓ|
+X
+q∈Qℓ
+Ntool(q).
+(15)
+For µℓ> 0, the metric is
+EAPI = µs
+µℓ
+.
+(16)
+The short and long windows contain up to 5 and 20 contexts,
+respectively, by default; available contexts are used while the
+history accumulates. When µℓ= 0, the metric is reported as
+unavailable.
+Values above 1 indicate increased recent tool-call volume
+relative to the longer baseline, while values below 1 indi-
+cate reduced volume. The metric is a drift signal: it does not
+independently establish task success, monetary cost, or exe-
+cution optimality. Changes in task difficulty can also change
+the ratio.
+Agent and Tool Health
+Tool health and latency.
+For tool t, the failure rate over
+its observation window is
+Ft =
+Nfailed(t)
+Nterminal(t),
+(17)
+with success rate 1 −Ft. The latest status is up for a
+successful completion and down for a failed completion. Tool
+latency is measured from invocation to terminal completion
+or failure:
+ℓt = Tterminal −Tinvocation.
+(18)
+ResonAct considers health and latency jointly because a
+low latency can also result from a rapid failure.
+Agent health and latency.
+For worker agent a, health is
+defined from recent completion outcomes:
+Fa = Nfailed completions(a)
+Ncompletions(a)
+.
+(19)
+Agent latency is obtained from the recorded duration of
+completed worker-agent executions. Health and latency pro-
+vide complementary signals for detecting sustained agent
+degradation. The host/orchestrator is excluded from these
+metrics.
+Semantic and Quality Signals
+Tool-routing confidence.
+For a selected tool t∗and query
+q, ResonAct computes semantic similarity between the query
+and each tool schema using cosine similarity:
+st = cos (E(q), E(schemat)) .
+(20)
+
+
+The selected-tool confidence is then obtained through a
+temperature-scaled softmax:
+P(t∗| q) =
+exp(st∗/T)
+P
+t∈T exp(st/T).
+(21)
+The
+current
+implementation
+uses
+the
+all-MiniLM-L6-v2 embedding model with a de-
+fault temperature of T
+= 0.1. The score reflects how
+strongly the selected tool semantically matches the query
+relative to the other tools in the registry; it is not a calibrated
+probability of correctness.
+LLM-judge scores.
+For completed queries, ResonAct op-
+tionally uses an LLM judge to score communication qual-
+ity, planning quality, coordination, and final-answer quality.
+Communication, planning, and answer quality are indepen-
+dently scored on a 1–5 scale. Coordination is computed as
+Jcoord = Jcommunication + Jplanning
+2
+.
+(22)
+Scores may be normalized by dividing by 5. These metrics
+provide qualitative evidence about execution quality but are
+model-based assessments rather than independently verified
+correctness labels.
+Agent activation accuracy.
+Agent activation accuracy
+evaluates whether the observed ordered agent/tool execu-
+tion path belongs to a set of accepted paths associated with
+the query intent:
+A = Nutterances with accepted paths
+Nscored utterances
+.
+(23)
+The implementation groups queries by semantic intent
+using MiniLM embeddings and a default similarity thresh-
+old of 0.75. During bootstrapping, an LLM may provide an
+optimal reference path. Once sufficient observations are col-
+lected, frequently observed paths are incorporated into the
+accepted-path set. The default bootstrap threshold is 50 ut-
+terances per intent, and the retained path probability mass is
+0.80. Consequently, the metric measures agreement with a
+learned execution-path reference rather than accuracy against
+an independently labeled ground truth.
+These metrics are computed continuously and aggregated
+at the context, agent, and system levels.
