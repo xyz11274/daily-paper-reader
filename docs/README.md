@@ -51,14 +51,14 @@
       <span class="dpr-home-dashboard-kicker">2026-10-06</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 19 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 31 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
-    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>2 次</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>20</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-06 00:34:43 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-06 23:47:54 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读7篇、速读12篇，重点聚焦自进化编码智能体与多智能体测试时演化。最值得看的是《Self-Evolving Coding Agents》和《Inherit-MAS》，均获9.0分，指向从数字程序到物理世界智能、以及工作流与执行继承的演化路径。普通读者可优先关注多智能体协作与演化方向，留意后续在真实任务中的验证进展。</p>
+<p>今日扫读31篇AI论文，精读11篇，聚焦自进化编码智能体与自我改进个人智能体的能力边界。最值得看的是两篇9分精读：编码智能体从数字程序走向物理世界智能，以及自改进智能体的近似、泛化与优化极限。普通读者可优先了解“智能体自我进化”这一方向，再关注多智能体协作与竞争评测的速读结论。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Coding Agents: From Digital Programs to Physical-World Intelligence">Self-Evolving Coding Agents: From Digital Programs to Physical-World Intelligence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Inherit-MAS: Test-Time Evolution of Multi-Agent Systems through Workflow and Execution Inheritance">Inherit-MAS: Test-Time Evolution of Multi-Agent Systems through Workflow and Execution Inheritance</span></li><li><span class="dpr-home-dashboard-paper-title" title="Raven: The Harness of Harnesses for Composable Agentic Intelligence">Raven: The Harness of Harnesses for Composable Agentic Intelligence</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Coding Agents: From Digital Programs to Physical-World Intelligence">Self-Evolving Coding Agents: From Digital Programs to Physical-World Intelligence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Harness Evolution as Learning: Approximation, Generalization, and Optimization Limits of Self-Improving Personal Agents">Harness Evolution as Learning: Approximation, Generalization, and Optimization Limits of Self-Improving Personal Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Algorithm-Design Agents: Escaping In-Context Evolutionary Stagnation via Population-Curated Policy Optimization">Self-Evolving Algorithm-Design Agents: Escaping In-Context Evolutionary Stagnation via Population-Curated Policy Optimization</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>5</strong></span><span class="dpr-home-dashboard-tag">multi-agent <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>9</strong></span><span class="dpr-home-dashboard-tag">multi-agent <strong>2</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">12 篇</strong>
+    <strong class="dpr-home-dashboard-count">20 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MASTraceBench: Diagnosing Collaboration Gains through Proposal Trajectories in LLM-Based Multi-Agent Systems">MASTraceBench: Diagnosing Collaboration Gains through Proposal Trajectories in LLM-Based Multi-Agent Systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="Cooperative Multi-Agent Vision-Language-Action Models via Reinforced Fine Tuning">Cooperative Multi-Agent Vision-Language-Action Models via Reinforced Fine Tuning</span></li><li><span class="dpr-home-dashboard-paper-title" title="FlowMAS: Learning Multi-Agent Workflow Topology via Information-guided Generative Flow Network">FlowMAS: Learning Multi-Agent Workflow Topology via Information-guided Generative Flow Network</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MASTraceBench: Diagnosing Collaboration Gains through Proposal Trajectories in LLM-Based Multi-Agent Systems">MASTraceBench: Diagnosing Collaboration Gains through Proposal Trajectories in LLM-Based Multi-Agent Systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="CEO Arena: Evaluating Long-Horizon Multi-Agent Decision-Making in Competitive Markets">CEO Arena: Evaluating Long-Horizon Multi-Agent Decision-Making in Competitive Markets</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Adapting Group of Experts for Multi-Agent Reasoning">Self-Adapting Group of Experts for Multi-Agent Reasoning</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>8</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>4</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>14</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>6</strong></span></div>
 </section>
 </div>
 
