@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-06</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-07</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 31 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 19 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
-    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>2 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>11</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>20</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-06 23:47:54 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-07 23:57:59 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日扫读31篇AI论文，精读11篇，聚焦自进化编码智能体与自我改进个人智能体的能力边界。最值得看的是两篇9分精读：编码智能体从数字程序走向物理世界智能，以及自改进智能体的近似、泛化与优化极限。普通读者可优先了解“智能体自我进化”这一方向，再关注多智能体协作与竞争评测的速读结论。</p>
+<p>今日完成19篇文献扫描，精读7篇、速读12篇，其中两篇9分论文聚焦进化搜索智能体与多智能体系统测试时演化。最值得关注的是SEDIMA的跨运行分层记忆机制和Inherit-MAS的工作流与执行继承思路，均指向智能体持续自我改进。普通读者可优先了解“记忆复用+测试时演化”这一组合如何降低多智能体协作的重复训练成本。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Coding Agents: From Digital Programs to Physical-World Intelligence">Self-Evolving Coding Agents: From Digital Programs to Physical-World Intelligence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Harness Evolution as Learning: Approximation, Generalization, and Optimization Limits of Self-Improving Personal Agents">Harness Evolution as Learning: Approximation, Generalization, and Optimization Limits of Self-Improving Personal Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Evolving Algorithm-Design Agents: Escaping In-Context Evolutionary Stagnation via Population-Curated Policy Optimization">Self-Evolving Algorithm-Design Agents: Escaping In-Context Evolutionary Stagnation via Population-Curated Policy Optimization</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SEDIMA: Cross-Run Hierarchical Insight Memory for Evolutionary Search Agents">SEDIMA: Cross-Run Hierarchical Insight Memory for Evolutionary Search Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Inherit-MAS: Test-Time Evolution of Multi-Agent Systems through Workflow and Execution Inheritance">Inherit-MAS: Test-Time Evolution of Multi-Agent Systems through Workflow and Execution Inheritance</span></li><li><span class="dpr-home-dashboard-paper-title" title="Principles that Guide, Actions that Inform: Agent Evolution via Knowledge Abstraction">Principles that Guide, Actions that Inform: Agent Evolution via Knowledge Abstraction</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>9</strong></span><span class="dpr-home-dashboard-tag">multi-agent <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>6</strong></span><span class="dpr-home-dashboard-tag">multi-agent <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">20 篇</strong>
+    <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MASTraceBench: Diagnosing Collaboration Gains through Proposal Trajectories in LLM-Based Multi-Agent Systems">MASTraceBench: Diagnosing Collaboration Gains through Proposal Trajectories in LLM-Based Multi-Agent Systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="CEO Arena: Evaluating Long-Horizon Multi-Agent Decision-Making in Competitive Markets">CEO Arena: Evaluating Long-Horizon Multi-Agent Decision-Making in Competitive Markets</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self-Adapting Group of Experts for Multi-Agent Reasoning">Self-Adapting Group of Experts for Multi-Agent Reasoning</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Embodied Semantic Communication for Collective Autonomous Agents: A Tutorial on Representation, Wireless Delivery, and Closed-Loop Coordination">Embodied Semantic Communication for Collective Autonomous Agents: A Tutorial on Representation, Wireless Delivery, and Closed-Loop Coordination</span></li><li><span class="dpr-home-dashboard-paper-title" title="Systematic Multi-Agent Vision-and-Language Navigation: Formulation, Benchmark, and Method">Systematic Multi-Agent Vision-and-Language Navigation: Formulation, Benchmark, and Method</span></li><li><span class="dpr-home-dashboard-paper-title" title="Cooperative Multi-Agent Vision-Language-Action Models via Reinforced Fine Tuning">Cooperative Multi-Agent Vision-Language-Action Models via Reinforced Fine Tuning</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>14</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>6</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>9</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
 </section>
 </div>
 
