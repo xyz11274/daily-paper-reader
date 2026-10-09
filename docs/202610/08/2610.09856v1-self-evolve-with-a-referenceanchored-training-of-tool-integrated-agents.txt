@@ -1,0 +1,1336 @@
+Title: Self-Evolve With a Reference:Anchored Training of Tool-Integrated Agents
+
+URL Source: https://arxiv.org/pdf/2610.09856v1
+
+Published Time: Thu, 08 Oct 2026 01:33:07 GMT
+
+Number of Pages: 40
+
+Markdown Content:
+# Self-Evolve With a Reference: Anchored Training of Tool-Integrated Agents 
+
+Wenjie Liao 1, Liangjie Zhao 2, and Zehong Cao 21Waseda University, jie3040@akane.waseda.jp , 2Adelaide University, 
+
+zhaoliangjie55@gmail.com , Jimmy.Cao@adelaide.edu.au 
+
+## Abstract 
+
+Self-evolving tool-integrated agents learn from tasks and feedback generated within their own training loop. A Curriculum Agent generates tasks, while an Executor Agent learns from self-consistency signals through reinforcement learning. However, relying solely on the current Executor for feedback has two limitations: group-relative advantages vanish under full consensus, while uncertainty-based curriculum rewards favor disagreement without showing whether the generated tasks support further learning. These limitations motivate an additional reference beyond the current Executor. We propose AnchorLoop ,which introduces a frozen copy of the previous iteration’s Executor as a historical reference and reuses it on both sides of the training loop. For the Executor, the anchor provides a cross-reference advantage that evaluates current outputs against both current and historical majority answers. For the Curriculum, it provides an agreement-based reference based on differences in sampled majority agreement. Since the Executor and anchor have identical parameters during Curriculum training, this comparison serves as a proxy for task selection rather than evidence of inter-version improvement or correctness. Across 13 reasoning benchmarks, AnchorLoop improves over Agent0 by 2.5% on mathematical reasoning and 2.8% on general reasoning tasks. It also maintains higher effective-advantage variance and continues improving in later iterations as the unanchored baseline shows diminishing gains. These results demonstrate the benefit of introducing a lightweight historical reference into self-evolving tool-integrated agents without external task or answer supervision. 
+
+Keywords: Tool-Integrated Agents, Reference, Reinforcement Learning 
+
+## 1. Introduction 
+
+Tool-integrated language model agents can learn to solve complex tasks through multi-turn interaction with external tools. Recent work further extends this capability toward self-evolution , where agents generate not only solutions but also their own training tasks and feedback. A representative paradigm couples a Curriculum Agent that generates tasks with an Executor Agent that learns to solve them through reinforcement learning [25]. By generating tasks and feedback within the training loop, such systems reduce their reliance on externally supplied training tasks and answer labels. This creates a closed learning loop in which the Executor serves not only as the learner, but also as a source of feedback for training both agents. This reliance on the current Executor, however, creates limitations on both sides of self-evolution. On the Executor side, group-relative learning relies on differences among sampled outputs. When all outputs in a group reach consensus, the centered advantages vanish and provide no relative preference among trajectories. On the Curriculum side, uncertainty can identify tasks that elicit disagreement from the Executor, but disagreement alone does not indicate whether those tasks provide useful opportunities for further learning. In both cases, the learning signal is determined entirely by the current Executor, without a reference beyond its present behavior. 
+
+> 1arXiv:2610.09856v1 [cs.AI] 7 Oct 2026 Self-Evolve With a Reference
+
+These limitations motivate a natural question: can self-evolution gain an additional reference while remaining self-contained? Our key idea is to use the system’s own recent history as that reference. Specifically, we retain the Executor from the previous iteration as a frozen anchor . This introduces a temporal comparison without requiring externally supplied tasks or answer labels. Historical reference models have been used in iterative learning; for example, SPIN compares against responses from a previous model while retaining human reference responses [2]. Our focus is different: we study how a recent Executor can serve as a shared reference for both sides of a self-evolving Curriculum–Executor loop. Based on this idea, we propose AnchorLoop , which reuses the same historical anchor on both sides of self-evolution. For the Executor, the anchor provides a cross-reference advantage that evaluates current outputs against both the current and anchor majority answers, augmenting the preference induced by current self-consistency. For the Curriculum, the anchor provides an agreement-based reference through the positive difference in sampled majority-agreement rates. The anchor is refreshed from the previous Executor at the beginning of each outer iteration and remains frozen throughout that iteration. Importantly, the two uses of the anchor have different interpretations. Curriculum training precedes Executor training in each iteration, so the current Executor and the newly refreshed anchor have identical parameters during the Curriculum stage and produce independent rollout groups. Their sampled agreement difference therefore serves as an agreement-based proxy for shaping the Curriculum reward, rather than direct evidence of improvement between model versions or correctness. During subsequent Executor training, the current Executor evolves while the anchor remains fixed, enabling a genuine historical comparison. We further characterize this historical advantage and show that it acts as a conditional reweighting of current outputs: it can introduce additional relative information when current and historical majorities differ, while still vanishing under full current consensus. Our contributions are threefold: • Historical Anchoring. We introduce AnchorLoop, which uses the previous iteration’s Executor as a shared historical reference for both Curriculum and Executor training. • Dual-Sided Learning. We develop a cross-reference advantage for Executor training and an agreement-based reference for Curriculum training, and characterize how the historical reference shapes both learning signals. • Empirical Validation. Across two backbones and thirteen reasoning benchmarks, AnchorLoop consistently improves over the unanchored baseline by 2.5-2.8% points on average, while contin-uing to improve in later training iterations. 
+
+## 2. Preliminaries 
+
+Self-Evolving Curriculum–Executor Learning. We consider a self-evolving system consisting of a Curriculum Agent πθ and an Executor Agent πϕ. The Curriculum generates training tasks x, while the Executor learns to solve them through multi-turn interaction with external tools. Given a task 
+
+x, the Executor generates a trajectory τ = ( s1, a1, o1, . . . , sH , aH , oH ) of at most H turns, where ah is either a tool call or a final answer and oh is the resulting observation. The trajectory terminates when the Executor produces a final answer o(τ) ∈ Y or reaches the turn budget [25, 26]. The Curriculum– Executor loop generates both training tasks and learning signals within the training process. The Curriculum evaluates generated tasks based on the current Executor’s behavior, while the Executor learns from agreement among its own sampled outputs. Thus, both sides of self-evolution rely on 
+
+> 2Self-Evolve With a Reference
+
+feedback derived from the current Executor [25]. 
+
+Agreement-Based Group-Relative Learning. For each task x, the Executor samples G trajectories 
+
+{τi}Gi=1. A fixed final-answer parser maps each well-formed output to a canonical answer oi. Following self-consistency [23], the unique modal answer among valid outputs defines a pseudo-label ˜y, and each trajectory receives 
+
+ri = I[oi = ˜y]. (1) Invalid or missing outputs receive zero reward and do not vote for ˜y, while groups without a unique modal answer are unresolved and excluded from updates that require a pseudo-label. 
+
+The reward ri measures agreement rather than independently verified correctness : the pseudo-label ˜y is determined entirely by the sampled outputs. A consistent but incorrect group can therefore receive the same agreement reward as a consistent correct group. Group-relative policy optimization (GRPO) [20] normalizes these rewards within the sampled group: 
+
+Ai = ri − μσ + ε , (2) where μ and σ denote the mean and standard deviation of the group rewards, and ε > 0 is a stabilizer. The policy is then optimized using a clipped surrogate objective in the style of PPO [19]. When all trajectories agree on the same valid answer, ri = 1 for all i, yielding Ai = 0. Thus, the centered group-relative advantage provides no relative preference within a fully consensual group. 
+
+## 3. Method 
+
+3.1. Historical Anchor for Self-Evolution 
+
+AnchorLoop introduces a historical reference into the Curriculum–Executor loop defined in Section 2. At outer iteration t, we retain the previous iteration’s Executor as a frozen anchor, 
+
+πanc ← π(t−1) 
+
+> ϕ
+
+, (3) and hold it fixed throughout the iteration. The anchor therefore represents the most recently completed Executor while requiring no externally supplied tasks or answer labels. The same anchor is reused on both sides of self-evolution, but with different roles. For Executor training, it provides a historical majority answer used to construct a cross-reference advantage (Section 3.2). For Curriculum training, it provides an additional rollout group whose sampled agreement is compared with that of the current Executor (Section 3.3). The anchor is refreshed at the beginning of every outer iteration, as illustrated in Figure 1. Figure 1 is schematic, and Equation (11) defines the complete Curriculum reward. The Curriculum and Executor are initialized from the same base model πbase and updated separately. The Curriculum is optimized with GRPO [20], while the Executor uses ADPO [25]. Curriculum training precedes Executor training within each outer iteration. This update order gives the anchor different interpretations across the two stages, as detailed in Section 3.4. 
+
+3.2. Executor: Cross-Reference Advantage 
+
+The current agreement reward provides a relative preference only when answers within a group differ. AnchorLoop augments this current-only signal with an anchor-based comparison that changes how 
+
+> 3
+
+Self-Evolve With a Reference similar high agreement positive sampled agreement gap similar low agreement 
+
+> Majority Vote
+> Majority Vote Majority Vote
+> Task x
+> Task x
+> Task x
+
+Unanchored Co-Evolution AnchorLoop 
+
+> Curriculum Agent
+
+Executor Agent 
+
+y1 y2 yG…
+
+> Pseudo-label
+
+ỹ
+
+> Executor update Curriculum update
+> Performance
+> Iteration
+> Potential plateau across iterations no historical anchor
+
+123        
+
+> Iterative Anchor Module Iter t-1 Iter t Iter t+1
+> Anchor πanc ←πφ(t−1) Current Executor πφ(t) (next iter)
+> snapshot, freeze
+> Anchor refreshes each iteration to the previous Executor checkpoint.
+> Executor Side
+> Curriculum Agent
+> Current Executor
+> πφ(t)
+> Anchor
+> πanc
+> y1
+> y2
+> yG
+> ⋮
+> y1
+> y2
+> yG
+> ⋮
+
+ỹcur 
+
+ỹanc       
+
+> matches
+> ỹcur ?
+> r1cur
+> r2cur
+> rGcur
+> ⋮
+> matches
+> ỹanc ?
+> r1anc
+> r2anc
+> rGanc
+> ⋮
+> Aicur = z-score( ricur )
+> current advantage
+> Aihist = z-score( ricur −rianc )
+> historical advantage
+
+Âi = (1- α) * A icur 
+
++ α * A ihist  
+
+> shared anchor (dual-sided)
+> Curriculum Side
+> Curriculum Agent
+
+μcur (x) μanc (x)
+
+> anchor majority agreement
+
+Rref  (x) = max(0, μcur − μanc )
+
+> update
+
+RC = R unc + R tool + R rep + λ * Rref  
+
+> Rref peaks at the frontier
+
+Figure 1: Overview of AnchorLoop. The left panel illustrates an unanchored two-agent self-evolution loop that can plateau. At outer iteration t, AnchorLoop copies the previous Executor into a frozen anchor and reuses it on both sides of the loop. During Curriculum training, the current Executor and anchor have identical parameters but produce independent rollout groups for the agreement-based reference reward. All format-valid tasks form the same-iteration task pool Dt. During Executor training, the anchor remains fixed while the current Executor is updated. Current groups are resampled at every inner step, whereas one anchor group per task and Curriculum batch is cached and reused to construct the cross-reference advantage. current outputs are weighted. Because the anchor remains fixed throughout the iteration, it provides a common historical reference as the Executor updates. This design does not guarantee a nonzero advantage for every task or prevent all forms of training stagnation. 
+
+Current and anchor references. For each task x in the Executor stage, we sample G trajectories from the current Executor and another G trajectories from the anchor. Each resolved group follows the definition in Section 2 to produce a pseudo-label, ˜ycur for the current group and ˜yanc for the anchor group. If either group is unresolved, the task is omitted from the pseudo-label-dependent Executor update. Anchor rollouts are cached at the granularity of a Curriculum batch and reused across the inner Executor steps that use the same tasks, amortizing anchor sampling across those steps. Let oi denote the parsed valid answer of current Executor trajectory i. Invalid and missing trajectories receive zero for both indicators. Each current trajectory receives two outcomes, 
+
+rcur 
+
+i = I[oi = ˜ycur ],
+
+ranc 
+
+i = I[oi = ˜yanc ]. (4) Both indicators score the same current answer oi. The first measures agreement with the current 
+
+4Self-Evolve With a Reference 
+
+group’s majority, whereas the second measures agreement with the anchor group’s majority rather than scoring an anchor trajectory. 
+
+Cross-reference advantage. We form two advantages by centering and normalizing over the current group: 
+
+Acur  
+
+> i
+
+= rcur  
+
+> i
+
+− μcur 
+
+σcur + ε ,
+
+Ahist  
+
+> i
+
+= (rcur  
+
+> i
+
+− ranc  
+
+> i
+
+) − ¯∆
+
+s∆ + ε ,
+
+(5) where μcur and σcur are the mean and standard deviation of rcur , while ¯∆ and s∆ are the mean and standard deviation of rcur − ranc . The cross-reference advantage combines the two: 
+
+ˆAi = ( 1 − α)Acur  
+
+> i
+
++ αAhist  
+
+> i
+
+, 0 ≤ α ≤ 1, (6) where α controls the contribution of the historical advantage. 
+
+Properties of the historical term. The historical term acts as a conditional reweighting of current outputs. For resolved current and anchor groups with ε > 0, several boundary cases clarify its behavior. If the two majority labels agree, the two indicators coincide and Ahist  
+
+> i
+
+= 0. If all current answers are identical, rcur  
+
+> i
+
+− ranc  
+
+> i
+
+is constant across the current group even when the majority labels differ. Centering therefore makes both advantage terms zero. A different anchor label alone cannot restore a relative preference within a fully consensual current group. When the two majority labels differ and the current group contains only those two answers, with both present, the historical advantage is a positive rescaling of the current advantage. If the anchor’s majority answer is absent from the current group, the two advantages are identical. With additional answer classes, the historical term can distinguish outputs that match the anchor majority from other outputs that disagree with the current majority. Its contribution therefore depends on the sampled answer composition. These group-level relations do not establish equivalence between complete training runs. Refreshing the anchor ties its parameters to the most recently completed Executor iteration. This does not establish that the anchor remains informative on every task, nor that a reference fixed to the base model must necessarily become uninformative. 
+
+3.3. Curriculum: Anchor-Referenced Reward 
+
+The Curriculum evaluates each generated task using sampled behavior from the current Executor. AnchorLoop augments this current-only signal with an independently sampled rollout group from the anchor. We first define the inherited task-level Curriculum terms and then introduce the anchor-referenced component. 
+
+Base Curriculum reward. Each candidate task x is evaluated with G current Executor trajectories 
+
+{τj}Gj=1. Let ny(x) denote the number of valid parsed answers with canonical label y. We define 
+
+pmax (x) = 1
+
+G max  
+
+> y
+
+ny(x), Runc (x) = 1 − 2⃒⃒⃒⃒ pmax (x) − 12⃒⃒⃒⃒ . (7) If no trajectory has a valid answer, we set pmax (x) = 0. The maximum count remains defined when several labels tie, although such a group has no pseudo-label. Invalid and missing trajectories do not add to any label count and remain in the fixed denominator G.
+
+> 5Self-Evolve With a Reference
+
+Let Ntool (τj) denote the number of Python calls executed by the sandbox before trajectory j terminates. Calls executed before an invalid or missing final answer are still counted. With call cap C, the task-level tool-use term is 
+
+Rtool (x) = 1
+
+G
+
+> G
+
+∑︁ 
+
+> j=1
+
+min (︀ Ntool (τj), C)︀ . (8) For a Curriculum batch B of B candidate tasks, we compute pairwise BLEU distances between task texts and connect two tasks when their distance is below drep . Let C(x) denote the connected component containing x. The repetition term is 
+
+Rrep (x) = |C (x)|
+
+B . (9) The binary gate Rfmt (x) equals one when the generated task passes the fixed Problem: and Answer: 
+
+format in Appendix B.1, and zero otherwise. 
+
+Anchor-referenced agreement. We augment these inherited terms with an anchor comparison. For each candidate task x, we define 
+
+Rref (x) = max (︀ 0, μcur (x) − μanc (x))︀ , (10) where μcur (x) and μanc (x) are the majority agreement rates of the current Executor and anchor, respectively. For a resolved group, each rate is the number of rollouts matching its own unique modal answer divided by the fixed G. Invalid and missing outputs contribute zero to the numerator but remain in the denominator. If either group is unresolved, we set Rref (x) = 0; the uncertainty, tool-use, repetition, and format terms remain defined. Importantly, μanc (x) is computed over anchor outputs and is not the current-group mean of ranc  
+
+> i
+
+defined in Section 3.2. Moreover, the two agreement rates are computed with respect to their respective group majorities rather than a shared ground-truth answer. 
+
+Interpretation. The reference term measures a difference in sampled agreement , not a difference in correctness . A positive Rref (x) means that the sampled current group has a larger majority fraction than the sampled anchor group. It does not establish that the current Executor is more accurate, nor that it can solve a task that the anchor cannot. In particular, a more concentrated but incorrect answer distribution can also receive a positive score. The update order imposes a second limitation on this interpretation. Because Curriculum training precedes Executor training, the current Executor and the newly refreshed anchor have identical parameters during the Curriculum stage and differ only through independent sampling. Their sampled agreement rates may therefore differ, but such a difference is not evidence of progress between historical model versions. Taking the positive part does not remove this sampling variation. We consequently use 
+
+Rref as an agreement-based proxy for Curriculum shaping rather than as a measure of correctness or inter-version improvement. 
+
+Complete Curriculum reward. We combine the reference term with the inherited uncertainty, tool-use, repetition, and format-validity terms: 
+
+RC (x) = Rfmt (x) max (︀ 0, wunc Runc (x) + wtool Rtool (x)
+
+− wrep Rrep (x) + λRref (x))︀ . (11) 
+
+> 6Self-Evolve With a Reference
+
+Algorithm 1: Training procedure of AnchorLoop. 
+
+Input: Base model πbase , outer iterations T
+
+Initialize separate agents πθ , πϕ ← πbase 
+
+for t = 1, . . . , T do 
+
+Set πanc ← π(t−1) 
+
+> ϕ
+
+and freeze the anchor for iteration t
+
+Keep πϕ fixed; update only πθ via GRPO with reward RC; collect all format-valid tasks in Dt
+
+while retaining their Curriculum batch assignments Keep πθ fixed; update only πϕ on Dt via ADPO using the scaled cross-reference advantage ̃︀ A
+
+Resample each current group at every Executor inner step and reuse one cached anchor group per task and Curriculum batch Discard Dt and its rollout cache, and denote the resulting Executor by π(t)
+
+> ϕ
+
+end Output: Trained Executor π(T)
+
+> ϕ
+
+The base reward weights used throughout the reported training runs are listed in Table 3. When 
+
+Rref (x) = 0, the remaining components of RC (x) remain active; a zero reference term therefore does not by itself discard the task. 
+
+3.4. Alternating Training with an Iterative Anchor 
+
+AnchorLoop alternates Curriculum and Executor training over T outer iterations. Let π(t) 
+
+> ϕ
+
+denote the Executor after iteration t, with π(0) 
+
+> ϕ
+
+= πbase . At the beginning of iteration t, we refresh the anchor as 
+
+πanc ← π(t−1) 
+
+> ϕ
+
+(12) and keep it frozen throughout the iteration. 
+
+Curriculum stage. We first fix the Executor and update only the Curriculum Agent using GRPO with the reward RC from Section 3.3. The current Executor and newly refreshed anchor therefore have identical parameters π(t−1) 
+
+> ϕ
+
+during this stage and differ only through independent sampling. All format-valid tasks generated during Curriculum training form the same-iteration task pool Dt, with their Curriculum batch assignments preserved. We do not filter these tasks according to Rref or the total Curriculum reward RC. The Curriculum-generated Answer: field is used only for format checking and is neither provided to the Executor nor used as a supervision label. 
+
+Executor stage. We then freeze the Curriculum Agent and update only the Executor on Dt. The anchor remains fixed at π(t−1) 
+
+> ϕ
+
+, while the current Executor evolves during optimization, providing the historical comparison used by the cross-reference advantage in Section 3.2. Each task remains fixed across the Executor inner steps associated with its Curriculum batch. For each task, the current Executor resamples G trajectories at every inner step, whereas the anchor group is sampled once per task and Curriculum batch and cached across the corresponding Executor updates. Current groups are not retained between inner steps. After the Executor stage, the resulting policy is denoted π(t) 
+
+> ϕ
+
+. The task pool Dt and all cached rollouts are then discarded. The next outer iteration generates a new task pool and does not replay tasks from earlier iterations. 
+
+> 7Self-Evolve With a Reference
+
+Policy optimization. For Curriculum training, the Curriculum Agent’s group consists of a batch of generated tasks. Each task is scored by RC from Section 3.3, and the resulting rewards are normalized across the task batch to form the GRPO advantages. For Executor training, each group consists of the G trajectories sampled for a single task. The standard group-relative advantage is replaced by the cross-reference advantage ˆAi from Section 3.2. The Executor follows ADPO [25], which scales the advantage according to current answer agreement and dynamically adjusts the upper clipping bound. For each task x, we compute the current-group agreement score 
+
+ˆp(x) = μcur (x) = 1
+
+G
+
+> G
+
+∑︁ 
+
+> i=1
+
+rcur  
+
+> i
+
+, (13) where ˆp(x) is the fraction of current outputs matching the current group’s modal answer. Let s(x) = 
+
+f ( ˆp(x)) denote the ADPO task weight, where f is nondecreasing. We apply this weight to the complete cross-reference advantage: ̃︀ 
+
+Ai(x) = s(x) ˆAi
+
+= s(x)[︁ (1 − α)Acur  
+
+> i
+
++ αAhist 
+
+> i
+
+]︁ . (14) Thus, the same task weight scales both the current and historical components. The clipping interval is 
+
+[1 − ϵlow , 1 + ϵhigh (x)] ,
+
+where ϵhigh (x) = g( ˆp(x)) and g is nonincreasing. Thus, both the task weight and the upper clipping bound are recomputed from the current group’s agreement score. 
+
+Token-level Executor objective. Let yi,ℓ denote the token generated at position ℓ of trajectory i, and let hi,ℓ contain the task, preceding generated tokens, and any tool observations returned before that position. Tool observations condition subsequent generation but are not themselves optimized. We use a mask mi,ℓ over generated reasoning, tool-call, and final-answer tokens, with Mi =∑︀ ℓ mi,ℓ.The behavior policy πϕold is frozen before sampling the current group at each Executor inner step. The token-level importance ratio is 
+
+ρi,ℓ(ϕ) = πϕ(yi,ℓ | hi,ℓ)
+
+πϕold (yi,ℓ | hi,ℓ) . (15) The same trajectory-level advantage ̃︀ Ai(x) is applied to all optimized tokens in trajectory i. The Executor objective is 
+
+Lexec (ϕ) = − 1
+
+G
+
+> G
+
+∑︁ 
+
+> i=1
+
+1
+
+Mi∑︁ ℓ
+
+mi,ℓ min (︁ ρi,ℓ(ϕ)̃︀ Ai(x),clip (︀ ρi,ℓ(ϕ), 1 − ϵlow , 1 + ϵhigh (x))︀̃︀ Ai(x))︁ 
+
++ βKL 
+
+G
+
+> G
+
+∑︁ 
+
+> i=1
+
+1
+
+Mi∑︁ ℓ
+
+mi,ℓ DKL (︀ πϕ(· | hi,ℓ)⃦⃦ πref (· | hi,ℓ))︀ ,
+
+(16) where the KL reference is the frozen base model, πref = πbase .
+
+> 8Self-Evolve With a Reference
+
+The anchor adds one frozen Executor checkpoint to storage at any given time. Its rollouts are cached at the task–Curriculum-batch level, amortizing anchor sampling across the corresponding Executor inner steps. Overall, the anchor serves as an independently sampled reference during Curriculum training and becomes a historical reference as the Executor subsequently updates. Algorithm 1 summarizes the complete training procedure, while the corresponding functions and hyperparameters are reported in Appendix A.2. Appendix B provides the Curriculum and Executor prompts, together with the answer-parsing and group-resolution rules. 
+
+## 4. Experiments and Results 
+
+4.1. Experimental Setup Training Details. We evaluate AnchorLoop on two open-source base models, Qwen3-4B-Base [27] and MiMo-7B-Base [11]. For each backbone, the Curriculum Agent, Executor Agent, and initial anchor are derived from the same base model. We implement AnchorLoop on VeRL [21] with a sandboxed Python interpreter provided by VeRL-Tool. A complete <python> –</python> block triggers one subprocess call, whose standard output is returned to the model as the next observation. Training follows the alternating procedure in Section 3.4. Each outer iteration consists of a Curriculum stage followed by an Executor stage. All format-valid tasks generated during Curriculum training enter the same-iteration Executor task pool Dt while retaining their Curriculum batch assignments; we apply neither reward-based task filtering nor task replay across outer iterations. For each task, the current Executor samples G = 8 trajectories at every Executor inner step, whereas the anchor samples G = 8
+
+trajectories once per task and Curriculum batch and reuses them across the corresponding inner steps. The anchor is refreshed from the previous iteration’s Executor at the beginning of each outer iteration and remains frozen throughout that iteration. Unless otherwise specified, we report models after three outer iterations. Table 1 uses this setting for both backbones, while the anchor-refresh analysis in Figure 3(a) additionally extends training to a fourth iteration. AnchorLoop uses no externally supplied training tasks or answer labels during self-evolution; the Curriculum Agent generates the complete Executor training task pool. Appendix A provides the full training configuration, hyperparameters, and sandbox settings. 
+
+Baselines and Benchmarks. We compare against seven baselines: two no-training references (Base Model and Base Model w/ Tool), four self-evolving methods (Absolute Zero [28], SPIRAL [10], R-Zero [6], and Socratic-Zero [22]), and Agent0 [25], the direct unanchored baseline underlying our two-agent training setup. We evaluate mathematical reasoning on seven benchmarks: AMC23 [17], MATH-500 [5, 9], GSM8K [3], Minerva [8], OlympiadBench [4], AIME24 [13, 14], and AIME25 [15, 16]. General reasoning is evaluated on six benchmarks: SuperGPQA [12], MMLU-Pro [24], BBEH [7], GPQA-Diamond [18], HumanEval [1], and AGIEval [29]. We report greedy pass@1 except mean@32 for AMC23 [17] and AIME. Appendix C provides baseline adaptations, dataset details, and the complete evaluation and aggregation protocol. 
+
+4.2. Main Results 
+
+Table 1 compares AnchorLoop with the seven baselines across thirteen reasoning benchmarks. Overall, historical anchoring consistently improves over the unanchored Agent0 baseline on both backbones and across both evaluation domains. 
+
+> 9
+
+Self-Evolve With a Reference 
+
+Table 1: Results on mathematical and general reasoning benchmarks. The two AVG columns summarize their respective benchmark groups. Best per backbone is in bold .                                                                                                                     
+
+> Mathematical reasoning General reasoning Model Name {AMC23 MATH GSM8K Minerva Olympiad AIME24 AIME25 AVG SuperGPQA MMLU-Pro BBEH GPQA-D HumanEval AGIEval AVG
+> Qwen3-4B-Base
+> Base Model ✗45.4 68.6 88.5 37.3 41.2 11.0 6.33 42.6 21.1 37.6 7.6 36.5 65.7 54.8 37.2 Base Model w/ tool ✓45.9 72.7 88.8 38.1 42.4 12.5 7.86 44.0 25.8 43.6 8.5 37.2 67.1 55.4 39.6 + Absolute Zero ✓50.3 76.8 88.8 40.6 42.9 12.7 13.0 46.4 26.4 52.9 8.7 38.4 68.4 56.7 41.9 + SPIRAL ✗56.7 77.8 90.1 42.8 39.6 13.5 10.2 47.2 26.5 53.0 9.4 38.9 67.9 57.3 42.1 + R-Zero ✗57.7 80.2 90.5 52.4 43.6 12.3 4.45 48.7 28.3 51.4 10.2 39.6 69.6 57.9 42.8 + Socratic-Zero ✗57.7 80.3 88.5 47.3 49.2 19.4 13.8 50.9 28.5 54.2 10.8 40.1 70.2 58.4 43.7 + Agent0 ✓60.4 79.9 91.1 56.7 48.4 17.3 14.9 52.7 30.4 55.1 11.5 41.7 71.8 60.1 45.1 +
+
+AnchorLoop (ours) ✓ 63.5 82.9 94.3 58.1 49.7 20.5 17.4 55.2 32.7 58.7 14.3 44.3 74.5 62.8 47.9                                                                                                                   
+
+> MiMo-7B-Base
+> Base Model ✗58.3 75.6 89.9 47.3 46.6 30.7 22.3 53.0 24.9 42.3 8.5 26.1 52.3 48.0 33.7 Base Model w/ tool ✓63.6 77.9 91.1 51.4 50.2 34.4 26.9 56.5 26.4 44.2 9.4 27.4 54.1 48.9 35.1 + Absolute Zero ✓64.2 77.0 91.6 50.0 49.1 33.8 26.6 56.0 27.6 48.6 10.0 29.2 55.8 50.2 36.9 + SPIRAL ✗64.7 78.0 92.4 51.8 47.6 35.2 28.1 56.8 28.0 47.9 10.4 29.8 56.2 50.8 37.2 + R-Zero ✗65.0 80.5 93.3 57.2 51.3 33.0 28.6 58.4 28.8 48.4 10.7 31.0 57.0 51.5 37.9 + Socratic-Zero ✗66.5 79.3 90.4 52.5 55.8 39.1 34.0 59.7 29.2 49.1 11.1 31.7 57.6 52.3 38.5 + Agent0 ✓67.3 81.4 94.2 57.9 54.1 39.5 32.4 61.0 30.5 51.3 12.2 33.5 59.2 54.0 40.1 +
+
+AnchorLoop (ours) ✓ 70.0 84.1 95.7 60.6 56.7 42.3 35.4 63.5 33.0 54.0 14.6 36.4 62.1 56.7 42.8 
+
+Mathematical reasoning. As shown in Table 1, AnchorLoop achieves a Math AVG of 55.2 on Qwen3-4B-Base and 63.5 on MiMo-7B-Base, improving over Agent0 by 2.5 percentage points on both backbones. Relative to the tool-augmented base models, the corresponding gains are 11.2 and 7.0 points. The improvement is also consistent at the benchmark level: AnchorLoop obtains the highest reported score in every mathematical benchmark column on both backbones, including AIME24 and AIME25. 
+
+General reasoning. Table 1 shows a similar pattern outside the mathematical domain. AnchorLoop reaches a General AVG of 47.9 on Qwen3-4B-Base and 42.8 on MiMo-7B-Base, exceeding Agent0 by 2.8 and 2.7 percentage points, respectively. It also obtains the highest reported score in every general-reasoning benchmark column on both backbones. These improvements are notable because the Curriculum generates mathematical training tasks, whereas the evaluation spans knowledge-intensive reasoning, coding, and general problem solving. The results therefore show that the gains associated with historical anchoring are not confined to the mathematical benchmarks used to characterize the training distribution. Appendix Table 4 reports the mean and sample standard deviation over five independent training runs. These statistics characterize run-to-run variability rather than statistical significance. Appendix E further reports per-benchmark trajectories, iteration dynamics, and sensitivity results on MiMo-7B-Base. 
+
+4.3. Training Dynamics Later-iteration performance. Figure 2(a) tracks Math AVG across the three outer iterations. Agent0 improves by 5.8 points in the first iteration, but its incremental gains decrease to 2.0 and 0.9 points in iterations 2 and 3. AnchorLoop begins from the same initialization and shows a comparable early improvement, while retaining gains of 2.8 and 2.0 points in the subsequent iterations. Consequently, the gap between the two methods grows across later training and reaches 2.5 points after iteration 3. This pattern motivates examining whether the learning signals available to the two methods evolve differently over training. 
+
+10 Self-Evolve With a Reference  
+
+> AnchorLoop (ours) AnchorLoop (ours) AnchorLoop (ours)
+
+Figure 2: Training dynamics on Qwen3-4B-Base. (a) Math AVG across three outer iterations. (b) Within-group variance of the effective Executor advantage, Vadv , averaged over sampled groups. By iteration 3, it decreases to 0.07 for Agent0 but remains at 0.28 for AnchorLoop. (c) Fraction of Curriculum tasks with a positive sampled reference gap. An unresolved current–reference pair contributes zero. The fraction decreases from 54.7% initially to 16.1% for Agent0 and 32.9% for AnchorLoop by iteration 3. 
+
+Effective advantage variance. Figure 2(b) measures the within-group variance of the final effective Executor advantage. Let Bt contain all sampled Executor groups across the update steps of outer iteration t. For group size G and final ADPO-scaled advantage ̃︀ Ab,i, we compute 
+
+V(t) 
+
+> adv
+
+= 1
+
+|B t|∑︁ b∈B t
+
+⎡⎢⎣ 1
+
+G
+
+> G
+
+∑︁ 
+
+> i=1
+
+⎛⎝̃︀ Ab,i − 1
+
+G
+
+> G
+
+∑︁ 
+
+> j=1
+
+̃︀ 
+
+Ab,j
+
+⎞⎠
+
+> 2
+
+⎤⎥⎦ .
+
+Both methods begin at Vadv = 0.43 . By iteration 3, Agent0 decreases to 0.07 , whereas AnchorLoop retains substantially more within-group variation at 0.28 . This observation is consistent with the motivation for cross-reference training: the anchored objective preserves more differentiated effective advantages in the sampled groups as training proceeds. It does not imply that the historical component is nonzero for every group; as established in Section 3.2, both components vanish when all current answers are identical. Nor does this statistic alone establish that the increased variance causes the performance improvement. 
+
+Positive reference-gap frequency. Figure 2(c) examines the Curriculum side by reporting the fraction of generated tasks for which the independently sampled current and reference groups satisfy 
+
+μcur (x) > μref (x).
+
+An unresolved group pair contributes zero and is not counted as positive. For AnchorLoop, the reference group is sampled from the newly refreshed anchor; for Agent0, we construct the diagnostic using a second independent rollout group from the same Executor checkpoint. During Curriculum training, the current and reference models have identical parameters, and each agreement rate is computed against its own group’s majority answer. The measured fraction decreases from 54.7% initially to 16.1% 
+
+for Agent0 and 32.9% for AnchorLoop by iteration 3. Consistent with the interpretation in Section 3.3, this statistic measures the frequency of positive sampled agreement differences rather than correctness or inter-version progress. The higher fraction observed for AnchorLoop therefore characterizes the sampled Curriculum signal; it does not imply that 
+
+> 11 Self-Evolve With a Reference
+
+Table 2: Tool comparisons and anchor ablations on Qwen3-4B-Base. Agent0 and AnchorLoop are shared endpoints. Only the anchor variants use matched training and evaluation settings.    
+
+> Method Math AVG General AVG
+> Without tool access
+> Qwen3-4B (Base) 42.6 37.2
+
++ SPIRAL 47.2 42.1 
+
++ R-Zero 48.7 42.8 
+
+> With tool access
+
++ TIR 44.0 39.6 
+
++ Absolute Zero 46.4 41.9   
+
+> Matched anchor variants with tool access
+> Agent0 52.7 45.1
+
++ Rref only 53.6 45.9 
+
++ Ahist only 54.4 46.7 Full AnchorLoop 55.2 47.9 
+
+the current Executor has newly solved those tasks or establish that the reference reward causes the subsequent performance difference. 
+
+4.4. Anchor Analysis Contribution of the two anchor signals. The matched anchor block of Table 2 separates the two uses of the anchor: Rref on the Curriculum side and Ahist on the Executor side. All four configurations use the same Qwen3-4B-Base initialization, three outer iterations, update steps, ADPO settings, tool environment, and evaluation protocol. When the historical advantage is disabled, the Executor uses Acur 
+
+with unit coefficient. When enabled, it uses (1 − α)Acur + αAhist with α = 0.6 . Disabling the Curriculum reference sets λ = 0 while leaving all other Curriculum rewards and task handling unchanged. Adding Rref alone improves the Math and General averages from 52.7/45.1 to 53.6/45.9 , while adding 
+
+Ahist alone reaches 54.4/46.7 . Combining both gives the full AnchorLoop result of 55.2/47.9 . Thus, both anchor uses are associated with improvements over the unanchored configuration in the matched setting, with the Executor-side historical advantage producing the larger individual change. The endpoint comparison does not, however, isolate the mechanism behind either improvement or establish a synergistic interaction between the two components. 
+
+Iterative versus fixed anchor. Figure 3(a) tests whether refreshing the historical reference matters by comparing AnchorLoop with an anchor permanently fixed to the base model. The two settings remain close in the first iteration, but diverge as training proceeds. The iterative and fixed variants reach 55.2 and 53.0 at iteration 3, respectively, and 56.3 and 53.3 at iteration 4. These results show that refreshing the anchor with the most recently completed Executor is associated with stronger later-iteration performance in this setting. They do not establish that a fixed anchor necessarily becomes uninformative, nor do they isolate checkpoint age as the sole source of the difference. 
+
+Comparison across tool settings. Table 2 places AnchorLoop alongside methods evaluated with and without tool access under their respective training configurations. Adding the Python tool to the untrained Qwen3-4B base model changes Math AVG from 42.6 to 44.0 and General AVG from 37.2 
+
+> 12 Self-Evolve With a Reference
+
+Figure 3: Anchor and Curriculum analyses on Qwen3-4B-Base. (a) Math AVG across outer iterations with an iterative anchor versus an anchor fixed to the base model. (b) Sensitivity over the historical-advantage weight α and Curriculum reference weight λ on a 4 × 4 grid; the default setting is (α, λ) = (0.6, 0.4 ). (c) Pass rate and average tool calls on 200 tasks sampled from each Curriculum stage. The iteration-1 Executor generates G = 8 trajectories per task, and both statistics are computed from the same 1,600 trajectories per stage. to 39.6 . Among the tool-integrated training methods, AnchorLoop reaches 55.2/47.9 , compared with 
+
+52.7/45.1 for Agent0. These comparisons provide context for tool-integrated performance but should not be interpreted as a controlled ablation of tool access. The methods differ simultaneously in task generation, training objective, and reward design. The comparisons across methods in Table 2 therefore do not isolate the causal contribution of either tool use or historical anchoring. Appendix D further analyzes the historical-advantage structure, computational cost, anchor refresh and caching, and representative failure cases. 
+
+4.5. Curriculum Analysis Sensitivity to α and λ. Figure 3(b) evaluates the two anchor-specific weights: the historical-advantage weight α, which balances Acur and Ahist in Executor training, and the Curriculum reference weight λ,which scales Rref . Across the 4 × 4 grid, the default setting (α, λ) = ( 0.6, 0.4 ) reaches a Math AVG of 
+
+55.21 , while all evaluated configurations remain within 1.5 points of this value. The result indicates limited sensitivity within the evaluated range, although it does not characterize settings outside the grid or remove the need to select the two weights. 
+
+Evolution of Curriculum tasks and tool use. We further examine how the generated task distribution changes across Curriculum stages t = 0, 1, 2, 3 . From each stage, we sample 200 tasks and evaluate them using a fixed iteration-1 Executor, which independently generates G = 8 trajectories per task. We compute the mean binary agreement reward and the average number of tool calls over the same 
+
+1,600 trajectories for each stage. Figure 3(c) shows that the measured pass rate under this fixed Executor decreases from 71.8% on 
+
+DIter 0 to 39.4% on DIter 3 , while the average number of tool calls per trajectory increases from 1.32 to 
+
+2.87 . Because the same Executor is used to evaluate tasks from all stages, these changes indicate that the distribution of Curriculum-generated tasks evolves over training: later task sets lower agreement 
+
+> 13 Self-Evolve With a Reference
+
+reward and more tool interactions from this fixed evaluator. These statistics should not be interpreted as direct measures of task difficulty or correctness. In particular, Rref compares independently sampled agreement rates during Curriculum training rather than identifying tasks that the current Executor can solve but the anchor cannot. The observed trends therefore characterize how the generated task and response distributions change alongside anchored self-evolution; they do not by themselves establish that later tasks are intrinsically harder, that additional tool calls are necessary, or that Rref causally produces either trend. Appendix F provides selected Curriculum tasks, post-update Executor comparisons, and full reasoning traces. 
+
+## 5. Conclusion 
+
+We introduce AnchorLoop to address weakening feedback in self-evolving Curriculum and Executor training. At each outer iteration, a frozen copy of the previous Executor provides an independently sampled agreement reference for Curriculum training and helps construct a cross-reference advantage for Executor training, without external tasks or answer labels. Across two backbones and thirteen benchmarks, AnchorLoop improves Math AVG over Agent0 by 2.5 points and General AVG by 2.7 to 2.8 points. It also retains higher effective-advantage variance and shows stronger gains in later iterations. 
+
+## References 
+
+[1] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela Mishkin, Brooke Chan, Scott Gray, Nick Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mohammad Bavarian, Clemens Winter, Philippe Tillet, Felipe Petroski Such, Dave Cummings, Matthias Plappert, Fotios Chantzis, Elizabeth Barnes, Ariel Herbert-Voss, William Hebgen Guss, Alex Nichol, Alex Paino, Nikolas Tezak, Jie Tang, Igor Babuschkin, Suchir Balaji, Shantanu Jain, William Saunders, Christopher Hesse, Andrew N. Carr, Jan Leike, Josh Achiam, Vedant Misra, Evan Morikawa, Alec Radford, Matthew Knight, Miles Brundage, Mira Murati, Katie Mayer, Peter Welinder, Bob McGrew, Dario Amodei, Sam McCandlish, Ilya Sutskever, and Wojciech Zaremba. Evaluating large language models trained on code. arXiv preprint arXiv:2107.03374 , 2021. URL https://arxiv.org/abs/2107.03374 .[2] Zixiang Chen, Yihe Deng, Huizhuo Yuan, Kaixuan Ji, and Quanquan Gu. Self-play fine-tuning converts weak language models to strong language models. In International Conference on Machine Learning (ICML) , 2024. [3] Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. Training verifiers to solve math word problems. arXiv preprint arXiv:2110.14168 ,2021. [4] Chaoqun He, Renjie Luo, Yuzhuo Bai, Shengding Hu, Zhen Leng Thai, Junhao Shen, Jinyi Hu, Xu Han, Yujie Huang, Yuxiang Zhang, Jie Liu, Lei Qi, Zhiyuan Liu, and Maosong Sun. OlympiadBench: A challenging benchmark for promoting AGI with olympiad-level bilingual multimodal scientific problems. arXiv preprint arXiv:2402.14008 , 2024. [5] Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. Measuring mathematical problem solving with the MATH dataset. In NeurIPS Datasets and Benchmarks , 2021. 
+
+> 14 Self-Evolve With a Reference
+
+[6] Chengsong Huang, Wenhao Yu, Xiaoyang Wang, Hongming Zhang, Zongxia Li, Ruosen Li, Jiaxin Huang, Haitao Mi, and Dong Yu. R-Zero: Self-evolving reasoning LLM from zero data. arXiv preprint arXiv:2508.05004 , 2025. [7] Mehran Kazemi, Bahare Fatemi, Hritik Bansal, John Palowitch, Chrysovalantis Anastasiou, San-ket Vaibhav Mehta, Lalit K. Jain, Virginia Aglietti, Disha Jindal, Peter Chen, Nishanth Dikkala, Gladys Tyen, Xin Liu, Uri Shalit, Silvia Chiappa, Kate Olszewska, Yi Tay, Vinh Q. Tran, Quoc V. Le, and Orhan Firat. BIG-Bench Extra Hard. arXiv preprint arXiv:2502.19187 , 2025. [8] Aitor Lewkowycz, Anders Andreassen, David Dohan, Ethan Dyer, Henryk Michalewski, Vinay Ramasesh, Ambrose Slone, Cem Anil, Imanol Schlag, Theo Gutman-Solo, Yuhuai Wu, Behnam Neyshabur, Guy Gur-Ari, and Vedant Misra. Solving quantitative reasoning problems with language models. In Advances in Neural Information Processing Systems (NeurIPS) , 2022. [9] Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. Let’s verify step by step. In International Conference on Learning Representations (ICLR) , 2024. [10] Bo Liu, Leon Guertler, Simon Yu, Zichen Liu, Penghui Qi, Daniel Balcells, Mickel Liu, Cheston Tan, Weiyan Shi, Min Lin, Wee Sun Lee, and Natasha Jaques. SPIRAL: Self-play on zero-sum games incentivizes reasoning via multi-agent multi-turn reinforcement learning. arXiv preprint arXiv:2506.24119 , 2025. [11] LLM-Core Xiaomi. MiMo: Unlocking the reasoning potential of language model – from pretraining to posttraining. arXiv preprint arXiv:2505.07608 , 2025. URL https://arxiv.org/abs/2505. 07608 .[12] M-A-P Team, Xinrun Du, Yifan Yao, Kaijing Ma, Bingli Wang, Tianyu Zheng, King Zhu, Minghao Liu, Yiming Liang, Xiaolong Jin, Zhenlin Wei, Chujie Zheng, Kaixin Deng, Shawn Gavin, Shian Jia, Sichao Jiang, Yiyan Liao, Rui Li, Qinrui Li, Sirun Li, Yizhi Li, Yunwen Li, David Ma, Yuansheng Ni, Haoran Que, Qiyao Wang, Zhoufutu Wen, Siwei Wu, Tyshawn Hsing, Ming Xu, Zhenzhu Yang, Zekun Moore Wang, Junting Zhou, Yuelin Bai, Xingyuan Bu, Chenglin Cai, Liang Chen, Yifan Chen, Chengtuo Cheng, Tianhao Cheng, Keyi Ding, Siming Huang, Yun Huang, Yaoru Li, Yizhe Li, Zhaoqun Li, Tianhao Liang, Chengdong Lin, Hongquan Lin, Yinghao Ma, Tianyang Pang, Zhongyuan Peng, Zifan Peng, Qige Qi, Shi Qiu, Xingwei Qu, Shanghaoran Quan, Yizhou Tan, Zili Wang, Chenqing Wang, Hao Wang, Yiya Wang, Yubo Wang, Jiajun Xu, Kexin Yang, Ruibin Yuan, Yuanhao Yue, Tianyang Zhan, Chun Zhang, Jinyang Zhang, Xiyue Zhang, Xingjian Zhang, Yue Zhang, Yongchi Zhao, Xiangyu Zheng, Chenghua Zhong, Yang Gao, Zhoujun Li, Dayiheng Liu, Qian Liu, Tianyu Liu, Shiwen Ni, Junran Peng, Yujia Qin, Wenbo Su, Guoyin Wang, Shi Wang, Jian Yang, Min Yang, Meng Cao, Xiang Yue, Zhaoxiang Zhang, Wangchunshu Zhou, Jiaheng Liu, Qunshu Lin, Wenhao Huang, and Ge Zhang. SuperGPQA: Scaling LLM evaluation across 285 graduate disciplines. arXiv preprint arXiv:2502.14739 , 2025. [13] Mathematical Association of America. 2024 AIME I Problems. https:// artofproblemsolving.com/wiki/index.php/2024_AIME_I_Problems , 2024. Ameri-can Invitational Mathematics Examination I. [14] Mathematical Association of America. 2024 AIME II Problems. https:// artofproblemsolving.com/wiki/index.php/2024_AIME_II_Problems , 2024. Ameri-can Invitational Mathematics Examination II. 
+
+> 15 Self-Evolve With a Reference
+
+[15] Mathematical Association of America. 2025 AIME I Problems. https://live.poshenloh.com/ images/past-contests/pdf/aime-2025I-exam.pdf , 2025. Reproduced with permission by LIVE by Po-Shen Loh. [16] Mathematical Association of America. 2025 AIME II Problems. https://live.poshenloh. com/images/past-contests/pdf/aime-2025II-exam.pdf , 2025. Reproduced with per-mission by LIVE by Po-Shen Loh. [17] Mathematical Association of America. American Mathematics Competitions. https://maa. org/student-programs/amc/ , n.d. Accessed October 7, 2026. [18] David Rein, Betty Li Hou, Asa Cooper Stickland, Jackson Petty, Richard Yuanzhe Pang, Julien Dirani, Julian Michael, and Samuel R. Bowman. GPQA: A graduate-level google-proof Q&A benchmark. In First Conference on Language Modeling (COLM) , 2024. URL https://arxiv. org/abs/2311.12022 .[19] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 , 2017. [20] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. DeepSeekMath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. [21] Guangming Sheng, Chi Zhang, Zilingfeng Ye, Xibin Wu, Wang Zhang, Ru Zhang, Yanghua Peng, Haibin Lin, and Chuan Wu. HybridFlow: A flexible and efficient RLHF framework. arXiv preprint arXiv:2409.19256 , 2024. [22] Shaobo Wang, Zhengbo Jiao, Zifan Zhang, Yilang Peng, Xu Ze, Boyu Yang, Wei Wang, Hu Wei, and Linfeng Zhang. Socratic-Zero: Bootstrapping reasoning via data-free agent co-evolution. 
+
+arXiv preprint arXiv:2509.24726 , 2025. [23] Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc V. Le, Ed H. Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language models. In International Conference on Learning Representations (ICLR) , 2023. [24] Yubo Wang, Xueguang Ma, Ge Zhang, Yuansheng Ni, Abhranil Chandra, Shiguang Guo, Weiming Ren, Aaran Arulraj, Xuan He, Ziyan Jiang, Tianle Li, Max Ku, Kai Wang, Alex Zhuang, Rongqi Fan, Xiang Yue, and Wenhu Chen. MMLU-Pro: A more robust and challenging multi-task language understanding benchmark. arXiv preprint arXiv:2406.01574 , 2024. [25] Peng Xia, Kaide Zeng, Jiaqi Liu, Can Qin, Fang Wu, Yiyang Zhou, Caiming Xiong, and Huaxiu Yao. Agent0: Unleashing self-evolving agents from zero data via tool-integrated reasoning. arXiv preprint arXiv:2511.16043 , 2025. [26] Zhenghai Xue, Longtao Zheng, Qian Liu, Yingru Li, Xiaosen Zheng, Zejun Ma, and Bo An. SimpleTIR: End-to-end reinforcement learning for multi-turn tool-integrated reasoning. In 
+
+International Conference on Learning Representations (ICLR) , 2026. arXiv:2509.02479. [27] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Dayiheng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jing Zhou, Jingren Zhou, Junyang Lin, Kai Dang, Keqin Bao, Kexin Yang, Le Yu, Lianghao Deng, Mei Li, Mingfeng Xue, Mingze Li, Pei Zhang, Peng Wang, Qin Zhu, Rui Men, 
+
+> 16 Self-Evolve With a Reference
+
+Ruize Gao, Shixuan Liu, Shuang Luo, Tianhao Li, Tianyi Tang, Wenbiao Yin, Xingzhang Ren, Xinyu Wang, Xinyu Zhang, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yinger Zhang, Yu Wan, Yuqiong Liu, Zekun Wang, Zeyu Cui, Zhenru Zhang, Zhipeng Zhou, and Zihan Qiu. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. [28] Andrew Zhao, Yiran Wu, Yang Yue, Tong Wu, Quentin Xu, Yang Yue, Matthieu Lin, Shenzhi Wang, Qingyun Wu, Zilong Zheng, and Gao Huang. Absolute zero: Reinforced self-play reasoning with zero data. arXiv preprint arXiv:2505.03335 , 2025. [29] Wanjun Zhong, Ruixiang Cui, Yiduo Guo, Yaobo Liang, Shuai Lu, Yanlin Wang, Amin Saied, Weizhu Chen, and Nan Duan. AGIEval: A human-centric benchmark for evaluating foundation models. In Findings of the Association for Computational Linguistics: NAACL 2024 , 2024. URL 
+
+https://arxiv.org/abs/2304.06364 .
+
+> 17 Self-Evolve With a Reference
+
+## A. Experimental Details 
+
+A.1. Training Setup 
+
+We implement AnchorLoop on top of VeRL [21] with the VeRL-Tool extension providing a sandboxed Python interpreter that executes each code block emitted by the Executor in a separate subprocess. All experiments use 8 NVIDIA A100 80GB GPUs. For AnchorLoop, one outer iteration takes about 24 hours on Qwen3-4B-Base [27] and about 36 hours on MiMo-7B-Base [11]. Multiplying these per-iteration values gives approximate three-iteration references of 72 and 108 hours. These figures are estimates rather than separately measured total times. Within each outer iteration, all tasks that pass the fixed Curriculum output format are retained with their original batch assignments and passed to the Executor stage. We do not select tasks by Rref , the total reward RC, or a top-k rule. The Executor prompt contains the problem statement and any required context. The Curriculum-generated Answer: field is used only to check the generation format and is not shown to the Executor or used as a training label. A task remains fixed across the Executor inner steps assigned to its Curriculum batch. The current Executor resamples G = 8 trajectories at every inner step. The anchor samples G = 8 trajectories once per task and batch, then reuses them across those steps. This amortizes anchor sampling while keeping current rollouts aligned with the changing Executor. The task pool, current groups, and anchor cache are discarded after the Executor stage. The next outer iteration uses newly generated tasks without replaying earlier tasks. 
+
+A.2. Hyperparameters 
+
+Table 3 summarizes the confirmed settings for both backbones. AnchorLoop use ADPO functions and clipping configuration on Qwen3-4B-Base and MiMo-7B-Base. The learning rate is lower for the larger MiMo backbone. The weight α = 0.6 on the historical advantage and the weight λ = 0.4 on the reference reward are the defaults selected by the sweeps. 
+
+Curriculum reward configuration. The Executor group size is G = 8, and the Curriculum batch size is B = 64 . The tool-use term caps each trajectory at C = 4 executed calls. The repetition graph uses BLEU distance threshold drep = 0.6 . The format gate and nonnegative truncation apply to the complete weighted sum. AnchorLoop use wunc = 1.0 , wtool = 0.25 , and wrep = 0.20 on both backbones. These weights remain fixed across all outer iterations. 
+
+ADPO configuration. AnchorLoop configuration follows the functional form of Agent0’s released ADPO implementation [25]. For an agreement score p, let pmin and pmax delimit the interpolation interval. We first map p to a value in [0, 1 ],
+
+q(p) = min {︂ 1, max {︂ 0, p − pmin 
+
+pmax − pmin }︂}︂ . (17) Let smin be the minimum advantage weight, ϵ0 the base clipping width, and δϵ the maximum increment to the upper width. The functions in Section 3 are instantiated as 
+
+f (p) = smin + ( 1 − smin )q(p),
+
+g(p) = ϵ0 + δϵ[1 − q(p)] ,
+
+ϵlow = ϵ0.
+
+(18) With the listed values, f (p) ranges from 0.6 to 1.0 , and g(p) ranges from 0.3 at low agreement to 0.2 at high agreement. The Executor’s clipping interval is therefore [0.8, 1 + g(p)] . These functions saturate 
+
+> 18 Self-Evolve With a Reference
+
+outside the interpolation interval and do not by themselves filter tasks. The score p is recomputed from each current Executor group, and f (p) scales the complete mixed advantage. No additional normalization is applied to this task weight. The base width ϵ0 = 0.2 is also the Executor’s lower clipping width, and the Curriculum uses the fixed width ϵC = 0.2 . Its clipping interval is [1 − ϵC, 1 + ϵC ]. At each Executor inner step, the rollout policy is frozen as πϕold before the current group is sampled. Token-level PPO ratios use this behavior policy. The KL term instead uses the frozen base model πref = πbase on both backbones. Table 3: Training settings for both backbones. The base Curriculum reward weights are shared by baselines and AnchorLoop. 
+
+Group Hyperparameter Value 
+
+Outer loop Outer iterations T 3Group size G 8Curriculum inner steps KC 32 Executor inner steps KE 128 Anchor side Historical advantage weight α 0.6 Frontier reward weight λ 0.4 Optimization Learning rate (Qwen3-4B) 1 × 10 −6
+
+Learning rate (MiMo-7B) 5 × 10 −7
+
+KL coefficient βKL 0.01 KL reference πref Frozen base model Curriculum Clip width ϵC 0.2 Uncertainty weight wunc 1.0 Tool-use weight wtool 0.25 Repetition weight wrep 0.20 Tool-call cap C 4BLEU distance threshold drep 0.6 ADPO Lower score limit pmin 0.3 Upper score limit pmax 0.8 Minimum weight smin 0.6 Base clip width ϵ0 0.2 Upper width increment δϵ 0.1 Rollout Curriculum batch size 64 tasks Max turns H 8Max output tokens per turn 4096 Sandbox Code execution timeout 30 s Memory cap per call 1 GB Max code block length 1024 chars 
+
+A.3. Sandbox Configuration 
+
+The Python interpreter runs in a stateless subprocess with an execution timeout of 30 seconds and a memory limit of 1 GB per call. The standard scientific stack is preinstalled, including NumPy, SciPy, SymPy, and the standard math, fractions, and itertools modules. A tool call must be enclosed by 
+
+> 19 Self-Evolve With a Reference
+
+one complete <python> and </python> tag pair. Each complete pair triggers one sandbox call. An incomplete or malformed pair does not trigger execution. The interpreter’s standard output is returned to the Executor as the next observation. The tool-use analysis reports the configurations and evaluation settings shown in the main paper. It does not provide a matched same-checkpoint comparison with the Python tool disabled. 
+
+## B. Prompt Templates 
+
+We present the prompt templates used by the Curriculum Agent and the Executor Agent. Both prompts are kept short and remain unchanged throughout the three outer iterations. The iterative anchor shapes the policy distribution through the reward and the advantage, not through prompt edits. 
+
+B.1. Curriculum Agent Prompt 
+
+The Curriculum Agent generates one math problem per call. The prompt asks for a self-contained problem with a single numerical answer that the Executor can attempt through the tool interface defined above. 
+
+Curriculum Agent Prompt 
+
+> You are a math problem creator. Generate one challenging mathematical reasoning problem that satisfies the requirements below. 1. The problem requires careful reasoning across multiple steps, not pattern matching or memorization. 2. The problem has a single unambiguous numerical answer that can be verified by computation. 3. The problem is self-contained. All needed information appears in the problem text. 4. The problem can be approached with high school or early undergraduate mathematics, including algebra, number theory, combinatorics, geometry, or calculus. 5. A Python interpreter is available to the solver for verifying intermediate computations. Output the problem and the correct answer in the following format.
+
+Problem: <problem statement> Answer: <numerical answer> 
+
+B.2. Executor Agent Prompt 
+
+The Executor Agent receives the problem statement and produces a trajectory that interleaves reasoning with Python tool calls. The prompt instructs the Executor to wrap each code block in one complete 
+
+<python> and </python> pair. It also requires a final answer in a fixed format that the consensus rule and binary reward can parse. 
+
+> 20 Self-Evolve With a Reference
+
+Executor Agent Prompt  
+
+> You are a math problem solver with access to a Python interpreter. Solve the following problem step by step. At any point during your reasoning you may write a short Python script and execute it by enclosing the code in
+
+<python> and </python> tags. The standard output of the script will be returned to you as the next observation, and you may continue reasoning from there. When you have determined the final answer, output it on its own line in the format 
+
+Final Answer: <numerical answer> Problem: {problem} 
+
+B.3. Answer Parsing and Group Resolution 
+
+We parse the fixed final-answer field before comparing sampled outputs. A well-formed output is mapped to one canonical answer label. An output is invalid when the trajectory finishes but the field is absent, malformed, or contains conflicting answers. A trajectory is missing when it reaches a length limit, times out, terminates with an execution failure, or returns empty output before a final answer. Invalid and missing outputs do not vote for a modal label and receive reward zero, but they remain in the fixed group size G = 8.A group is resolved only when its valid answers contain one label with a unique highest count. A highest-count tie or the absence of a valid answer makes the group unresolved. Such a group is omitted from an Executor update that requires a pseudo-label. In a diagnostic average over a fixed sampled pool, its pseudo-label-dependent contribution is zero, so the stated denominator does not change. If either group in the Curriculum comparison is unresolved, its frontier term is set to zero while the uncertainty, tool-use, and repetition terms remain active. The same parsing and resolution rules are used for current, anchor, and reference groups. 
+
+## C. Baselines and Benchmark Details 
+
+C.1. Baseline Methods 
+
+We compare AnchorLoop against seven baselines that cover both untrained references and published self-evolving training methods. 
+
+Base Model. The pre-trained Qwen3-4B-Base or MiMo-7B-Base backbone evaluated without any further training and without access to the Python interpreter. 
+
+Base Model w/ Tool (TIR). The same backbone with access to the Python interpreter at inference time but no additional training. 
+
+Absolute Zero [28]. A zero-data framework in which the model proposes code reasoning tasks and solves them through Python execution. It is trained without external tasks or labels. In our adaptation, the Python interpreter is available during both training and evaluation. 
+
+SPIRAL [10]. A self-play reinforcement learning method that trains a shared policy through multi-turn self-play in TextArena zero-sum games. 
+
+R-Zero [6]. A zero-data reasoning framework that improves the base model through iterative training data the model generates itself, without a code executor. 
+
+> 21 Self-Evolve With a Reference
+
+Table 4: Run-level variability for the most recent baseline (Agent0) and AnchorLoop. Entries report mean ± sample standard deviation over five independent training runs.                                
+
+> Backbone Domain Agent0 AnchorLoop
+> Qwen3-4B Math 52.7 ±0.68 55.2 ±0.51
+> Qwen3-4B General 45.1 ±0.57 47.9 ±0.44
+> MiMo-7B Math 61.0 ±0.63 63.5 ±0.49
+> MiMo-7B General 40.1 ±0.55 42.8 ±0.46
+
+Socratic-Zero [22]. A self-evolving approach that starts from 100 seed problems. It trains a Solver and a Generator under guidance from a fixed, high-capacity Teacher, without a Python code executor. 
+
+Agent0 [25]. Agent0 trains a Curriculum Agent to propose tasks and an Executor Agent to solve them through Python tool use. The Agent0 baseline retains Ambiguity-Dynamic Policy Optimization (ADPO), which adjusts advantage weights and clipping bounds according to answer agreement. AnchorLoop retains both ADPO components and introduces an iterative anchor into the Executor advantage and the Curriculum reward. All baselines that involve training use the same Qwen3-4B-Base and MiMo-7B-Base backbones and the same evaluation protocol as AnchorLoop. All results in tables were obtained from evaluations conducted in this work. 
+
+C.2. Evaluation Benchmarks 
+
+Table 5 lists seven mathematical and six general reasoning benchmarks. Agent0 and AnchorLoop scores average five independent training runs for each method on each backbone. Domain averages are unweighted means over benchmarks. They are computed from unrounded benchmark scores and then rounded to one decimal place. For AMC23, AIME24, and AIME25, mean@32 averages correctness over 32 responses per question and then across questions. Other benchmarks use greedy pass@1. For the Curriculum-stage analysis in Figure 3(c), we sample 200 tasks from each stage. The iteration-1
+
+Executor independently generates G = 8 trajectories per task, yielding 1,600 trajectories per stage. Pass rate is the mean binary reward across these trajectories. Average tool calls is the arithmetic mean of the number of Python calls over the same trajectories. 
+
+C.2.1. Mathematical Reasoning 
+
+AMC23. Problems from the 2023 American Mathematics Competitions, covering high school algebra, geometry, number theory, and combinatorics. [17] 
+
+MATH-500 [5, 9]. A subset of 500 challenging problems from the MATH dataset, spanning algebra, counting and probability, geometry, intermediate algebra, number theory, prealgebra, and precalculus. 
+
+GSM8K [3]. A dataset of grade school math word problems that require arithmetic across multiple steps together with basic algebra. 
+
+Minerva (OCWCourses) [8]. This benchmark contains 272 problems from undergraduate STEM courses in MIT OpenCourseWare. 
+
+OlympiadBench [4]. Math problems from international mathematical olympiads and similar competi-tions. 
+
+> 22 Self-Evolve With a Reference
+
+Table 5: Reasoning benchmarks used for evaluation.                             
+
+> Benchmark Domain Metric
+> Mathematical reasoning
+> AMC23 High school competition math mean@32 MATH-500 Mixed math topics pass@1 GSM8K Grade school word problems pass@1 Minerva STEM quantitative reasoning pass@1 OlympiadBench Olympiad math pass@1 AIME24 Advanced high school math mean@32 AIME25 Advanced high school math mean@32
+> General reasoning
+> SuperGPQA Graduate Q&A pass@1 MMLU-Pro Mixed domain understanding pass@1 BBEH Hardest BIG-Bench subset pass@1 GPQA-Diamond Google-proof Q&A pass@1 HumanEval Python code generation pass@1 AGIEval Human examination tasks pass@1
+
+AIME24 and AIME25. The 2024 [13, 14] and 2025 [15, 16] editions of the American Invitational Mathematics Examination, with thirty problems each that cover advanced high school mathematics. 
+
+C.2.2. General Reasoning 
+
+SuperGPQA [12]. A question answering benchmark at the graduate level, spanning over two hundred academic disciplines. 
+
+MMLU-Pro [24]. A more challenging refinement of the MMLU benchmark with broader reasoning across fourteen subject areas. 
+
+BBEH [7]. BIG-Bench Extra Hard is a 23 -task benchmark that replaces each BIG-Bench Hard task with a harder counterpart targeting related reasoning skills. 
+
+GPQA-Diamond [18]. The most challenging subset of the GPQA benchmark, designed to be unsolvable through simple retrieval. 
+
+HumanEval [1]. A Python code generation benchmark with handwritten programming problems, each accompanied by unit tests. 
+
+AGIEval [29]. A benchmark centered on human examinations that evaluates foundation models on tasks drawn from standardized tests. 
+
+## D. Anchor Mechanism Analysis 
+
+This section provides a deeper analysis of the iterative anchor that underlies AnchorLoop. We quantify the compute and memory overhead it introduces, compare alternative refresh schedules, measure the efficiency gain of caching anchor rollouts, and describe the failure modes where the anchor stops contributing useful signal. 
+
+> 23 Self-Evolve With a Reference
+
+Table 6: Historical-advantage structure in matched records from five runs per backbone. Percentages use valid groups as the denominator. The final three columns partition the valid groups. The same-majority column may overlap with them.     
+
+> Executor stage Valid /
+> candidate Same majority Zero historical term Nonzero and collinear Nonzero and non-collinear Qwen3-4B-Base
+> Early 581/600 422
+
+(72.6% ) 438 (75.4% ) 91 (15.7% ) 52 (9.0% )   
+
+> Middle 574/600 355
+
+(61.8% ) 379 (66.0% ) 111 (19.3% ) 84 (14.6% )   
+
+> Late 586/600 347
+
+(59.2% ) 369 (63.0% ) 103 (17.6% ) 114 (19.5% )   
+
+> MiMo-7B-Base
+> Early 578/600 414
+
+(71.6% ) 430 (74.4% ) 96 (16.6% ) 52 (9.0% )   
+
+> Middle 569/600 352
+
+(61.9% ) 367 (64.5% ) 118 (20.7% ) 84 (14.8% )   
+
+> Late 583/600 340
+
+(58.3% ) 361 (61.9% ) 106 (18.2% ) 116 (19.9% )
+
+D.1. Historical-Advantage Structure 
+
+We analyze matched records from the first outer iteration for Qwen3-4B-Base and MiMo-7B-Base. For each backbone, records from each of five runs are ordered by Executor update step and divided into early, middle, and late thirds before the stage counts are aggregated. A candidate matched group is valid when the current and anchor groups correspond to the same task and Curriculum batch, both records are complete, and both groups have a resolved majority answer. Invalid outputs, unresolved ties, and incomplete matches are excluded. We classify the historical advantage from the discrete reward-indicator patterns. Its centered vector is zero only when all entries are exactly zero. A nonzero historical vector is collinear when the current vector is also nonzero and the two vectors are related by a positive scale. Negative proportionality and a nonzero historical vector paired with a zero current vector are classified as non-collinear. Thus, no numerical tolerance is used. The same-majority rate is reported separately and can overlap with the zero category. Table 6 reports the resulting statistics. Each run contributes 120 candidate groups per stage, giving 600 per stage and backbone. These descriptive counts characterize the analyzed records but do not establish that the historical term causes the performance gains in the main results. 
+
+D.2. Cost Analysis 
+
+Table 7 compares AnchorLoop with Agent0 on Qwen3-4B-Base using eight A100 80GB GPUs. Timings are five-run means for comparable single-iteration training. The anchor adds one frozen checkpoint and G rollouts per task. Cached AnchorLoop takes 24.1 hours per iteration versus 20.5 for Agent0, a 17.6% overhead. The main performance tables evaluate both methods after the same three outer iterations. Since their per-iteration costs differ, this comparison does not match wall time or GPU hours. It supports the reported performance comparison at three iterations, but does not establish an advantage under a matched compute budget. 
+
+D.3. Anchor Refresh Schedule 
+
+The default AnchorLoop refreshes the anchor at the start of every outer iteration. Table 8 compares this default against refreshing every two iterations and against never refreshing, which reduces to a fixed anchor pinned to the base model. For each refresh schedule, we report the highest Math AVG among 
+
+> 24 Self-Evolve With a Reference
+
+Table 7: Compute and memory comparison between Agent0 and AnchorLoop on Qwen3-4B-Base. 
+
+Metric Agent0 AnchorLoop (ours) 
+
+Time per outer iteration 20.5 h 24.1 hGPU hours per outer iteration 164 193 
+
+Frozen checkpoint memory 0 8.1 GB Anchor rollouts per task 0 G = 8 (cached) Overhead vs Agent0 – +17.6% 
+
+Table 8: Highest Math AVG among checkpoints evaluated within the first five outer iterations on Qwen3-4B-Base for each anchor refresh schedule. 
+
+Refresh schedule Best Math AVG 
+
+Every iteration (default) 56 .3
+
+Every two iterations 54.4 
+
+No refresh (fixed at base model) 53.3 
+
+checkpoints evaluated within the first five outer iterations. The every-iteration and fixed-anchor results use the same runs and evaluation settings as Figure 3(a). The default schedule has the highest reported score in this table. The three discrete frequencies differ in when the reference checkpoint is updated. Their scores do not isolate checkpoint age or establish an optimal rule beyond the evaluated settings. 
+
+D.4. Anchor Caching Efficiency 
+
+Table 9 compares cached and uncached AnchorLoop on the same eight GPUs and comparable single-iteration training. The cached version samples G = 8 anchor rollouts once per task and Curriculum batch, then reuses them across relevant Executor steps. The uncached version resamples G = 8 at each such step. The five-run mean falls from 32.7 to 24.1 hours, a 26.3% reduction. Since resampling changes stochastic outputs, this comparison of complete implementations neither isolates a pure systems effect nor establishes a theoretical lower bound on anchor overhead. 
+
+D.5. Failure Case Analysis 
+
+The iterative anchor stops contributing useful signal in two identifiable regimes. We describe each with a representative example taken from our Curriculum logs on Qwen3-4B-Base. 
+
+Failure Case 1: Beyond the Frontier 
+
+Task. A problem at the level of AIME 2024 Problem 15, which asks for a unique point on a line segment that is not contained in any unit segment with endpoints on the coordinate axes. The expected solution combines coordinate geometry with optimisation. 
+
+Anchor (π(t−1)). The eight rollouts produce eight different answers, so the group has no unique modal label. 
+
+Current (π(t)). The sampled answers also tie at the highest count, leaving this group unresolved. Under the protocol in Appendix B.3, these groups are not assigned pseudo-labels. The task receives 
+
+Rfront = 0, while the other Curriculum reward terms remain active, and it is omitted from the pseudo-label-dependent Executor update. The agreement-based terms therefore provide no comparison when 
+
+> 25 Self-Evolve With a Reference
+
+Table 9: Wall time with and without anchor rollout caching on Qwen3-4B-Base, averaged over five runs. 
+
+Configuration Wall time per outer iteration (h) 
+
+AnchorLoop without anchor caching 32.7 
+
+AnchorLoop with anchor caching 24 .1
+
+Agent0 (reference) 20.5 
+
+Failure Case 1: Beyond the Frontier (continued) 
+
+the sampled groups do not produce unique modal labels. 
+
+Failure Case 2: Shared Wrong Consensus 
+
+Task. How many ways are there to seat 5 distinct people around a round table where rotations are considered equivalent? The correct answer is 4! = 24 , after dividing by the size of the rotation group. 
+
+Anchor. Most rollouts output 120 and treat the table as linear. 
+
+Current. Most rollouts also output 120 . Both checkpoints inherit the same bias from the base model and forget to divide by the size of the rotation group. The two groups therefore select the same wrong modal label. The two indicators on every current trajectory coincide, which makes Ahist = 0. The frontier term can compare how concentrated the two sampled groups are, but it cannot determine that their shared label is wrong. This case exposes a limitation of the present agreement-based supervision. An anchor with the same bias cannot supply the missing correctness signal. 
+
+These cases illustrate two distinct sources of uninformative anchor feedback. In the first case, the geometry and optimization task yields dispersed, tied answers, leaving neither sampled group with a unique modal label. In the second case, both groups count linear arrangements instead of circular arrangements and overlook rotational equivalence. Their shared incorrect modal answer makes 
+
+Ahist = 0, while Rref can still compare agreement rates without identifying the mistake. These examples illustrate that useful anchor feedback depends on the sampled answer composition and that shared reasoning errors can remain undetected. 
+
+## E. Additional Experimental Results 
+
+This section reports results that complement the main experiments in Section 4. Section E.1 tracks each individual mathematical benchmark across the three outer iterations on MiMo-7B-Base, showing that the average improvements in Table 1 are not concentrated on one or two benchmarks. Section E.2 extends the three iteration-dynamics panels of Figure 2 from Qwen3-4B-Base to MiMo-7B-Base. Section E.3 extends the hyperparameter sensitivity heatmap of Figure 3(b) to MiMo-7B-Base. All results in this section use the same training protocol, anchor refresh schedule, and evaluation conventions as Section 4.1. 
+
+E.1. Per-Benchmark Trajectories on MiMo-7B-Base 
+
+Table 10 reports math accuracy for each of the seven mathematical reasoning benchmarks at outer iterations t = 0, 1, 2, 3 under both Agent0 and AnchorLoop on MiMo-7B-Base. Iteration t = 0 is the 
+
+> 26 Self-Evolve With a Reference
+
+Table 10: Per-benchmark math accuracy across outer iterations on MiMo-7B-Base. Iteration t = 0 is the Base Model with tool. Iteration t = 3 matches the endpoints in Table 1. Best endpoint per benchmark is in bold .      
+
+> Method (Iter) AMC23 MATH GSM8K Minerva Olympiad AIME24 AIME25 AVG
+> Agent0
+> t
+
+= 0 63.6 77.9 91.1 51.4 50.2 34.4 26.9 56.5  
+
+> t
+
+= 1 66.2 80.3 92.9 55.4 52.6 38.2 30.2 59.4  
+
+> t
+
+= 2 67.0 81.0 93.8 56.9 53.8 38.9 32.0 60.5  
+
+> t
+
+= 3 67.3 81.4 94.2 57.9 54.1 39.5 32.4 61.0  
+
+> AnchorLoop (ours)
+> t
+
+= 0 63.6 77.9 91.1 51.4 50.2 34.4 26.9 56.5  
+
+> t
+
+= 1 66.9 81.0 92.9 55.4 52.6 38.4 31.4 59.8  
+
+> t
+
+= 2 68.8 82.8 94.1 58.1 54.9 40.7 33.9 61.9  
+
+> t
+
+= 3 70.0 84.1 95.7 60.6 56.7 42.3 35.4 63.5 
+
+tool-augmented base model used as the shared starting point of both methods. Iteration t = 3 matches the endpoints in Table 1. Three observations stand out. First, every benchmark improves monotonically across iterations under both methods, so the iteration average gains in Figure 4(a) are not driven by trading off one column against another. Second, AnchorLoop’s per-step gain is consistently larger than Agent0’s after iteration 1.The average gap widens from 0.4 at t = 1 to 1.4 at t = 2 and 2.5 at t = 3, which matches the increasing separation reported in Figure 4(a). Third, the largest absolute gains over the tool-augmented base appear on the harder benchmarks. AnchorLoop lifts Minerva by 9.2 points, AIME25 by 8.5 , and AIME24 by 7.9 , while the easier GSM8K column moves by only 4.6 points because it already starts above 91% .Agent0 also gains the most on these harder benchmarks, but consistently by smaller margins, so the AnchorLoop advantage is largest precisely on the columns with the most headroom. 
+
+E.2. Iteration Dynamics on MiMo-7B-Base Iteration-wise math performance. Figure 4(a) tracks math AVG on MiMo-7B-Base. Both methods start from the tool-augmented base at 56.5 . Agent0 improves by +2.9 on iteration 1, then by only +1.1 
+
+and +0.5 , the same plateau pattern observed on Qwen3-4B-Base. AnchorLoop improves by +3.3 points on iteration 1 and continues to gain +2.1 and +1.6 points in the next two iterations. The gap to Agent0 therefore widens from 0 at iteration 0 to 2.5 at iteration 3. The iteration-3 endpoints match Table 1, and the same gap of 2.5 points carries over from Qwen3-4B-Base, indicating that the iterative anchor scales with backbone capability rather than producing a fixed offset. 
+
+Effective advantage variance. Figure 4(b) reports the same stage-averaged within-group variance 
+
+Vadv defined in Section 4.3. Agent0 begins at 0.44 , while AnchorLoop begins at 0.45 . By iteration 3,Agent0 decreases to 0.08 , whereas AnchorLoop remains at 0.30 . These stage averages summarize the sampled Executor groups and do not imply that the historical term is nonzero in every group. Under the definitions in Section 3.2, both advantage terms vanish when all current answers in a group are identical. The observed difference is consistent with greater within-group variation for AnchorLoop in the evaluated MiMo runs. This panel alone does not isolate a causal effect on performance.  
+
+> 27 Self-Evolve With a Reference
+> AnchorLoop (ours) AnchorLoop (ours) AnchorLoop (ours)
+
+Figure 4: Iteration dynamics on MiMo-7B-Base. (a) Math AVG across the three outer iterations. (b) The within-group variance of effective advantages, Vadv , averaged over sampled groups in the Executor stage. (c) The reported Curriculum frontier fraction, defined as the fraction of generated tasks with a positive sampled agreement gap under Appendix B.3. An unresolved pair contributes zero. 
+
+Curriculum frontier fraction. Figure 4(c) follows the construction in Figure 2(c). Its two groups are sampled independently from the same checkpoint, and an unresolved pair contributes zero. At itera-tion 0, the reported fraction is 56.2% for Agent0 and 56.4% for AnchorLoop. By iteration 3, it decreases to 17.2% for Agent0 and to 33.7% for AnchorLoop. These values record how often independently sampled groups produce a positive majority agreement gap. They do not measure correctness, identify newly solved tasks, or establish that the frontier reward caused the later performance difference. At iteration 3 on both backbones, AnchorLoop reports higher math AVG, higher effective advantage variance, and a larger positive agreement gap fraction. These concurrent differences do not establish a causal relation among the statistics. 
+
+E.3. Hyperparameter Sensitivity on MiMo-7B-Base 
+
+We sweep α ∈ { 0.2, 0.4, 0.6, 0.8 } and λ ∈ { 0.2, 0.4, 0.6, 0.8 } on MiMo-7B-Base, the same grid used for Qwen3-4B-Base in Figure 3(b). Figure 5 reports math AVG at each grid cell. The default setting 
+
+(α, λ) = ( 0.6, 0.4 ) attains the highest reported Math AVG on both evaluated grids. On MiMo-7B-Base, Math AVG ranges from 60.47 to 63.50 , indicating greater sensitivity than on Qwen3-4B-Base. The default setting remains the highest-performing point on both evaluated grids. These results do not establish robustness outside the tested ranges or prove that the weights transfer across backbones without selection. 
+
+## F. Case Studies and Qualitative Examples 
+
+This appendix provides case-level context for the quantitative analyses in Sections 4.3 and 4.5. Sec-tion F.1 compares twelve Curriculum tasks across three outer iterations and several mathematical topics. Section F.2 groups eight topic sequences, each containing one task from iterations 0 through 3.The grouping organizes related prompts for comparison and does not establish that a later task was produced by editing the earlier tasks. Section F.3 reports four full reasoning traces, with three AIME 2024 problems and one Curriculum task from iteration 3. It places selected anchor and post-update Executor traces side by side. All cases are drawn from runs on Qwen3-4B-Base. 
+
+> 28 Self-Evolve With a Reference
+
+Figure 5: Hyperparameter sensitivity on MiMo-7B-Base, the appendix counterpart of Figure 3(b). Math AVG on a 4 × 4 grid over the historical-advantage weight α and the frontier reward weight λ.The peak at our default (α, λ) = ( 0.6, 0.4 ) reaches 63.50 , matching Table 1. 
+
+F.1. Extended Post-update Executor Comparisons 
+
+We report twelve selected Curriculum tasks, with four examples from each outer iteration t ∈ { 1, 2, 3 }.For each task, we show a displayed anchor output in gray and a displayed post-update Executor output in blue. The visual code matches the gray and blue robots used in Figure 1. These individual outputs illustrate case-level differences. They do not by themselves verify the group-level condition 
+
+μcur (x) > μanc (x), estimate how often the differences occur, or establish that Rref caused them. 
+
+Iteration 1 (anchor = base Executor, current = iteration-1 Executor). The selected iteration-1
+
+cases display gaps such as a missing inclusion-exclusion correction or leading-digit constraint. The paired updated Executor outputs include the corresponding structural steps. 
+
+> 29 Self-Evolve With a Reference
+
+Selected Example 1 (Iter 1) – Inclusion-Exclusion Task. Find the sum of all integers from 1 to 60 that are divisible by 4 or by 6.
+
+Anchor π(0). Multiples of 4 up to 60 : 4 + 8 + · · · + 60 = 4 · 15 ·16 2 = 480 . Multiples of 6 up to 60 :
+
+6 + 12 + · · · + 60 = 6 · 10 ·11 2 = 330 . Sum = 480 + 330 = 810 . Wrong : forgot to subtract multiples of 
+
+lcm (4, 6 ) = 12 .
+
+Current π(1). Multiples of 4: 480 . Multiples of 6: 330 . Multiples of lcm (4, 6 ) = 12 : 12 + 24 + · · · + 60 =
+
+12 · 5·62 = 180 . Inclusion-exclusion: 480 + 330 − 180 = 630 . Correct .
+
+Selected Example 2 (Iter 1) – Arithmetic Sequence Off-by-One Task. An arithmetic progression has first term a1 = 7 and common difference d = 3. Find the 50 th term 
+
+a50 .
+
+Anchor π(0). an = a1 + n · d = 7 + 50 · 3 = 157 . Wrong : used n · d instead of (n − 1) · d.
+
+Current π(1). an = a1 + ( n − 1) · d. So a50 = 7 + 49 · 3 = 7 + 147 = 154 . Correct .
+
+Selected Example 3 (Iter 1) – Restricted Digit Count Task. How many 5-digit positive integers have all distinct digits? (Leading digit cannot be 0.) 
+
+Anchor π(0). Choose 5 distinct digits and order them: 10 · 9 · 8 · 7 · 6 = 30,240 . Wrong : counts numbers starting with 0, which are not 5-digit. 
+
+Current π(1). First digit ∈ { 1, . . . , 9 }: 9 choices. Remaining four positions take any of the remaining nine digits without repeats: 9 · 9 · 8 · 7 · 6 = 27,216 . Correct .
+
+Selected Example 4 (Iter 1) – Modular Pattern Task. How many integers n with 1 ≤ n ≤ 20 satisfy n2 ≡ 1 (mod 8 )?
+
+Anchor π(0). Try the first few squares: 12 = 1, 32 = 9 ≡ 1, 92 = 81 ≡ 1. Only n ∈ { 1, 3, 9 } matter, so the answer is 3 . Wrong : lists ad hoc solutions instead of identifying the structural rule. 
+
+> 30 Self-Evolve With a Reference
+
+Current π(1). Every odd n satisfies n2 ≡ 1 (mod 8 ), since (2k + 1)2 = 4k(k + 1) + 1 and k(k + 1) is even. Even n have n2 ≡ 0 or 4 (mod 8 ). So count odd integers in [1, 20 ]: {1, 3, 5, . . . , 19 }, which gives 10 .
+
+Correct .
+
+Iteration 2 (anchor = iteration-1 Executor, current = iteration-2 Executor). The selected iteration-
+
+2 cases display errors involving cyclic constraints, auxiliary identities, and complementary counting. The paired updated Executor outputs use the corresponding additional steps. 
+
+Selected Example 5 (Iter 2) – Cyclic Bead Coloring Task. How many ways are there to color the 5 beads of a necklace arranged in a cycle, using 3 colors, so that no two adjacent beads have the same color? (Beads are distinguishable by position; rotations are not identified.) 
+
+Anchor π(1). First bead: 3 choices. Each of the next four: 2 choices (different from the previous). Total: 
+
+3 · 24 = 48 . Wrong : treats the necklace as a line and ignores the constraint between bead 5 and bead 1.
+
+Current π(2). Chromatic polynomial of cycle Cn with k colors is P(Cn, k) = ( k − 1)n + ( −1)n(k − 1). For 
+
+n = 5, k = 3: 25 + ( −1)5 · 2 = 32 − 2 = 30 . Correct .
+
+Selected Example 6 (Iter 2) – Telescoping Sum Task. Compute 
+
+> 20
+
+∑︁ 
+
+> n=1
+
+1
+
+n(n + 1) exactly as a reduced fraction. 
+
+Anchor π(1). Add the first few decimals: 0.5 + 0.1667 + 0.0833 + · · · ≈ 0.95 . Final answer: 0.95 . Wrong :returns a decimal approximation and never uses the telescoping identity. 
+
+Current π(2). Partial fractions: 1 
+
+> n(n+1)
+
+= 1 
+
+> n
+
+− 1 
+
+> n+1
+
+. The sum telescopes: ∑︀ 20 
+
+> n=1
+
+(︀ 1 
+
+> n
+
+− 1
+
+> n+1
+
+)︀ = 1 − 121 = 20 21 .
+
+Correct .
+
+Selected Example 7 (Iter 2) – Constrained Permutation Task. How many distinct arrangements of the letters in committee have the two Ms separated by at least one other letter? 
+
+Anchor π(1). The word has 9 letters with repeats {M : 2, T : 2, E : 2 }. Total arrangements: 9!/ (2! 2! 2! ) = 
+
+362880/8 = 45,360 . Wrong : ignores the “Ms separated” constraint entirely. 
+
+> 31 Self-Evolve With a Reference
+
+Current π(2). Use complement. Total = 45360 . Arrangements with the two Ms adjacent: treat MM as one block, leaving 8 items with repeats {T : 2, E : 2 }: 8!/ (2! 2! ) = 40320/4 = 10080 . Answer: 
+
+45360 − 10080 = 35,280 . Correct .
+
+Selected Example 8 (Iter 2) – Modular Exponentiation Task. Compute 7100 mod 13 .
+
+Anchor π(1). Multiply step by step without Fermat. 72 ≡ 10 , 73 ≡ 7 · 10 = 70 ≡ 5, 74 ≡ 35 ≡ 9,
+
+75 ≡ 63 ≡ 11 , and so on for 100 steps. The running remainder drifts off course around step 40 ; the anchor’s final value is 4 . Wrong : a brute hand iteration without the period-12 structure accumulates an arithmetic slip after dozens of multiplications. 
+
+Current π(2). By Fermat’s little theorem, 712 ≡ 1 (mod 13 ). Write 100 = 8 · 12 + 4, so 7100 ≡ 74
+
+(mod 13 ). 72 = 49 ≡ 10 , 74 ≡ 100 ≡ 9 (mod 13 ). Answer 9 . Correct .
+
+Iteration 3 (anchor = iteration-2 Executor, current = iteration-3 Executor). The selected iteration-
+
+3 cases emphasize verification and broader search. Their updated Executor outputs use the sandbox to check intermediate claims or combine a symbolic route with a numerical check. This observation applies only to the displayed cases. 
+
+Selected Example 9 (Iter 3) – Sum of Trailing-Zero Counts Task. Let z(n) denote the number of trailing zeros of n! in base 10 . Compute ∑︀ 100  
+
+> n=1
+
+z(n).
+
+Anchor π(2). Approximate z(n) ≈ n/4 over the range, so the sum is about 100 ·101 2 /4 ≈ 1263 . Final 1263 .
+
+Wrong : estimates the average rate of zeros and never sums Legendre’s exact formula. 
+
+Current π(3). Legendre: z(n) = ⌊n/5 ⌋ + ⌊n/25 ⌋ + ⌊n/125 ⌋. Verify with Python: 
+
+def z(n): t=0; p=5 while p<=n: t+=n//p; p*=5 return t print(sum(z(n) for n in range(1,101))) # 1124 
+
+Answer 1124 . Correct .
+
+> 32 Self-Evolve With a Reference
+
+Selected Example 10 (Iter 3) – Palindromic Quartic Task. Compute the sum of all real roots of x4 − 7x3 + 14 x2 − 7x + 1 = 0.
+
+Anchor π(2). Try rational roots ±1. p(1) = 1 − 7 + 14 − 7 + 1 = 2, p(−1) = 1 + 7 + 14 + 7 + 1 = 30 .No rational roots, so default to Vieta on the full polynomial: sum of all roots is 7 . Partially correct, but unjustified. The answer happens to be right because the polynomial has four real roots, but the anchor never verifies reality. 
+
+Current π(3). The polynomial is palindromic. Divide by x2 and substitute y = x + 1/ x:
+
+y2 − 7y + 12 = 0, giving y ∈ { 3, 4 }. x + 1/ x = 3 ⇒ x2 − 3x + 1 = 0, roots (3 ± √5)/2 , both real. x + 1/ x = 4 ⇒ x2 − 4x + 1 = 0, roots 2 ± √3, both real. Sum: 3 + 4 = 7 . Verify with Python: 
+
+import numpy as np print(sum(np.roots([1,-7,14,-7,1]).real)) # 7.0 
+
+Correct, with reality justified. Selected Example 11 (Iter 3) – Prime-Restricted Compositions Task. How many ordered 5-tuples (p1, p2, p3, p4, p5) with each pi ∈ { 2, 3, 5, 7, 11 } satisfy p1 + p2 + p3 +
+
+p4 + p5 = 30 ?
+
+Anchor π(2). Try the symmetric tuple (6, 6, 6, 6, 6 ) – but 6 is not prime. Try (7, 7, 5, 5, 6 ), also bad. Enumerate by hand a few candidates such as (11, 7, 5, 5, 2 ) (30 ✓) and (7, 7, 7, 7, 2 ) (30 ✓); each has multiple orderings. Estimate 120 . Wrong : undercounts because the manual enumeration misses several multisets. 
+
+Current π(3). This is the coefficient of x30 in (x2 + x3 + x5 + x7 + x11 )5. Compute via Python: 
+
+from itertools import product P=[2,3,5,7,11] print(sum(1 for t in product(P,repeat=5) if sum(t)==30)) # 155 
+
+Answer 155 . Correct .
+
+Selected Example 12 (Iter 3) – Sum-of-Two-Squares Diophantine Task. Find all positive integer pairs (x, y) with x ≤ y satisfying x2 + y2 = 2025 .
+
+> 33 Self-Evolve With a Reference
+
+Anchor π(2). 2025 = 45 2. So (0, 45 ) is one pair, but x must be positive. Try x = 9: y2 = 2025 − 81 = 1944 ,not a square. Try x = 15 : y2 = 1800 , not a square. Conclude there are no solutions . Wrong : stops after two trials. 
+
+Current π(3). Search x in [1, ⌊√2025/2 ⌋] = [ 1, 31 ] exhaustively with Python: 
+
+N=2025 sols=[(x,int((N-x*x)**0.5)) for x in range(1,32) if (N-x*x) >= 0 and int((N-x*x)**0.5)**2 == N-x*x] sols=[(x,y) for x,y in sols if x<=y] print(sols) # [(27, 36)] 
+
+Unique pair (27, 36 ) , since 27 2 + 36 2 = 729 + 1296 = 2025 . Correct .
+
+Observations in the twelve selected examples. The displayed pairs include missing identities, omitted constraints, and incomplete verification. Several iteration-3 updated Executor outputs use Python verification, while the corresponding displayed anchor outputs rely on approximations or limited manual trials. The examples were selected for illustration. Their composition does not estimate the prevalence of these behaviors, establish that Rref caused them, or show that tool use first appears at iteration 3.
+
+F.2. Selected Curriculum Tasks Across Outer Iterations 
+
+We group thirty-two selected Curriculum tasks into eight topic sequences. Each sequence contains one task from iterations t = 0, 1, 2, 3 under a common mathematical topic. This retrospective organization highlights differences among the displayed prompts. It does not establish a direct editing lineage, a general increase in task difficulty, or a causal effect of the Curriculum reward. 
+
+Topic Sequence A – Inclusion-Exclusion Iter 0: Compute the sum of all multiples of 3 between 1 and 100 .
+
+Iter 1: Compute the sum of all integers between 1 and 100 that are divisible by 3 or by 5.
+
+Iter 2: Compute the sum of all integers between 1 and 100 that are divisible by at least one of 3, 5, or 7.
+
+Iter 3: Count the integers between 1 and 1000 that are coprime to 2 · 3 · 5 · 7 = 210 , and report the result. 
+
+Topic Sequence B – Combinatorics with Restrictions Iter 0: How many ways are there to arrange the letters abcde in a row? 
+
+> 34 Self-Evolve With a Reference
+
+Iter 1: How many distinct arrangements does the word banana have? 
+
+Iter 2: How many distinct arrangements of the letters of mississippi have no two is adjacent? 
+
+Iter 3: Eight people sit at a round table. Two specific pairs, (A, B) and (C, D), refuse to sit next to each other. How many seatings are there if rotations are equivalent? Verify with a short Python enumeration. 
+
+Topic Sequence C – Sequences and Recurrences Iter 0: The arithmetic progression a1 = 2, d = 5 has what value at a10 ?
+
+Iter 1: Compute the sum of the first 50 terms of the arithmetic progression with a1 = 2, d = 5.
+
+Iter 2: Express ∑︀ Nn=1 1 
+
+> n(n+1)
+
+in closed form and evaluate at N = 100 .
+
+Iter 3: The sequence an = 3an−1 − 2an−2 with a0 = 1, a1 = 4 has a closed form. Derive it, evaluate a30 ,and verify with Python. 
+
+Topic Sequence D – Probability and Expectation Iter 0: A fair six-sided die is rolled. What is the probability of rolling a 6?
+
+Iter 1: Two fair six-sided dice are rolled. What is the probability that the sum equals 7?
+
+Iter 2: A fair coin is flipped five times. What is the probability of getting at least two heads? 
+
+Iter 3: Ten fair six-sided dice are rolled. Compute the expected number of distinct face values that appear, as a reduced fraction, and verify with a short Monte Carlo run in Python. 
+
+Topic Sequence E – Number Theory Iter 0: Compute gcd (48, 60 ).
+
+Iter 1: Find the smallest positive integer n > 1 with n2 ≡ 1 (mod 13 ).
+
+Iter 2: Find the number of positive divisors of 1440 = 25 · 32 · 5, and their sum. 
+
+> 35 Self-Evolve With a Reference
+
+Iter 3: Find the smallest positive integer n with φ(n) = 48 , where φ is Euler’s totient function. Verify with Python over n ≤ 100 .
+
+Topic Sequence F – Algebra and Polynomials Iter 0: Solve 2x + 7 = 19 for x.
+
+Iter 1: Solve x2 − 5x + 6 = 0 for x.
+
+Iter 2: The roots of x2 − 7x + 10 = 0 are r and s. Compute r2 + s2 using Vieta’s formulas, without solving for the roots explicitly. 
+
+Iter 3: Find every real root of x4 − 6x2 + 8 = 0 and report the sum of the real roots. Then count complex roots. Verify with Python’s numpy.roots .
+
+Topic Sequence G – Geometry Iter 0: Compute the area of the triangle with vertices (0, 0 ), (4, 0 ), and (0, 3 ).
+
+Iter 1: Compute the area of a regular hexagon with side length 5.
+
+Iter 2: A circular sector has radius 12 and central angle 60 ◦. Compute the arc length and the area of the sector, leaving answers in terms of π.
+
+Iter 3: A frustum has base radii R1 = 6 and R2 = 3 and slant height ℓ = 5. Compute the volume in closed form. Verify the height computation with Python and confirm the answer. 
+
+Topic Sequence H – Calculus Iter 0: Differentiate f (x) = x3 − 2x + 1 with respect to x.
+
+Iter 1: Evaluate ∫︀ 40 (2x + 3) dx .
+
+Iter 2: Find every critical point of f (x) = x3 − 6x2 + 9x + 2 on R and classify each as a local maximum, local minimum, or neither. 
+
+Iter 3: Compute ∫︀ 10 e−x2
+
+dx to six decimal places using Simpson’s rule with n = 100 intervals, and verify with scipy.integrate.quad .
+
+> 36 Self-Evolve With a Reference
+
+Observations across the eight topic sequences. The selected tasks show several recurring differences. Some later-iteration prompts combine more operations or request numerical verification. Python verification is included in the displayed iteration-3 tasks, but these selected sequences do not show when tool use first appears during training. They also do not establish a task-editing lineage, a general progression in difficulty, or a causal effect of Rref .
+
+F.3. Full Executor Reasoning Traces 
+
+We close the appendix with four selected reasoning traces. Three use verified problems from AIME 2024 [13, 14], so the answers are independently checkable. The fourth uses a Curriculum task from iteration 3. For each case, we juxtapose the displayed anchor trace with the displayed post-update Executor trace and include the Python block used by the Executor for verification. These individual traces do not measure how often the observed differences occur. 
+
+Trace 1: AIME 2024 I, Problem 1 (rates and times). 
+
+Trace 1 – AIME 2024 I Problem 1, Answer = 204 
+
+Task. Every morning Aya goes for a 9-kilometer walk and stops at a coffee shop afterwards. At speed s
+
+km/h the trip takes 4 hours including t minutes at the coffee shop. At speed s + 2 km/h the trip takes 2
+
+hours 24 minutes including the same t minutes. Find the total trip time, in minutes, when Aya walks at 
+
+s + 12 km/h. 
+
+Anchor π(2) (majority). Let w1 = 9/ s and w2 = 9/ (s + 2) be walking times in hours. Then w1 + t/60 = 4
+
+and w2 + t/60 = 2.4 . Subtract: w1 − w2 = 1.6 . So 9/ s − 9/ (s + 2) = 1.6 , giving 9(s + 2 − s) = 1.6 s(s + 2),i.e. 18 = 1.6 s(s + 2), so s(s + 2) = 11.25 , s2 + 2s − 11.25 = 0, s = ( −2 + √4 + 45 )/2 = 5/2 . Then 
+
+w1 = 9/2.5 = 3.6 , so t/60 = 0.4 , giving t = 24 minutes. For s + 1/2 = 3, the walk takes 9/3 = 3 hours 
+
+= 180 minutes, plus t = 24 , so total 204 minutes. Correct algebraically but the anchor’s batch is split because half of the rollouts mishandle the unit conversion of 2 hours 24 minutes, landing on w2 = 2.24 
+
+and producing answers in the 190 –210 range with no consensus. 
+
+Current π(3) (majority). Convert all times to hours up front: 2 hours 24 minutes = 2 + 24/60 = 2.4 .Set u = t/60 so 9/ s + u = 4 and 9/ (s + 2) + u = 2.4 . Eliminating u gives 9/ s − 9/ (s + 2) = 1.6 , so 
+
+s(s + 2) = 9 · 2/1.6 = 11.25 , s = 2.5 , and u = 0.4 so t = 24 . At s + 1/2 = 3 km/h, walk time = 3 hours 
+
+= 180 minutes; total = 180 + 24 = 204 .Verify with Python: 
+
+from sympy import symbols, solve, Rational s, t = symbols(’s t’, positive=True) eq1 = 9/s + t/60 - 4 eq2 = 9/(s+2) + t/60 - Rational(12,5) sol = solve([eq1, eq2], [s, t]) s_val, t_val = sol[0] print(int(9/(s_val + Rational(1,2))*60 + t_val)) # 204 
+
+Correct, batch unanimous .
+
+Trace 2: AIME 2024 II, Problem 1 (four-set inclusion-exclusion). 
+
+> 37 Self-Evolve With a Reference
+
+Trace 2 – AIME 2024 II Problem 1, Answer = 73 
+
+Task. Among 900 residents of Aimeville, 195 own a diamond ring, 367 own a set of golf clubs, 562 own a garden spade, and every resident owns a bag of candy hearts. There are 437 residents who own exactly two of these four items and 234 who own exactly three. Find the number of residents who own all four. 
+
+Anchor π(2) (majority). Apply three-set inclusion-exclusion to R, G, S and conflate “exactly k” partition counts with k-fold intersection sums. The anchor reads 437 + 234 = 671 as the pairwise-intersection sum and 234 as the triple-intersection. Then 
+
+|R ∪ G ∪ S| = 195 + 367 + 562 − 671 + 234 = 687, 
+
+so 900 − 687 = 213 residents own none of R, G, S (i.e. only candy hearts). The anchor identifies these as the all-four owners and reports 213 . Wrong : “exactly k” counts are not k-fold intersection sums, so the inclusion-exclusion expression is malformed, and the residents owning only candy hearts are not the residents owning all four. 
+
+Current π(3) (majority). Let nk be the number of residents owning exactly k items, with n2 = 437 ,
+
+n3 = 234 , and n4 = x unknown. Since every resident owns candy hearts, no one owns zero, so 
+
+n1 + 437 + 234 + x = 900 , giving n1 = 229 − x. Now count the total membership across R, G, S
+
+only (each resident contributes k − 1 items here, since one of their items is always candy hearts): 
+
+0 · n1 + 1 · 437 + 2 · 234 + 3 · x = 905 + 3x. But this equals |R| + |G| + |S| = 195 + 367 + 562 = 1124 .Hence 3x = 219 , x = 73 .Verify with Python: 
+
+from sympy import symbols, solve x, n1 = symbols(’x n1’, nonnegative=True, integer=True) eq1 = n1 + 437 + 234 + x - 900 eq2 = 437 + 2*234 + 3*x - (195 + 367 + 562) print(solve([eq1, eq2], [x, n1])) # {x: 73, n1: 156} 
+
+Correct, batch unanimous .
+
+Trace 3: AIME 2024 II, Problem 3 ( 2 × 3 digit grid). 
+
+Trace 3 – AIME 2024 II Problem 3, Answer = 45 
+
+Task. Find the number of ways to place a digit ( 0, 1, . . . , 9 ) in each of the six cells of a 2 × 3 grid so that (i) the sum of the two three-digit numbers formed by the two rows is 999 , and (ii) the sum of the three two-digit numbers formed by the three columns is 99 .
+
+Anchor π(2) (majority). Let the cells be a, b, c in the top row and d, e, f in the bottom row. Row constraint: 
+
+abc + de f = 999 , i.e. 100 (a + d) + 10 (b + e) + ( c + f ) = 999 . Column constraint: ad + be + c f = 99 ,i.e. 10 (a + b + c) + ( d + e + f ) = 99 . The anchor concludes that every column must sum to 9 and every column-pair must sum to 33 , leading to 36 by direct enumeration. Wrong : the column reading gives 
+
+10 a + d per column, not a + d; the anchor incorrectly derives the column constraint. 
+
+> 38 Self-Evolve With a Reference
+
+Current π(3) (majority). With A = a + d, B = b + e, C = c + f , the row constraint 
+
+100 A + 10 B + C = 999 and the bounds A, B, C ∈ [0, 18 ] force A = B = C = 9. The column constraint 10 (a + b + c) + ( d + e + f ) = 99 with (a + b + c) + ( d + e + f ) = A + B + C = 27 gives 
+
+a + b + c = 8 and d + e + f = 19 . Once a + b + c = 8 is fixed and each digit lies in [0, 9 ], the bottom row is determined cell by cell ( d = 9 − a, e = 9 − b, f = 9 − c). The number of (a, b, c) in [0, 9 ]3 with 
+
+a + b + c = 8 is the stars-and-bars count (10 2 ) = 45 , since the upper bound 9 is not active when the sum is 
+
+8.Verify with Python: 
+
+ct=0 for a in range(10): for b in range(10): for c in range(10): for d in range(10): for e in range(10): for f in range(10): if 100*a+10*b+c+100*d+10*e+f==999 and 10*a+d+10*b+e+10*c+f==99: ct+=1 print(ct) # 45 
+
+Answer 45 . Correct, batch unanimous .
+
+Trace 4: A task generated by the Curriculum at iteration 3 (Pell equation). 
+
+Trace 4 – Curriculum Task at Iteration 3
+
+Task. Find all positive integers n with 1 ≤ n ≤ 100 such that n2 + ( n + 1)2 is a perfect square. (These correspond to Pythagorean triples whose two legs are consecutive integers.) 
+
+Anchor π(2) (majority). Try small n by hand. n = 1: 1 + 4 = 5, not a square. n = 2: 4 + 9 = 13 . n = 3:
+
+9 + 16 = 25 = 52 ✓. n = 4: 16 + 25 = 41 . n = 5, 6, 7, 8 : 61, 85, 113, 145 . n = 9: 181 . n = 10 : 221 . None of these are squares. Conclude n = 3 is the only solution in [1, 100 ]. Wrong : the anchor stops after one positive hit and never checks the rest of the range systematically, so it misses the second solution n = 20 .
+
+> 39 Self-Evolve With a Reference
+
+Current π(3) (majority). Set n2 + ( n + 1)2 = k2, i.e. 2n2 + 2n + 1 = k2. Multiply by 2:
+
+(2n + 1)2 + 1 = 2k2. Let m = 2n + 1, so m2 − 2k2 = −1, the negative Pell equation. Its positive integer solutions are (m, k) = ( 1, 1 ), (7, 5 ), (41, 29 ), (239, 169 ), . . . , which give n = ( m − 1)/2 = 0, 3, 20, 119, . . . .Excluding n = 0 and capping at 100 leaves n ∈ { 3, 20 }. Verify with Python: 
+
+import math sols = [] for n in range(1, 101): s = n*n + (n+1)*(n+1) r = int(math.isqrt(s)) if r*r == s: sols.append(n) print(sols) # [3, 20] 
+
+Verification: 32 + 42 = 25 = 52, and 20 2 + 21 2 = 400 + 441 = 841 = 29 2. Answer {3, 20 } . Correct .
+
+Observations in the four selected traces. Trace 1 displays a batch split in which some anchor rollouts use 2.24 hours instead of 2.4 for 2h 24 m. Trace 2 displays confusion between counts for exactly 
+
+k groups and pairwise or triple intersection counts. Trace 3 displays an error in positional value, where the anchor treats ad as a + d rather than 10 a + d. Trace 4 displays an incomplete search that stops at the first positive hit. The displayed post-update Executor traces use Python checks before reporting their final answers. These cases show how Python is used in the selected solutions, but they do not establish that Python caused robustness or that the pattern holds across tasks.

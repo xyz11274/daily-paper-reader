@@ -48,7 +48,7 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-07</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-08</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 19 篇</strong>
@@ -58,7 +58,7 @@
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-07 23:57:59 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-09 00:04:30 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日完成19篇文献扫描，精读7篇、速读12篇，其中两篇9分论文聚焦进化搜索智能体与多智能体系统测试时演化。最值得关注的是SEDIMA的跨运行分层记忆机制和Inherit-MAS的工作流与执行继承思路，均指向智能体持续自我改进。普通读者可优先了解“记忆复用+测试时演化”这一组合如何降低多智能体协作的重复训练成本。</p>
+<p>2026-10-08 日报完成19篇论文筛选，精读7篇、速读12篇，重点聚焦多智能体系统与具身推理验证。最值得看的是《Inherit-MAS》提出的测试时演化与《VeriFine》的自我改进验证，均获9.0分。建议普通读者优先从这两篇精读入手，再按兴趣浏览多机器人任务分配与图学习基准等速读方向。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,9 +81,9 @@
     <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SEDIMA: Cross-Run Hierarchical Insight Memory for Evolutionary Search Agents">SEDIMA: Cross-Run Hierarchical Insight Memory for Evolutionary Search Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Inherit-MAS: Test-Time Evolution of Multi-Agent Systems through Workflow and Execution Inheritance">Inherit-MAS: Test-Time Evolution of Multi-Agent Systems through Workflow and Execution Inheritance</span></li><li><span class="dpr-home-dashboard-paper-title" title="Principles that Guide, Actions that Inform: Agent Evolution via Knowledge Abstraction">Principles that Guide, Actions that Inform: Agent Evolution via Knowledge Abstraction</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Inherit-MAS: Test-Time Evolution of Multi-Agent Systems through Workflow and Execution Inheritance">Inherit-MAS: Test-Time Evolution of Multi-Agent Systems through Workflow and Execution Inheritance</span></li><li><span class="dpr-home-dashboard-paper-title" title="VeriFine: Scaling Verification for Self-Improvement in Embodied Reasoning">VeriFine: Scaling Verification for Self-Improvement in Embodied Reasoning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agent Plasticity: Measuring Self-Improvement Through Experience">Agent Plasticity: Measuring Self-Improvement Through Experience</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>6</strong></span><span class="dpr-home-dashboard-tag">multi-agent <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>7</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,7 +94,7 @@
     <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Embodied Semantic Communication for Collective Autonomous Agents: A Tutorial on Representation, Wireless Delivery, and Closed-Loop Coordination">Embodied Semantic Communication for Collective Autonomous Agents: A Tutorial on Representation, Wireless Delivery, and Closed-Loop Coordination</span></li><li><span class="dpr-home-dashboard-paper-title" title="Systematic Multi-Agent Vision-and-Language Navigation: Formulation, Benchmark, and Method">Systematic Multi-Agent Vision-and-Language Navigation: Formulation, Benchmark, and Method</span></li><li><span class="dpr-home-dashboard-paper-title" title="Cooperative Multi-Agent Vision-Language-Action Models via Reinforced Fine Tuning">Cooperative Multi-Agent Vision-Language-Action Models via Reinforced Fine Tuning</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Communication-Free Distributed Multi-Robot Task Allocation under Partial Observations Using Labeled Multi-Bernoulli Filtering">Communication-Free Distributed Multi-Robot Task Allocation under Partial Observations Using Labeled Multi-Bernoulli Filtering</span></li><li><span class="dpr-home-dashboard-paper-title" title="Divide and Collapse: MAPF-Collapse via Exact Decomposition into Independent Sub-Instances">Divide and Collapse: MAPF-Collapse via Exact Decomposition into Independent Sub-Instances</span></li><li><span class="dpr-home-dashboard-paper-title" title="GraphMAS: A Systematic Benchmark of Multi-Agent Coordination for Graph Learning">GraphMAS: A Systematic Benchmark of Multi-Agent Coordination for Graph Learning</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>9</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
 </section>
