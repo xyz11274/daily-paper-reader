@@ -48,7 +48,7 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-08</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-13 ~ 2026-10-12</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 19 篇</strong>
@@ -58,7 +58,7 @@
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-09 00:04:30 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-12 03:45:54 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-10-08 日报完成19篇论文筛选，精读7篇、速读12篇，重点聚焦多智能体系统与具身推理验证。最值得看的是《Inherit-MAS》提出的测试时演化与《VeriFine》的自我改进验证，均获9.0分。建议普通读者优先从这两篇精读入手，再按兴趣浏览多机器人任务分配与图学习基准等速读方向。</p>
+<p>近一月精读7篇、速读12篇共19篇多智能体论文，重点聚焦通信与路由效率。最值得看的是两篇9分精读：多智能体学习的鲁棒高效通信，以及多智能体距离和以下的路由方法。普通读者可优先从这两篇入手，再结合速读中的通信生成策略与总线通信底物理解落地思路。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,9 +81,9 @@
     <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Inherit-MAS: Test-Time Evolution of Multi-Agent Systems through Workflow and Execution Inheritance">Inherit-MAS: Test-Time Evolution of Multi-Agent Systems through Workflow and Execution Inheritance</span></li><li><span class="dpr-home-dashboard-paper-title" title="VeriFine: Scaling Verification for Self-Improvement in Embodied Reasoning">VeriFine: Scaling Verification for Self-Improvement in Embodied Reasoning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agent Plasticity: Measuring Self-Improvement Through Experience">Agent Plasticity: Measuring Self-Improvement Through Experience</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Robust and Efficient Communication for Multi-Agent Learning">Robust and Efficient Communication for Multi-Agent Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Routing Multiple Agents Below the Sum of Distances">Routing Multiple Agents Below the Sum of Distances</span></li><li><span class="dpr-home-dashboard-paper-title" title="Proxifield: Decentralized Multi-Agent Communication through Semantic Proximity">Proxifield: Decentralized Multi-Agent Communication through Semantic Proximity</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>7</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>4</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,9 +94,9 @@
     <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Communication-Free Distributed Multi-Robot Task Allocation under Partial Observations Using Labeled Multi-Bernoulli Filtering">Communication-Free Distributed Multi-Robot Task Allocation under Partial Observations Using Labeled Multi-Bernoulli Filtering</span></li><li><span class="dpr-home-dashboard-paper-title" title="Divide and Collapse: MAPF-Collapse via Exact Decomposition into Independent Sub-Instances">Divide and Collapse: MAPF-Collapse via Exact Decomposition into Independent Sub-Instances</span></li><li><span class="dpr-home-dashboard-paper-title" title="GraphMAS: A Systematic Benchmark of Multi-Agent Coordination for Graph Learning">GraphMAS: A Systematic Benchmark of Multi-Agent Coordination for Graph Learning</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Learning Communication-Conditioned Generative Policies for Decentralized Multi-Agent Collision Avoidance">Learning Communication-Conditioned Generative Policies for Decentralized Multi-Agent Collision Avoidance</span></li><li><span class="dpr-home-dashboard-paper-title" title="BusMA: A Bus Communication Substrate for Multi-Agent Systems">BusMA: A Bus Communication Substrate for Multi-Agent Systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="Mo&#x27; Models, Mo&#x27; Problems: How to best select model pools when designing Multi-Agent Systems">Mo&#x27; Models, Mo&#x27; Problems: How to best select model pools when designing Multi-Agent Systems</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>9</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>11</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>1</strong></span></div>
 </section>
 </div>
 
