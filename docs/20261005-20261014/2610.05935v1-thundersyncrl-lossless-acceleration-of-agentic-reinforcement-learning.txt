@@ -1,0 +1,1926 @@
+Title: ThunderSyncRL: Lossless Acceleration of Agentic Reinforcement Learning
+
+URL Source: https://arxiv.org/pdf/2610.05935v1
+
+Published Time: Tue, 06 Oct 2026 03:06:16 GMT
+
+Number of Pages: 39
+
+Markdown Content:
+# ThunderSyncRL: Lossless Acceleration of Agentic Reinforcement Learning 
+
+Seil Kang 1,2, *, Hangoo Kang 1, *, Tarun Suresh 1, Youngeun Kim 3
+
+Shreyas Pimpalgaonkar 4, Seong Jae Hwang 2, †, Azalia Mirhoseini 1, ‡
+
+1Stanford University 2Yonsei University 3Korea University 4Bespoke Labs 
+
+A Blog post § GitHub 
+
+Abstract 
+
+Language models are moving beyond generating answers to pursuing long-horizon goals in interactive environments. Post-training these agents requires long, heterogeneous trajectories, and synchronous systems leave learner engines idle until rollout and verification finish. To squeeze out these pipeline bubbles, asynchronous training overlaps rollout and learning across updates, but comes at the cost of policy staleness. We introduce ThunderSyncRL , which starts gradient computation as soon as all required inputs are fixed, without policy staleness. For group relative policy optimization (GRPO), ThunderSyncRL computes each trajectory’s score gradient as soon as the reward for that trajectory arrives, without waiting for the group. For on-policy distillation (OPD), it computes gradients for each completed agentic turn’s teacher-scored actions while tool calls run in the sandbox. We prove that gradient streaming produces the same GRPO and OPD updates as batch-synchronous training, without changing either objective. On SWE-bench Verified and Terminal Bench 4.0, we train models to the same performance up to 1.9 × faster than synchronous training. With zero policy staleness, ThunderSyncRL also outperforms asynchronous training at a fixed budget by up to 2.47 percentage points. 0.0 64.0 128.0 192.0 256.0     
+
+> GPU-hours
+> $0.0k $0.5k $1.0k $1.5k $2.0k
+> Training cost (USD, 8×B200)
+> 70.0 72.0 74.0 76.0
+> SWE-bench Verified pass@3 (%)
+> Sync Async Fully Async ThunderSync (Ours)
+
+GRPO     
+
+> 0.0 64.0 128.0 192.0 256.0
+> GPU-hours
+> 0.4 0.5 0.6 0.7 0.8 0.9
+> Mean training reward
+
+GRPO         
+
+> 0.0 64.0 128.0 192.0 256.0
+> GPU-hours
+> $0.0k $0.5k $1.0k $1.5k $2.0k
+> Training cost (USD, 8×B200)
+> 71.0 73.0 75.0 77.0
+> SWE-bench Verified pass@3 (%)
+
+OPD     
+
+> 0.0 64.0 128.0 192.0 256.0
+> GPU-hours
+> 0.4 0.5 0.6 0.7 0.8 0.9
+> Mean training reward
+
+OPD 
+
+Figure 1: ThunderSyncRL matches Sync’s SWE-bench Verified pass@3 at up to 1.9 × lower training cost under GRPO (left pair) and OPD (right pair). At a 128-GPU-hour budget, its zero-staleness schedule improves pass@3 by up to 2.47 percentage points over Async and Fully Async, both of which admit stale rollouts. 
+
+> *
+
+Core contributor. 
+
+> †
+
+Co-corresponding author. 
+
+> ‡
+
+Main corresponding author. 
+
+1arXiv:2610.05935v1 [cs.LG] 5 Oct 2026 1 Introduction 
+
+Language models are increasingly trained as agents for long-horizon decision-making in interactive environ-ments, reasoning and using tools in response to feedback. Reinforcement learning (RL) from environment or verifier feedback has emerged as a promising way to improve this behavior [JZY+25; FHQ+26; PWN+25; WDC+25; GZC+25]. However, training these agents requires interaction trajectories that are expensive to generate and heterogeneous in duration, with long-tailed completion times [HOC+26; CTL+26; RWL+26]. In batch-synchronous RL, learner engines remain idle until rollout engines finish the batch and all rewards arrive [FGS+25; RWL+26]. We found that learner GPUs sit idle for 49.5% of step time in synchronous GRPO and OPD training while they wait for rollout and verification (Figure 3). Prior work reports idle fractions as high as 81% [RWL+26], and the slowest 10% of rollout requests can take up to half of rollout time [QHH+26], which itself accounts for 70% to over 90% of training time [GZA+25; ZLS+25]. Existing systems reduce these pipeline bubbles, idle gaps between dependent stages, by overlapping computation and coordinating resource allocation [MFL+25; SZY+25; ZZW+25; FGS+25; HYW+26]. Asyn-chronous execution overlaps rollout and learning across updates, but some trajectories come from older policies. This policy staleness can require extra algorithmic machinery, including importance-weighted off-policy correction, filtering, clipping, or explicit staleness control [ESM+18; FGS+25; HYW+26; HLT+26]. On-policy pipelines overlap execution within a fixed rollout, but complete-group schedules still delay trajectory-local backward passes until all group rewards arrive [CHY+26]. We argue that the apparent trade-off between pipeline overlap and zero staleness is artifactual, arising from coarse execution barriers. Although a synchronous update requires the complete batch, its gradient computation can begin earlier. For example, in group relative policy optimization (GRPO) [SWZ+24], group rewards determine how to weight each trajectory’s score gradient, but the gradient can be computed before all rewards arrive. We therefore ask: can learner computation begin as soon as its objective dependencies are satisfied with zero staleness? 
+
+We introduce ThunderSyncRL , which streams gradients through dependency-aware scheduling of learner work. During update k, trajectories are sampled from πθk and gradients are evaluated at θk. For GRPO, a trajectory’s advantage seems to need every reward in its group. ThunderSyncRL nevertheless starts that trajectory’s backward pass as soon as its own reward arrives, and two running sums of score gradients recover the exact group gradient once the group closes (Section 3.4). For on-policy distillation (OPD) [AVZ+24], ThunderSyncRL releases a turn’s student backward pass once a frozen teacher scores the turn’s action tokens, allowing overlap with tool execution and later turns. After all trajectories, groups, and gradient work finish, ThunderSyncRL combines the gradients, takes one optimizer step, and publishes θk+1. ThunderSyncRL is therefore asynchronous in execution and synchronous in policy updates. We use SWE-smith and SETA-Env for post-training [YLJ+25; SHK+26] and evaluate on SWE-bench Verified and Terminal Bench 4.0 [JYW+24; MSC+26]. Our scheduling analysis predicts step wall time speedup approaching 2 × over synchronous execution when rollout and learner work are balanced and the residual tail and publication cost vanish. With a fixed trajectory batch size, shorter steps let ThunderSyncRL learn from more trajectories within the same GPU-hours, potentially improving end-to-end performance. Figure 1 compares ThunderSyncRL with Sync by training cost: each arrow marks where ThunderSyncRL reaches the pass@3 of a Sync checkpoint, at 1.6 to 1.9 × lower cost. Our main contributions are as follows: • We introduce ThunderSyncRL and gradient streaming, overlapping rollout and learner computation while preserving a synchronous optimizer step and zero policy staleness. • We derive exact gradient reductions for GRPO and turn-level OPD, allowing early backward computa-tion while preserving their batch-synchronous updates. • We evaluate ThunderSyncRL on SWE-bench Verified and Terminal Bench 4.0 under GRPO and OPD. ThunderSyncRL reaches the common pass@3 targets up to 1.9× faster than Sync while retaining zero policy staleness. At 128 GPU-hours, ThunderSyncRL achieves the highest pass@3 in all settings, 1.27 to 2.47 points above Async. 2Rollout Teacher score Learner gradient Optimizer update 
+
+(a) GRPO (b) OPD Sync 
+
+> Zero staleness Batch barrier
+
+Async 
+
+> 1-step staleness Previous step learns
+
+Fully Async 
+
+> Variable staleness In-flight updates
+
+ThunderSync  
+
+> Zero staleness Start when ready
+> Rollout Learner Update Rollout Learner Update Rollout Learner Update Rollout Learner Update Rollout Teacher Learner Update Rollout Teacher Learner Update Rollout Teacher Learner Update Rollout Teacher Learner Update Opt. step 𝑘
+
+𝑘      
+
+> Opt. step 𝑘 + 1
+> Opt. step 𝑘 Opt. step 𝑘 + 1
+> 𝑘 − 1
+
+𝑘     
+
+> Opt. step 𝑘 Opt. step 𝑘 + 1
+> 𝑘 − 1
+
+𝑘  
+
+> Opt. step 𝑘
+
+𝑘   
+
+> Opt. step 𝑘 + 1
+> Opt. step 𝑘
+
+𝑘      
+
+> Opt. step 𝑘 + 1
+> Opt. step 𝑘 Opt. step 𝑘 + 1
+> 𝑘 − 1
+
+𝑘     
+
+> Opt. step 𝑘 Opt. step 𝑘 + 1
+> 𝑘 − 1
+
+𝑘  
+
+> Opt. step 𝑘
+
+𝑘  
+
+> Opt. step 𝑘 + 1
+
+Figure 2: Schematic schedules for GRPO (a) and OPD (b). • Sync waits for full batches; • Async overlaps adjacent batches with one-step staleness; • Fully Async updates rollout weights while trajectories remain in flight. • ThunderSyncRL streams ready gradients with one batch-synchronous optimizer step and zero staleness. 
+
+# 2 Related Work 
+
+2.1 Post-training with Reinforcement Learning Towards Agentic Tasks 
+
+RL post-training extends single-turn generation to agents that learn through long-horizon interaction with ex-ternal environments. ArCHer develops hierarchical multi-turn RL, while DigiRL combines offline and online RL for mobile-device control [ZZP+24; BZC+24]. Web and search agents learn through self-evolving curricula, browser interaction, and outcome rewards [QLI+25; WYL+25; JZY+25; SJM+25; CSL+25; ZFH+25]. Tool-use research studies strategic interpreter use, fine-grained rewards, planning supervision, and dynamic user inter-action [FHQ+26; QAH+25; LHW25; ZWM+25]. Further work addresses trajectory-level optimization failures, multi-step supervision, and procedural or capability-targeted training environments [WWW+25; GMZ+25; DLH+26; SHK25; KSS+26]. Software agents learn from executable environments, software-evolution data, and execution feedback [PWN+25; WDC+25; GZC+25]. Agent Lightning and VerlTool provide reusable infrastructure across heterogeneous agent workflows [LZH+25; JLL+26]. 
+
+2.2 Optimization of Reinforcement Learning 
+
+Distributed RLHF systems coordinate generation, reference and reward inference, and actor and critic training, using model placement, device reallocation, and stage fusion to reduce idle time [YAR+23; HWS+25; MFL+25; SZY+25; ZZW+25]. Building on actor-learner decoupling in distributed RL [ESM+18; PHK+20], LlamaRL, AReaL, AsyncFlow, and StreamRL support disaggregated generation and training, streaming exe-cution, asynchronous weight synchronization, and control of policy staleness [WWT+25; FGS+25; HYW+26; ZZS+25]. For heterogeneous agentic rollouts, PipelineRL and RolloutPipe pipeline rollout and learner execution [PKP+25; CHY+26]. JigsawRL, Libra, TideRL, and WAR address fine-grained scheduling, elastic resource allocation, long tails, and inference caching [HOC+26; CTL+26; RWL+26; XZB+26]. SAO performs asynchronous optimization from individually completed rollouts [HLT+26]. ThunderSyncRL schedules learner computation as each objective source becomes ready, overlapping it with unfinished rollouts while 30 5 10 15 20   
+
+> GPU-hours (GRPO on SWE-smith, 8 GPUs)
+> 100 50 050 100
+> GPU utilization (%)
+> Rollout GPUs Learner GPUs
+> 15 optimizer steps ThunderSync (Ours)
+> 100 50 050 100
+> GPU utilization (%)
+> Rollout GPUs Learner GPUs
+> 8 optimizer steps Rollout GPUs busy Learner GPUs busy Pipeline bubble (idle) Sync
+
+Figure 3: Pipeline bubbles in synchronous agentic RL. GPU utilization during GRPO training on SWE-smith, with four rollout GPUs above the axis and four learner GPUs below. Rollout utilization (busy share of generation slots) drops as long-tail trajectories finish. Hatched bands mark idle time. • Sync learners wait for the last reward for 49.5% of each step, and rollout GPUs wait while the learner trains. • ThunderSyncRL 
+
+starts each trajectory’s backward pass when its reward arrives and completes 15 optimizer steps in the GPU-hours Sync needs for 8. preserving a fixed policy snapshot and a single synchronous optimizer step. The agent, reward, and optimization objective remain unchanged. 
+
+# 3 Methods 
+
+We present ThunderSyncRL, a gradient streaming framework for zero-stale agentic post-training (Figure 2). ThunderSyncRL releases learner computation when each source becomes ready . Exact gradient reduction and a synchronous optimizer barrier preserve the update semantics of GRPO and on-policy distillation (OPD) while allowing rollout and learning to overlap. 
+
+3.1 Background 
+
+Group relative policy optimization (GRPO). Given a prompt, GRPO samples a group of trajectories and normalizes their rewards within the group to obtain relative advantages. The policy update weights each trajectory’s scored action-token log probabilities by its detached advantage. 
+
+On-policy distillation (OPD). OPD generates trajectories with the student policy and evaluates the student’s action tokens under a frozen teacher. The resulting token-level supervision defines a distillation loss for the action tokens of each agentic turn. 
+
+Actor-learner execution protocols. Agentic reinforcement learning alternates between two expensive stages: generating long, tool-using trajectories and optimizing the policy from the resulting training signals. Conventional synchronous training places a batch barrier between these stages, leaving the learner idle until every trajectory and reward is available (Figure 3). Fully asynchronous methods remove this idle time, but typically update the policy while older rollouts remain in flight, introducing policy staleness. ThunderSyncRL follows a single principle: each computation is released at the earliest time when its mathematical dependencies are satisfied. 43.2 Problem Formulation 
+
+Objective sources. Consider update k with policy πθk and logical rollout batch Bk. Each trajectory is a sequence of agentic turns, where a turn contains a policy-generated action and the resulting environment or tool observation. We call an independently releasable unit of learner computation an objective source . Source 
+
+j is ready at time τj once all its inputs are fixed. 
+
+Release semantics. The ready unit depends on the training objective. For a GRPO group G of m trajectories, source i is associated with trajectory i and becomes ready when its token sequence, scored-token mask, and reward ri are fixed. The group statistics remain unavailable until all m rewards arrive. In OPD, the scored action tokens of each turn form a source. Once these tokens and their mask are fixed, the frozen teacher can score them using their realized causal context. The teacher scores release the corresponding student backward pass, which can overlap with tool execution and subsequent turns. 
+
+Scheduling objective. Our problem is to release each source at its earliest objective-valid time while preserving the corresponding batch-synchronous update. All trajectories in update k are sampled from πθk ,and all gradients are evaluated at the fixed parameters θk. After the logical batch closes and all gradient work finishes, the optimizer takes one step to produce θk+1. The logical batch and objective remain unchanged; only the timing of eligible learner work differs. 
+
+3.3 ThunderSyncRL Framework 
+
+Release rule. ThunderSyncRL releases each source’s learner computation at its ready time τj, which can precede the completion of its group or of the batch; gradients accumulate at θk.
+
+Readiness-driven scheduling. Ready sources enter a work-conserving queue in readiness order; admission never waits for a smaller trajectory index, or for an unrelated group below a per-rank cap (Appendix D). Independent groups may be reduced concurrently, while each group preserves a deterministic reduction order. We include deferred gradient propagation at trajectory or group closure as learner work with its own release time. Index learner work items in service order; let τj and pj denote the release time and service time of item j. On a single learner lane with c0 = 0, completion time satisfies 
+
+cj = max {τj, cj−1} + pj. (1) For n learner work items, let Rk be the time at which the complete rollout batch closes and Pk the common final reduction, optimizer, and publication suffix. The update endpoint is 
+
+Tk = max {Rk, cn} + Pk. (2) A batch-synchronous method postpones all learner work until Rk. For GRPO, a group-ready pipeline releases all sources in a group at its final reward. ThunderSyncRL uses each source’s ready time for either objective, moving eligible learner work into rollout intervals and reducing the learner tail after the final trajectory. 
+
+Zero-stale optimizer barrier. ThunderSyncRL waits for every registered trajectory and group to close and for all deferred gradient propagation to finish. Distributed reduction and objective-specific normalization then produce the batch update direction gk (Section 3.4). ThunderSyncRL clips this direction and applies exactly one optimizer step, 
+
+θk+1 = Opt (θk, clip (gk)) . (3) ThunderSyncRL publishes the resulting adapter or policy parameters to the rollout replicas. Each replica loads the new version, clears policy-dependent state, and acknowledges that it serves θk+1 before the next update begins. Every rollout and learner source within update k is therefore bound to θk, and no trajectory is optimized against a policy that changed while it was in flight. Appendix I gives the full algorithm and the GRPO and OPD implementations. 53.4 Objective-Specific Gradient Streaming 
+
+Streaming the GRPO gradient. The main obstacle to streaming the GRPO gradient is that the advantage of one trajectory depends on the rewards of its entire group. Let G be a group of m trajectories. For trajectory 
+
+i ∈ G , define its masked policy score and corresponding source gradient as 
+
+Si(θ) = ∑
+
+> t∈M i
+
+wi,t log πθ(ai,t | hi,t) , Hi = ∇θSi(θ)|θ=θk , (4) where Mi is the scored action-token set, wi,t the token weighting, and ri the trajectory reward. Let 
+
+μG = 1
+
+m ∑
+
+> i∈G
+
+ri, σG =
+
+s 1
+
+m ∑
+
+> i∈G
+
+(ri − μG )2. (5) With the group-normalized advantages held constant during differentiation, the group update direction is 
+
+gG = 1
+
+m ∑
+
+> i∈G
+
+ri − μG
+
+σG + ϵ Hi. (6) Although μG and σG require group completion, the gradient decomposes exactly as 
+
+gG = 1
+
+m
+
+G(1) 
+
+> G
+
+− μG G(2)
+
+> G
+
+σG + ϵ , G(1) 
+
+> G
+
+= ∑
+
+> i∈G
+
+ri Hi, G(2) 
+
+> G
+
+= ∑
+
+> i∈G
+
+Hi. (7) ThunderSyncRL computes Hi as soon as trajectory i becomes ready and incrementally accumulates G(1) 
+
+> G
+
+and 
+
+G(2) 
+
+> G
+
+. When all rewards and source gradients in the group are available, the scalar-weighted combination in Equation 7 gives gG . Summing the group directions gives gk = ∑G⊂B k gG for the optimizer barrier. This preserves the batch-barrier update while allowing trajectory backward passes to begin before group completion. 
+
+Streaming the OPD gradient. In OPD, each turn provides a gradient source once the frozen teacher has scored its action tokens. Let Uk be the set of turns in Bk, and let Mj contain the scored action tokens of turn j.We normalize the OPD update by the total number of scored tokens in the batch. Define the detached token advantage and the turn’s unnormalized update direction as 
+
+Aj,t = sg log πT(aj,t | hj,t) − log πθk (aj,t | hj,t) ,
+
+gj = ∑
+
+> t∈M j
+
+Aj,t ∇θ log πθ(aj,t | hj,t) θ=θk
+
+, (8) where πT is the frozen teacher and sg denotes stop-gradient. Each advantage depends only on the sampled token, its realized causal context, and the fixed student and teacher policies. ThunderSyncRL releases the turn-local backward pass as soon as the teacher scores are available, allowing learner computation to overlap with tool execution and subsequent turns. It accumulates unnormalized gradient contributions and completes any deferred gradient propagation through earlier context before final reduction. The batch update direction is 
+
+gk = 1
+
+Nk ∑
+
+> j∈U k
+
+gj, Nk = ∑
+
+> j∈U k
+
+|M j|. (9) The total scored-token count Nk is fixed only when the logical batch closes, so ThunderSyncRL defers this scalar normalization while turn-level backward passes proceed. Dividing the accumulated gradient by Nk
+
+before clipping and the single optimizer step gives the same mathematical update as batch-synchronous OPD, with every rollout and learner computation bound to θk. Appendix G confirms both equivalences numerically on B200 and H200 GPUs. 6Sync Async Fully Async ThunderSync                   
+
+> 0400 800 1200 1600
+> Step wall time (s)  1,313.6 s 695.0 s 690.0 s 687.7 s
+> 1.91× faster vs. Sync
+> Step wall time
+> Sync Async Fully Async ThunderSync Rollout + verification Residual learner work New policy publication
+> GRPO
+> 650.0
+> 646.4
+> 650.0 650.0 650.0
+> 40 45 50
+> Trainer active MFU (%)
+> 510 20 30 40
+> Policy step
+> 20 25
+> Sync Async Fully Async ThunderSync
+> 0400 800 1200 1600
+> 1,330.3 s 692.9 s 689.3 s 685.7 s
+> 1.94× faster vs. Sync
+> Step wall time
+> OPD
+> 658.5
+> 656.2
+> 658.5 658.5 658.5
+> 40 45 50 510 20 30 40
+> Policy step
+> 20 25
+> Trainer active MFU
+> GRPO
+> Trainer active MFU
+> OPD
+
+Figure 4: Step wall time (left) and trainer active MFU (right) for GRPO and OPD. 
+
+# 4 Experiments 
+
+4.1 Setup 
+
+Models, datasets and benchmarks. 
+
+• Models: We use Qwen-3.8-27B [Qwe26a; Qwe26b] for full fine-tuning and the separate LoRA config-uration (Appendix H.2). The model comparison also includes GLM-4.7-Flash-31B [Zai26; GZL+25]. Appendix D specifies the Qwen OPD teacher, which remains fixed across execution schedules. • Datasets: We use SWE-smith [YLJ+25] and SETA-Env [SHK+26] for post-training, covering repository-level software engineering and broader terminal tasks, respectively. Appendix C details data revisions, filtering, splits, and benchmark separation. • Benchmarks: We evaluate on SWE-bench Verified [JYW+24] and Terminal Bench 4.0 [MSC+26], using the same tasks, agent interface, and inference budget across execution schedules. Terminal Bench 4.0 tasks are excluded from post-training. Appendix E specifies success criteria, pass@3 aggregation, and checkpoint comparisons. We also report pass@1 and pass@5 on both benchmarks in Appendix H.1. 
+
+Workloads and configurations. Each GRPO update uses 32 prompts with eight trajectories sampled per prompt, totaling 256 trajectories. Each OPD update uses 32 prompts with four independent trajectories sampled per prompt, totaling 128 trajectories. Both objectives allow up to 300 agentic turns and 1,024 generated tokens per turn. The reference configuration uses a single node with eight NVIDIA B200 GPUs; the hardware comparison also includes a node with eight NVIDIA H200 GPUs. Appendix D provides the full optimization and generation settings. 
+
+Baselines. Within each objective, we hold the model, workload, optimizer, precision, and hardware allocation fixed and compare ThunderSyncRL against three execution schedules: • Sync: A zero-stale baseline that starts learning after the complete rollout batch is available. • Async: A one-update-stale baseline that overlaps learning with the next rollout batch. • Fully Async: Rollout and learning proceed without a batch-level barrier between them. Policy updates can occur during in-flight trajectories, yielding variable policy lag. Sync and Async use the official verl [SZY+25] pipeline for GRPO and the SkyRL [CHL+25] pipeline for OPD. Sync, Async, and ThunderSyncRL use vLLM for rollout, with the same chunked prefill and prefix caching settings. We evaluate with the benchmarks’ official harnesses; Appendices D.2 and E describe the rollout pipelines and harnesses. 70 50 100 150 200 250 
+
+GPU-hours 
+
+> 233.5 121.3
+> 1.9× faster
+> 169.3 96.4
+> 1.8× faster
+> SWE-bench Verified Target: 74.01% Terminal Bench 4.0 Target: 36.61%
+> ThunderSync Sync
+
+GRPO      
+
+> 050 100 150 200 250
+
+GPU-hours 
+
+> 168.5 88.7
+> 1.9× faster
+> 224.7 121.3
+> 1.9× faster
+> SWE-bench Verified Target: 74.54% Terminal Bench 4.0 Target: 38.30%
+> ThunderSync Sync
+
+OPD     
+
+> -3.0 -2.0 -1.0 0.0 1.0
+
+Δpass@3 vs. ThunderSync (pp) 
+
+> -2.47 pp -1.87 pp -1.52 pp -0.51 pp
+> SWE-bench Verified Terminal Bench 4.0
+> ThunderSync Async Fully Async ThunderSync 74.53% ThunderSync 36.87%
+
+GRPO     
+
+> -3.0 -2.0 -1.0 0.0 1.0
+
+Δpass@3 vs. ThunderSync (pp) 
+
+> -1.27 pp -1.60 pp -2.02 pp -2.53 pp
+> SWE-bench Verified Terminal Bench 4.0
+> ThunderSync Async Fully Async ThunderSync 75.33% ThunderSync 38.89%
+
+OPD 
+
+Time to matched performance vs. Sync Performance at 128 GPU-hours Figure 5: Left: time to matched pass@3. Right: Async and Fully Async relative to ThunderSyncRL at 128 GPU-hours. $0.5k $1.0k $1.5k 
+
+Training cost (USD, 8×B200) 
+
+> 33 35 37 39 Pass@3 on Terminal Bench 4.0 (%)
+> Async ThunderSync (Ours) Fully Async Sync
+
+GRPO      
+
+> 050 100 150 200 250
+
+GPU-hours 
+
+> 0.4 0.6 0.8 1.0
+> Mean training reward
+
+GRPO   
+
+> $0.5k $1.0k $1.5k
+
+Training cost (USD, 8×B200) 
+
+> 34 36 38 40 Pass@3 on Terminal Bench 4.0 (%)
+
+OPD      
+
+> 050 100 150 200 250
+
+GPU-hours 
+
+> 0.4 0.6 0.8 1.0
+> Mean training reward
+
+OPD 
+
+Figure 6: Terminal Bench 4.0 pass@3 vs. training cost and mean training reward vs. GPU-hours. Arrows mark where ThunderSyncRL reaches the score of a Sync checkpoint; labels give the cost ratio. 
+
+4.2 Learning efficiency and agent performance 
+
+Time to matched performance. ThunderSyncRL reaches the target pass@3 on SWE-bench Verified 1.9 ×
+
+faster than Sync under both GRPO and OPD (Figure 5, left). For example, the GRPO target of 74.01% is first reached at 121.3 GPU-hours with ThunderSyncRL and 233.5 GPU-hours with Sync. The advantage also holds when training on SETA-Env and evaluating on Terminal Bench 4.0, whose tasks are excluded from post-training: ThunderSyncRL reaches the targets 1.8 × faster under GRPO and 1.9 × faster under OPD (Figure 5, left; curves in Figure 6). 
+
+Performance at a fixed training budget. At the same 128-GPU-hour training budget (16 hours on the eight-GPU node), ThunderSyncRL achieves higher pass@3 than Async on both benchmarks (Figure 5, right). On SWE-bench Verified, ThunderSyncRL leads by 2.47 percentage points under GRPO and 1.27 under OPD. On Terminal Bench 4.0, it leads by 1.52 percentage points under GRPO and 2.02 under OPD. Each score comes from the latest completed checkpoint available within the budget; Appendix E details the evaluation protocol. 
+
+Step wall time. ThunderSyncRL overlaps learner work with rollout (Figure 4, left). After 650.0 s (GRPO) and 658.5 s (OPD) of rollout and verification, Sync adds 646.4 and 656.2 s of learner work, ThunderSyncRL only 20.5 and 11.6 s. With publication, its steps take 687.7 and 685.7 s, 1.91 × and 1.94 × faster than Sync and within Async’s seed spread, at zero policy lag. Over a run, shorter steps fit more trajectory batches into the same GPU-hours, which is why ThunderSyncRL reaches each pass@3 level at lower training cost (Figures 1 and 6). 8Table 1: Full fine-tuning efficiency on SWE-smith across models using NVIDIA B200 GPUs. GRPO and OPD are compared separately per configuration; for OPD, the model is the student. Method Policy lag (staleness) ↓  
+
+> GRPO OPD
+> Avg. trainer active MFU (%)
+
+↑
+
+> Speedup (
+
+×) ↑ 
+
+> Trainer peak GPU memory (GB)
+
+↓ 
+
+> Avg. trainer active MFU (%)
+
+↑
+
+> Speedup (
+
+×) ↑ 
+
+> Trainer peak GPU memory (GB)
+
+↓   
+
+> Qwen-3.8-27B
+> tSync 024.0
+
+± 0.3 1.00 ± 0.00 117 .0 ± 0.8 23.4 ± 0.4 1.00 ± 0.00 118 .0 ± 0.9   
+
+> tAsync 145.4
+
+± 0.2 1.89 ± 0.03 117.2 ± 1.1 44.8 ± 0.5 1.92 ± 0.04 119.3 ± 1.0    
+
+> tFully Async Variable 45.7
+
+± 0.2 1.90 ± 0.03 118.6 ± 1.2 45.1 ± 0.3 1.93 ± 0.04 120.1 ± 1.1    
+
+> tThunderSyncRL 045 .9
+
+± 0.1 1.91 ± 0.04 122.8 ± 1.3 45 .3 ± 0.2 1.94 ± 0.03 121.3 ± 1.2    
+
+> GLM-4.7-Flash-31B
+> tSync 012.2
+
+± 0.1 1.00 ± 0.00 124 .0 ± 1.0 11.5 ± 0.1 1.00 ± 0.00 122 .1 ± 0.8   
+
+> tAsync 119.8
+
+± 0.2 1.62 ± 0.03 124 .0 ± 1.4 18.4 ± 0.2 1.60 ± 0.03 122.5 ± 1.3    
+
+> tFully Async Variable 19.9
+
+± 0.3 1.63 ± 0.04 125.2 ± 1.3 18.5 ± 0.2 1.61 ± 0.03 123.4 ± 1.2    
+
+> tThunderSyncRL 020 .0
+
+± 0.2 1.64 ± 0.03 129.4 ± 1.9 18 .7 ± 0.1 1.63 ± 0.02 124.1 ± 1.5 
+
+4.3 Efficiency across models and hardware 
+
+The speedup follows how the stages balance on each model and GPU (Section 4.4). On B200, Qwen-3.8-27B is near balance and reaches 1.91 × and 1.94 × over Sync under GRPO and OPD. GLM-4.7-Flash-31B activates about 3B parameters, so its learner work is short, rollout bounds the step, and the speedup is 1.64 × and 1.63 × (Table 1). On H200, the same Qwen workload becomes learner-bound and reaches 1.63 × and 1.67 ×
+
+(Table 2). Each comparison fixes the workload and GPU allocation across schedules, using Sync on the same hardware as the baseline. Trainer active MFU divides learner FLOPs by the complete update wall time and by trainer GPU capacity. The window covers rollout waiting, environment execution, teacher scoring, learner work, and policy publication, counting overlap once, so overlapping learner work with rollout raises the metric by reducing trainer idle time. ThunderSyncRL has the highest average active MFU in every configuration, from 18.7% for GLM to 51.0% for Qwen on H200. H200’s Sync MFU exceeds B200’s because the learner, not rollout, bounds its step, so Sync’s learner idles less. Figure 4 (right) shows the Qwen/B200 curves stabilizing after startup; Appendix B defines the FLOP accounting. ThunderSyncRL’s peak GPU memory exceeds Sync’s in every configuration, at most from 117.0 to 122.8 GB per learner GPU (Qwen, GRPO). These peaks exclude the pinned host RAM holding the FP32 accumulator and GRPO group statistics (Appendix D); rollout and teacher inference use separate GPUs. Table 7 reports LoRA (Appendix H.2). 
+
+4.4 Workload scaling and overlap efficiency 
+
+We show how ThunderSyncRL approaches its 2 × speedup bound across stage balance, trajectory hetero-geneity, batch size, and horizon; Appendix F derives this bound and the release laws. Every comparison in this section holds the workload and GPU allocation fixed between Sync and ThunderSyncRL, so no speedup comes from a change in workload or allocation. 
+
+Computation balance. Equal stage times offer the largest saving: complete overlap halves their combined duration, giving 2 × speedup when final reduction, optimizer, and publication overhead is negligible. If one stage dominates, it limits the saving. Appendix F.6 sweeps the ratio of rollout time to learner time at full capacity; one denotes equal times. We hold this balance below. 
+
+Trajectory heterogeneity. Agentic trajectories vary in length, and Sync’s learner waits for the slowest (Figure 3). ThunderSyncRL starts a trajectory’s backward pass once its reward arrives, so the learner works 9Table 2: Full fine-tuning efficiency on SWE-smith across GPU platforms with Qwen-3.8-27B. Method Policy lag (staleness) ↓
+
+GRPO OPD 
+
+Avg. trainer active MFU (%) ↑
+
+Speedup (×) ↑
+
+Trainer peak GPU memory (GB) ↓
+
+Avg. trainer active MFU (%) ↑
+
+Speedup (×) ↑
+
+Trainer peak GPU memory (GB) ↓
+
+NVIDIA B200 × 8
+
+tSync 0 24.0 ± 0.3 1.00 ± 0.00 117 .0 ± 0.8 23.4 ± 0.4 1.00 ± 0.00 118 .0 ± 0.9
+
+tAsync 1 45.4 ± 0.2 1.89 ± 0.03 117.2 ± 1.1 44.8 ± 0.5 1.92 ± 0.04 119.3 ± 1.0 
+
+tFully Async Variable 45.7 ± 0.2 1.90 ± 0.03 118.6 ± 1.2 45.1 ± 0.3 1.93 ± 0.04 120.1 ± 1.1 
+
+tThunderSyncRL 0 45 .9 ± 0.1 1.91 ± 0.04 122.8 ± 1.3 45 .3 ± 0.2 1.94 ± 0.03 121.3 ± 1.2 
+
+NVIDIA H200 × 8
+
+tSync 0 31.3 ± 0.4 1.00 ± 0.00 117 .1 ± 0.9 29.8 ± 0.4 1.00 ± 0.00 118.5 ± 1.0 
+
+tAsync 1 50.4 ± 0.5 1.61 ± 0.04 117.5 ± 1.2 49.2 ± 0.4 1.65 ± 0.03 118 .2 ± 1.1
+
+tFully Async Variable 50.7 ± 0.4 1.62 ± 0.03 118.9 ± 1.3 49.5 ± 0.5 1.66 ± 0.04 119.0 ± 1.1 
+
+tThunderSyncRL 0 51 .0 ± 0.3 1.63 ± 0.03 121.9 ± 1.4 49 .8 ± 0.4 1.67 ± 0.03 120.4 ± 1.3 25 30 35 40 45 50 0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4         
+
+> Trajectory duration std / mean
+> 1.0 1.2 1.4 1.6 1.8 2.0 2.2
+> Speedup over Sync ( ×)
+> ThunderSync (Ours) Sync
+> GRPO
+> 64 128 256 512 1024 2048
+> Trajectories per optimizer step
+> 1410 20 100 300
+> Agentic turns per trajectory  GRPO
+> 25 30 35 40 45 50 0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4
+> Trajectory duration std / mean
+> 1.0 1.2 1.4 1.6 1.8 2.0 2.2
+> ThunderSync (Ours) Sync
+> OPD
+> 64 128 256 512 1024 2048
+> Trajectories per optimizer step
+> 1410 20 100 300
+> OPD
+> 1.50 1.60 1.70 1.80 1.90 2.00
+> Speedup ratio
+> Trainer active MFU (%)
+
+(a) Trajectory duration dispersion (b) Batch size and horizon, Trollout /Ttrain = 1 
+
+Figure 7: (a) Speedup and trainer active MFU of measured steps versus trajectory duration dispersion, with least-squares fits. (b) Predicted speedup at Trollout /Ttrain = 1. while rollout continues. In a separate scaling setup, over 150 measured steps per objective at balance (Figure 7a), GRPO’s speedup rises from 1.58 × at near-equal durations, where only rollout waves overlap, to 1.95 × as the spread grows. OPD releases work per turn and stays at 1.73 to 1.94 ×.
+
+Batch and horizon. Figure 7b varies trajectories per optimizer step and agentic turns per trajectory. Rollout capacity is fixed at 128 trajectories, so larger batches run in successive waves. ThunderSyncRL processes ready work from earlier waves while later waves run. At balance, only the final wave’s learner work remains after rollout ends, forming the learner tail . As the batch grows, the tail and policy publication take a smaller share of the update, so the predicted speedup approaches 2 ×.With the completion-time distribution held fixed, GRPO’s predicted speedup does not change with turn count, because a trajectory’s work is released only when its reward arrives. For OPD, more turns spread releases and shorten the tail, with diminishing gains limited by deferred work (Appendix F.2). 
+
+Prediction and overhead. For Figure 8, we measured 588 paired configurations across both objectives, varying batch size at 40 turns and horizon at 512 trajectories while sweeping the rollout-to-learner time ratio. These scaling experiments use a separate setup from the learning-curve runs; Appendix F.5 specifies allocation and concurrency. Predictions from measured release traces differ from analytical predictions by 1.6% on average and at most 10.6%; measured wall-clock speedups average 6.5% below the trace predictions. These gaps describe release-model error and the remaining runtime overhead, respectively (Appendix F.5). 10 64 256 1024                    
+
+> Traj./step  turns = 40 GRPO
+> 0.3 0.5 1.0 2.0 4.0
+> Trollout =T train
+> 10 30 100 300
+> Turns/traj.  traj./step = 512
+> 1.0 1.2 1.4 1.6 1.8 2.0
+> Predicted speedup
+> 1.0 1.2 1.4 1.6 1.8 2.0
+> Measured speedup
+> 64 256 1024
+> Traj./step  turns = 40 OPD
+> 0.3 0.5 1.0 2.0 4.0
+> Trollout =T train
+> 10 30 100 300
+> Turns/traj.  traj./step = 512
+> 1.0 1.2 1.4 1.6 1.8 2.0
+> Predicted speedup
+> 1.0 1.2 1.4 1.6 1.8 2.0
+> Measured speedup
+> 1.00 1.16 1.32 1.48 1.66 1.83 2.00
+> Speedup ratio
+> Predicted from the measured release trace Measured wall-clock speedup
+
+Figure 8: Speedup over Sync. Contours show the analytical prediction across batch size (upper) and horizon (lower). Scatter panels pool both sweeps and plot this prediction against predictions from measured release traces (open circles) and measured wall-clock speedups (filled circles). 
+
+# 5 Conclusion 
+
+We presented ThunderSyncRL, which overlaps rollout and learning with zero off-policy staleness. It streams ready gradients at a fixed policy snapshot and takes one optimizer step after the batch closes, preserving the synchronous GRPO and OPD updates. Gradient sufficient statistics let GRPO backward passes start before all group rewards arrive, and teacher-scored turns let OPD learning proceed during tool execution. Step wall time speedup can approach 2 × when rollout and learner work are balanced and the learner tail and update overhead are negligible. Agent training at frontier scale moves only as fast as experiments turn into evidence. By recovering idle learner time without changing the objective, ThunderSyncRL shortens that loop, so the same compute answers more research questions. Further discussion, including limitations, appears in Appendix A. 11 References 
+
+[AVZ+24] Rishabh Agarwal, Nino Vieillard, Yongchao Zhou, Piotr Stanczyk, Sabela Ramos Garea, Matthieu Geist, and Olivier Bachem. “On-Policy Distillation of Language Models: Learning from Self-Generated Mistakes”. In: The Twelfth International Conference on Learning Representa-tions . 2024. [BZC+24] Hao Bai, Yifei Zhou, Mert Cemri, Jiayi Pan, Alane Suhr, Sergey Levine, and Aviral Kumar. “DigiRL: Training In-the-Wild Device-Control Agents with Autonomous Reinforcement Learn-ing”. In: Advances in Neural Information Processing Systems . 2024, pp. 12461–12495. [CHL+25] Shiyi Cao, Sumanth Hegde, Dacheng Li, Tyler Griggs, Shu Liu, Eric Tang, Jiayi Pan, Xingyao Wang, Akshay Malik, Graham Neubig, Kourosh Hakhamaneshi, Richard Liaw, Philipp Moritz, Matei Zaharia, Joseph E. Gonzalez, and Ion Stoica. SkyRL-v0: Train Real-World Long-Horizon Agents via Reinforcement Learning . 2025. [CHY+26] Rongjian Chen, Jianmin Hu, Kejiang Ye, and Minxian Xu. “RolloutPipe: Overlapping Pipelined Rollout and Training in Disaggregated On-Policy LLM Reinforcement Learning”. In: arXiv preprint arXiv:2606.26997 (2026). [CSL+25] Mingyang Chen, Linzhuang Sun, Tianpeng Li, Haoze Sun, Yijie Zhou, Chenzheng Zhu, Haofen Wang, Jeff Z. Pan, Wen Zhang, Huajun Chen, Fan Yang, Zenan Zhou, and Weipeng Chen. “ReSearch: Learning to Reason with Search for LLMs via Reinforcement Learning”. In: Advances in Neural Information Processing Systems . 2025, pp. 85287–85307. [CTJ+21] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, et al. “Evaluating Large Language Models Trained on Code”. In: arXiv preprint arXiv:2107.03374 (2021). [CTL+26] Kaiwen Chen, Xin Tan, Jingzong Li, Zhi Zhou, Cen Li, Jiang Liu, Meng Jie, Jiazhi Jiang, and Hong Xu. “Libra: Efficient Resource Management for Agentic RL Post-Training”. In: arXiv preprint arXiv:2606.03077 (2026). [DLH+26] Yifeng Ding, Hung Le, Songyang Han, Kangrui Ruan, Zhenghui Jin, Varun Kumar, Zijian Wang, and Anoop Deoras. “Empowering Multi-Turn Tool-Integrated Agentic Reasoning with Group Turn Policy Optimization”. In: Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics . 2026, pp. 42409–42423. [ESM+18] Lasse Espeholt, Hubert Soyer, Remi Munos, Karen Simonyan, Volodymyr Mnih, Tom Ward, Yotam Doron, Vlad Firoiu, Tim Harley, Iain Dunning, Shane Legg, and Koray Kavukcuoglu. “IMPALA: Scalable Distributed Deep-RL with Importance Weighted Actor-Learner Architec-tures”. In: Proceedings of the 35th International Conference on Machine Learning . 2018, pp. 1407– 1416. [FGS+25] Wei Fu, Jiaxuan Gao, Xujie Shen, Chen Zhu, Zhiyu Mei, Chuyi He, Shusheng Xu, Guo Wei, Jun Mei, Jiashu Wang, et al. “Areal: A large-scale asynchronous reinforcement learning system for language reasoning”. In: Advances in Neural Information Processing Systems . 2025, pp. 36256– 36282. [FHQ+26] Jiazhan Feng, Shijue Huang, Xingwei Qu, Ge Zhang, Yujia Qin, Baoquan Zhong, Chengquan Jiang, Jinxin Chi, and Wanjun Zhong. “ReTool: Reinforcement Learning for Strategic Tool Use in LLMs”. In: International Conference on Learning Representations . 2026, pp. 37909–37926. [GMZ+25] Anna Goldie, Azalia Mirhoseini, Hao Zhou, Irene Cai, and Christopher D Manning. “Synthetic Data Generation and Multi-Step Reinforcement Learning for Reasoning and Tool Use”. In: 
+
+Second Conference on Language Modeling . 2025. [GZA+25] Wei Gao, Yuheng Zhao, Dakai An, Tianyuan Wu, Lunxi Cao, Shaopan Xiong, Ju Huang, Weixun Wang, Siran Yang, Wenbo Su, Jiamang Wang, Lin Qu, Bo Zheng, and Wei Wang. “RollPacker: Mitigating Long-Tail Rollouts for Fast, Synchronous RL Post-Training”. In: arXiv preprint arXiv:2509.21009 (2025). 12 [GZC+25] Jonas Gehring, Kunhao Zheng, Jade Copet, Vegard Mella, Taco Cohen, and Gabriel Synnaeve. “RLEF: Grounding Code LLMs in Execution Feedback with Reinforcement Learning”. In: 
+
+Forty-second International Conference on Machine Learning . 2025. [GZL+25] GLM Team, Aohan Zeng, Xin Lv, Qinkai Zheng, Zhenyu Hou, Bin Chen, Chengxing Xie, Cunxiang Wang, Da Yin, Hao Zeng, Jiajie Zhang, et al. “GLM-4.5: Agentic, Reasoning, and Coding (ARC) Foundation Models”. In: arXiv preprint arXiv:2508.06471 (2025). [HLT+26] Zhenyu Hou, Yujiang Li, Jie Tang, and Yuxiao Dong. “Single-Rollout Asynchronous Optimiza-tion for Agentic Reinforcement Learning”. In: arXiv preprint arXiv:2607.07508 (2026). [HOC+26] Zhengding Hu, Hehua Ouyang, Chang Chen, Zaifeng Pan, Yue Guan, Zhongkai Yu, Zhen Wang, Steven Swanson, and Yufei Ding. “JigsawRL: Assembling RL Pipelines for Efficient LLM Post-Training”. In: arXiv preprint arXiv:2604.23838 (2026). [HWS+25] Jian Hu, Xibin Wu, Wei Shen, Jason Klein Liu, Weixun Wang, Songlin Jiang, Haoran Wang, Hao Chen, Bin Chen, Wenkai Fang, et al. “OpenRLHF: A ray-based easy-to-use, scalable and high-performance rlhf framework”. In: Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing: System Demonstrations . 2025, pp. 656–666. [HYW+26] Zhenyu Han, Ansheng You, Haibo Wang, Kui Luo, Guang Yang, Wenqi Shi, Menglong Chen, Sicheng Zhang, Zeshun Lan, Chunshi Deng, Huazhong Ji, Wenjie Liu, Yu Huang, Yixiang Zhang, Chenyi Pan, Jing Wang, Xin Huang, Chunsheng Li, and Jianping Wu. “AsyncFlow: An Asynchronous Streaming RL Framework for Efficient LLM Post-Training”. In: arXiv preprint arXiv:2507.01663 (2026). [JLL+26] Dongfu Jiang, Yi Lu, Zhuofeng Li, Zhiheng Lyu, Ping Nie, Haozhe Wang, Alex Su, Hui Chen, Kai Zou, Chao Du, Tianyu Pang, and Wenhu Chen. “VerlTool: Towards Holistic Agentic Reinforcement Learning with Tool Use”. In: Transactions on Machine Learning Research (2026). [JYW+24] Carlos E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik Narasimhan. “SWE-bench: Can Language Models Resolve Real-world GitHub Issues?” In: International Conference on Learning Representations . 2024, pp. 54107–54157. [JZY+25] Bowen Jin, Hansi Zeng, Zhenrui Yue, Jinsung Yoon, Sercan O Arik, Dong Wang, Hamed Zamani, and Jiawei Han. “Search-R1: Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning”. In: Second Conference on Language Modeling . 2025. [KSS+26] Hangoo Kang, Tarun Suresh, Jon Saad-Falcon, and Azalia Mirhoseini. “TRACE: Capability-Targeted Agentic Training”. In: arXiv preprint arXiv:2604.05336 (2026). [LHW25] Zhiwei Li, Yong Hu, and Wenqing Wang. “Encouraging Good Processes Without the Need for Good Answers: Reinforcement Learning for LLM Agent Planning”. In: Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing: Industry Track . 2025, pp. 1654– 1666. [LZH+25] Xufang Luo, Yuge Zhang, Zhiyuan He, Zilong Wang, Siyun Zhao, Dongsheng Li, Luna K. Qiu, and Yuqing Yang. “Agent Lightning: Train ANY AI Agents with Reinforcement Learning”. In: 
+
+arXiv preprint arXiv:2508.03680 (2025). [MFL+25] Zhiyu Mei, Wei Fu, Kaiwei Li, Guangju Wang, Huanchen Zhang, and Yi Wu. “ReaL: Efficient RLHF Training of Large Language Models with Parameter Reallocation”. In: Proceedings of Machine Learning and Systems . 2025. [MSC+26] Mike A. Merrill, Alexander G. Shaw, Nicholas Carlini, Boxuan Li, Harsh Raj, Ivan Bercovich, Lin Shi, Jeong Yeon Shin, Thomas Walshe, E. Kelly Buchanan, Junhong Shen, Guanghao Ye, Haowei Lin, Jason Poulos, Maoyu Wang, Marianna Nezhurina, Di Lu, Orfeas Menis Mastromichalakis, Zhiwei Xu, Zizhao Chen, Yue Liu, Robert Zhang, Leon Liangyu Chen, Anurag Kashyap, Jan-Lucas Uslu, Jeffrey Li, Jianbo Wu, Minghao Yan, Song Bian, Vedang Sharma, Ke Sun, Steven Dillmann, Akshay Anand, Andrew Lanpouthakoun, Bardia Koopah, Changran Hu, Etash Guha, Gabriel H. S. Dreiman, Jiacheng Zhu, Karl Krauth, Li Zhong, Niklas Muennighoff, Robert Amanfu, Shangyin Tan, Shreyas Pimpalgaonkar, Tushar Aggarwal, Xiangning Lin, Xin Lan, Xuandong Zhao, Yiqing Liang, Yuanli Wang, Zilong Wang, Changzhi 13 Zhou, David Heineman, Hange Liu, Harsh Trivedi, John Yang, Junhong Lin, Manish Shetty, Michael Yang, Nabil Omi, Negin Raoof, Shanda Li, Terry Yue Zhuo, Wuwei Lin, Yiwei Dai, Yuxin Wang, Wenhao Chai, Shang Zhou, Dariush Wahdany, Ziyu She, Jiaming Hu, Zhikang Dong, Yuxuan Zhu, Sasha Cui, Ahson Saiyed, Arinbjörn Kolbeinsson, Christopher Michael Rytting, Ryan Marten, Yixin Wang, Jenia Jitsev, Alex Dimakis, Andy Konwinski, and Ludwig Schmidt. “Terminal-Bench: Benchmarking Agents on Hard, Realistic Tasks in Command Line Interfaces”. In: International Conference on Learning Representations . 2026, pp. 40903–40986. [PHK+20] Aleksei Petrenko, Zhehui Huang, Tushar Kumar, Gaurav Sukhatme, and Vladlen Koltun. “Sample Factory: Egocentric 3D Control from Pixels at 100000 FPS with Asynchronous Rein-forcement Learning”. In: Proceedings of the 37th International Conference on Machine Learning .2020, pp. 7652–7662. [PKP+25] Alexandre Piché, Ehsan Kamalloo, Rafael Pardinas, Xiaoyin Chen, and Dzmitry Bahdanau. “PipelineRL: Faster On-Policy Reinforcement Learning for Long Sequence Generation”. In: 
+
+arXiv preprint arXiv:2509.19128 (2025). [PWN+25] Jiayi Pan, Xingyao Wang, Graham Neubig, Navdeep Jaitly, Heng Ji, Alane Suhr, and Yizhe Zhang. “Training Software Engineering Agents and Verifiers with SWE-Gym”. In: Forty-second International Conference on Machine Learning . 2025. [QAH+25] Cheng Qian, Emre Can Acikgoz, Qi He, Hongru Wang, Xiusi Chen, Dilek Hakkani-Tur, Gokhan Tur, and Heng Ji. “Toolrl: Reward is all tool learning needs”. In: Advances in Neural Information Processing Systems . 2025, pp. 105523–105553. [QHH+26] Ruoyu Qin, Weiran He, Weixiao Huang, Yangkun Zhang, Yikai Zhao, Bo Pang, Xinran Xu, Yingdi Shan, Yongwei Wu, and Mingxing Zhang. “Seer: Online Context Learning for Fast Synchronous LLM Reinforcement Learning”. In: 20th USENIX Symposium on Operating Systems Design and Implementation (OSDI 26) . 2026, pp. 883–901. [QLI+25] Zehan Qi, Xiao Liu, Iat Long Iong, Hanyu Lai, Xueqiao Sun, Jiadai Sun, Xinyue Yang, Yu Yang, Shuntian Yao, Wei Xu, Jie Tang, and Yuxiao Dong. “WebRL: Training LLM Web Agents via Self-Evolving Online Curriculum Reinforcement Learning”. In: International Conference on Learning Representations . 2025, pp. 79791–79821. [Qwe26a] Qwen Team. Qwen3.8-27B . https://huggingface.co/Qwen/Qwen3.8- 27B . Hugging Face model card. Aug. 2026. [Qwe26b] Qwen Team. Qwen3.8-Max: A New Bar for Coding and Cowork . https://qwen.ai/blog?id= qwen3.8 . Aug. 2026. [RWL+26] Yanyu Ren, Xizheng Wang, Xiao Liu, Bowen Lv, Hanchen Zhang, Shudan Zhang, Hanyu Lai, Shuai Wang, Li Chen, Dan Li, and Jie Tang. “TideRL: Boosting Agentic RL Goodput with Readiness-Aware Scheduling”. In: arXiv preprint arXiv:2608.10402 (2026). [SHK+26] Qijia Shen, Zhiqi Huang, Vamsidhar Kamanuru, Aznaur Aliev, Jay Rainton, Ahmed Awelkair, Zhichen Zeng, Jiajun Li, Shi Dong, Yueming Yuan, Boyuan Ma, Qizheng Zhang, Jiwei Fu, Yuzhen Mao, Wendong Fan, Ping Nie, Philip Torr, Bernard Ghanem, Changran Hu, Jonathan Lingjie Li, Urmish Thakker, and Guohao Li. “SETA: Scaling Environments for Terminal Agents”. In: arXiv preprint arXiv:2607.10891 (2026). [SHK25] Michael Sullivan, Mareike Hartmann, and Alexander Koller. “Procedural Environment Gener-ation for Tool-Use Agents”. In: Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing . 2025, pp. 18544–18562. [SJM+25] Huatong Song, Jinhao Jiang, Yingqian Min, Jie Chen, Zhipeng Chen, Wayne Xin Zhao, Lei Fang, and Ji-Rong Wen. “R1-Searcher: Incentivizing the Search Capability in LLMs via Reinforcement Learning”. In: arXiv preprint arXiv:2503.05592 (2025). [SWZ+24] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. “DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models”. In: arXiv preprint arXiv:2402.03300 
+
+(2024). 14 [SZY+25] Guangming Sheng, Chi Zhang, Zilingfeng Ye, Xibin Wu, Wang Zhang, Ru Zhang, Yanghua Peng, Haibin Lin, and Chuan Wu. “HybridFlow: A Flexible and Efficient RLHF Framework”. In: Proceedings of the Twentieth European Conference on Computer Systems . 2025, pp. 1279–1297. [WDC+25] Yuxiang Wei, Olivier Duchenne, Jade Copet, Quentin Carbonneaux, Lingming Zhang, Daniel Fried, Gabriel Synnaeve, Rishabh Singh, and Sida Wang. “SWE-RL: Advancing LLM Reason-ing via Reinforcement Learning on Open Software Evolution”. In: The Thirty-ninth Annual Conference on Neural Information Processing Systems . 2025. [WH24] Franklin Wang and Sumanth Hegde. “Accelerating Direct Preference Optimization with Prefix Sharing”. In: NeurIPS 2024 Workshop on Fine-Tuning in Modern Machine Learning: Principles and Scalability . 2024. [WWC+26] Jinghui Wang, Shaojie Wang, Yinghan Cui, Xuxing Chen, Chao Wang, Liang Huang, Can Tang, Xiaojiang Zhang, Junyi Peng, Li Wan, Haotian Zhang, and Bin Chen. “Tree Training: Accel-erating Agentic LLMs Training via Shared Prefix Reuse”. In: arXiv preprint arXiv:2511.00413 
+
+(2026). [WWT+25] Bo Wu, Sid Wang, Yunhao Tang, Jia Ding, Eryk Helenowski, Liang Tan, Tengyu Xu, Tushar Gowda, Zhengxing Chen, Chen Zhu, Xiaocheng Tang, Yundi Qian, Beibei Zhu, and Rui Hou. “LlamaRL: A Distributed Asynchronous Reinforcement Learning Framework for Efficient Large-Scale LLM Training”. In: arXiv preprint arXiv:2505.24034 (2025). [WWW+25] Zihan Wang, Kangrui Wang, Qineng Wang, Pingyue Zhang, Linjie Li, Zhengyuan Yang, Xing Jin, Kefan Yu, Minh Nhat Nguyen, Licheng Liu, Eli Gottlieb, Yiping Lu, Kyunghyun Cho, Jiajun Wu, Fei-Fei Li, Lijuan Wang, Yejin Choi, and Manling Li. “RAGEN: Understanding Self-Evolution in LLM Agents via Multi-Turn Reinforcement Learning”. In: arXiv preprint arXiv:2504.20073 (2025). [WYL+25] Zhepei Wei, Wenlin Yao, Yao Liu, Weizhi Zhang, Qin Lu, Liang Qiu, Changlong Yu, Puyang Xu, Chao Zhang, Bing Yin, Hyokun Yun, and Lihong Li. “WebAgent-R1: Training Web Agents via End-to-End Multi-Turn Reinforcement Learning”. In: Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing . 2025, pp. 7909–7928. [XZB+26] Ryan Xu, Atlas Zhao, David Bao, and Frank Du. “WAR: Workload-Aware Rollouts for Syn-chronous Agentic Reinforcement Learning”. In: arXiv preprint arXiv:2607.17299 (2026). [YAR+23] Zhewei Yao, Reza Yazdani Aminabadi, Olatunji Ruwase, Samyam Rajbhandari, Xiaoxia Wu, Ammar Ahmad Awan, Jeff Rasley, Minjia Zhang, Conglong Li, Connor Holmes, Zhongzhu Zhou, Michael Wyatt, Molly Smith, Lev Kurilenko, Heyang Qin, Masahiro Tanaka, Shuai Che, Shuaiwen Leon Song, and Yuxiong He. “DeepSpeed-Chat: Easy, Fast and Affordable RLHF Training of ChatGPT-like Models at All Scales”. In: arXiv preprint arXiv:2308.01320 (2023). [YLJ+25] John Yang, Kilian Lieret, Carlos E. Jimenez, Alexander Wettig, Kabir Khandpur, Yanzhe Zhang, Binyuan Hui, Ofir Press, Ludwig Schmidt, and Diyi Yang. “SWE-smith: Scaling Data for Software Engineering Agents”. In: Advances in Neural Information Processing Systems . 2025, pp. 107402–107452. [Zai26] Z.ai. GLM-4.7-Flash . https://huggingface.co/zai- org/GLM- 4.7- Flash . Hugging Face model card. Jan. 2026. [ZFH+25] Yuxiang Zheng, Dayuan Fu, Xiangkun Hu, Xiaojie Cai, Lyumanshan Ye, Pengrui Lu, and Pengfei Liu. “DeepResearcher: Scaling Deep Research via Reinforcement Learning in Real-World Environments”. In: Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing . 2025, pp. 414–431. [ZLS+25] Yuzhen Zhou, Jiajun Li, Yusheng Su, Gowtham Ramesh, Zilin Zhu, Xiang Long, Chenyang Zhao, Jin Pan, Xiaodong Yu, Ze Wang, Kangrui Du, Jialian Wu, Ximeng Sun, Jiang Liu, Qiaolin Yu, Hao Chen, Zicheng Liu, and Emad Barsoum. “APRIL: Active Partial Rollouts in Reinforcement Learning to Tame Long-tail Generation”. In: arXiv preprint arXiv:2509.18521 
+
+(2025). 15 [ZWM+25] Weikang Zhao, Xili Wang, Chengdi Ma, Lingbin Kong, Zhaohua Yang, Mingxiang Tuo, Xi-aowei Shi, Yitao Zhai, and Xunliang Cai. “MUA-RL: Multi-Turn User-Interacting Agent Reinforcement Learning for Agentic Tool Use”. In: arXiv preprint arXiv:2508.18669 (2025). [ZZP+24] Yifei Zhou, Andrea Zanette, Jiayi Pan, Sergey Levine, and Aviral Kumar. “ArCHer: Training Language Model Agents via Hierarchical Multi-Turn RL”. In: Forty-first International Conference on Machine Learning . 2024. [ZZS+25] Yinmin Zhong, Zili Zhang, Xiaoniu Song, Hanpeng Hu, Chao Jin, Bingyang Wu, Nuo Chen, Yukun Chen, Yu Zhou, Changyi Wan, Hongyu Zhou, Yimin Jiang, Yibo Zhu, and Daxin Jiang. “StreamRL: Scalable, Heterogeneous, and Elastic RL for LLMs with Disaggregated Stream Generation”. In: arXiv preprint arXiv:2504.15930 (2025). [ZZW+25] Yinmin Zhong, Zili Zhang, Bingyang Wu, Shengyu Liu, Yukun Chen, Changyi Wan, Hanpeng Hu, Lei Xia, Ranchen Ming, Yibo Zhu, and Xin Jin. “Optimizing RLHF Training for Large Language Models with Stage Fusion”. In: 22nd USENIX Symposium on Networked Systems Design and Implementation . 2025, pp. 489–503. 16 Appendices 
+
+A Limitation and further discussion 18 B Efficiency measurement 18 
+
+B.1 Trainer active MFU . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 B.2 Average trainer active MFU . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19 B.3 Step wall time speedup . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19 B.4 Hardware allocation and memory . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19 
+
+C Training data and benchmark separation 20 
+
+C.1 Data sources and versions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20 C.2 Filtering and development splits . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 C.3 Scope of benchmark separation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22 
+
+D Optimization and generation settings 22 
+
+D.1 Logical batches and optimization . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22 D.2 Agent interaction and generation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23 D.3 Teacher and hardware allocation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24 D.4 Comparison controls . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25 
+
+E Evaluation setup 25 
+
+E.1 Benchmarks and success criteria . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25 E.2 Attempts, aggregation, and uncertainty . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26 E.3 Checkpoints and GPU-hours comparisons . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26 
+
+F Scalability theory 27 
+
+F.1 Step time and the learner tail . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 27 F.2 How work release determines the tail . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28 F.3 Batch size and successive rollout waves . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 29 F.4 Finite batches and model limitations . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 29 F.5 Figure parameters and comparison with measurements . . . . . . . . . . . . . . . . . . . . . . 30 F.6 Balance sweeps . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31 
+
+G Empirical update equivalence 31 H Further Experimental Results 35 
+
+H.1 Pass@1 and Pass@5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 35 H.2 Efficiency with LoRA . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 35 
+
+I ThunderSyncRL algorithm and implementation 37 
+
+I.1 GRPO . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 38 I.2 On-policy distillation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 39 17 A Limitation and further discussion 
+
+ThunderSyncRL rests on one premise: learner work should begin as soon as the objective’s dependencies allow. How much this saves is therefore set as much by the workload as by the scheduler. Objectives whose gradient inputs resolve early, such as turn-level OPD, leave more learner work to overlap with rollout than objectives that wait on group-level signals, and the benefit is largest when rollout and learner work take comparable time. Starting work early also means keeping partial gradient state until each group or batch closes, which exchanges trainer memory for wall time. We regard these dependencies as a design space. Finer readiness units and admission that weighs memory against remaining service would move more learner work into the rollout window, and identifying readiness units for other objectives would extend exact gradient streaming beyond GRPO and OPD. Scaling the same principle to multi-node training and a broader set of agentic workloads is a natural next step. 
+
+# B Efficiency measurement 
+
+B.1 Trainer active MFU 
+
+Throughout this paper, trainer active MFU denotes the learner’s model FLOPs divided by the complete update wall time and the peak capacity of the trainer GPUs. We use this label for the step-averaged trainer metric, whose time window includes rollout waiting and trainer idle intervals. For update k, let Ftrain  
+
+> k
+
+be the model FLOPs required by the learner, Tstep  
+
+> k
+
+its complete update wall time, and Pd the dense-BF16 peak rate used for trainer GPU d. We define MFU active  
+
+> k
+
+= Ftrain 
+
+> k
+
+Tstep  
+
+> k
+
+∑d∈D train Pd
+
+. (10) The capacity denominator includes the trainer GPUs, with the same peak-rate convention for all methods within a hardware configuration. Figure 4 and Tables 1, 2, and 7 use this definition. The denominator uses the same wall-clock intervals as step wall time below. For Sync and Thunder-SyncRL, an interval begins with the update’s rollout and ends when the rollout replicas acknowledge the published policy. It includes environment and reward processing, teacher scoring, all learner work, final reduction, optimizer execution, and publication. Waiting for a source to become ready remains included. For Async, we use complete steady-state update cycles between successive policy-publication acknowledge-ments, counting concurrent stages once. For ThunderSyncRL, deferred context gradients and shared-prefix backward must finish within the measured update. The FLOPs numerator follows the model architecture and the contexts processed by the learner. Context tokens contribute computation even when their loss mask is zero. For LoRA, the count includes forward computation and backward propagation through frozen weights, as well as adapter gradients. Activation-checkpoint recomputation contributes to elapsed time without being credited as additional model FLOPs. Rollout generation and teacher scoring contribute to elapsed time, but their FLOPs and GPU capacity are excluded from this trainer-side metric. 
+
+Operator accounting. For a matrix product with dimensions (m × k)( k × n), the counter credits 2 mkn 
+
+FLOPs. A linear layer processing T tokens with input/output widths din , dout therefore costs 2 Td in dout per forward pass. When both input and weight gradients are required, backward adds two such products. A frozen LoRA base omits the weight-gradient product but retains the input-gradient product wherever gradients propagate through it. The rank-r adapter’s forward and backward products are counted separately. The ledger sums executed attention projections, query-key and attention-value products, dense and recurrent blocks, and vocabulary projections using their actual tensor shapes. For GLM, routed-expert products use the number of tokens dispatched to each expert; shared experts and routing computation are included separately. Neither total stored parameters nor the nominal active-parameter count alone is an adequate FLOP counter. Padding that reaches a kernel counts as executed work. Each record keeps useful model work separate from checkpoint recomputation, so the latter increases elapsed time without inflating the credited numerator. 18 B.2 Average trainer active MFU 
+
+For a reporting window of N completed updates after warmup, average trainer active MFU is MFU active = 1
+
+N
+
+> N
+
+# ∑
+
+> k=1
+
+MFU active  
+
+> k
+
+. (11) Each term uses the learner FLOPs and complete wall time of the same update cycle. With fixed learner work and trainer capacity, shorter updates increase trainer active MFU. Overlapping learner computation with rollout can therefore raise this metric without changing kernel throughput. Within one configuration, all schedules process the same learner FLOPs, so the MFU ratio to Sync tracks the step wall time speedup; across models and hardware, learner FLOPs differ. 
+
+Profiling window and aggregation. We completed 40 updates for each of seeds 42, 43, and 44, discarded updates 1–4 as startup, and profiled updates 5–40 ( N = 36). Startup includes initial compilation and allocator/cache growth; it is distinct from learning-rate warmup. All schedules retain the same number of complete steady-state intervals, with extra pipeline startup/drain work recorded outside the Async measurement window. The wall-time denominator uses a common host timebase for complete update cycles. Gaps with no admitted learner work remain included; we do not replace this window with a union of active kernel intervals. CUDA events recorded device service without synchronizing after every turn. We collected detailed operator counts in a separate untimed trace pass with the same workload and tensor shapes. Within each seed, MFU is averaged over the 36 updates and speedup is the ratio of mean step times. We report the mean and, where shown, sample standard deviation across the three seed-level summaries, rather than treating 108 correlated updates as independent runs. 
+
+B.3 Step wall time speedup 
+
+Step wall time is the elapsed wall-clock time per completed training update. The interval includes rollout, environment and reward processing, learner work, final reduction, and policy publication. It ends when the rollout replicas acknowledge the updated policy. For N completed updates, let ¯ Tstep method be elapsed time divided by N. Speedup for each objective and configuration is Speedup method =
+
+¯Tstep Sync 
+
+¯Tstep method 
+
+, (12) where both times use the same workload, hardware allocation, and number of completed updates after warmup. This is a ratio of mean step wall times, not a mean of per-step ratios or a ratio of kernel execution times. For Async, the window covers completed steady-state update cycles with the declared one-update policy lag; overlapping stages contribute once to elapsed time. 
+
+B.4 Hardware allocation and memory 
+
+Each eight-GPU configuration assigns four GPUs to the learner. GRPO uses the remaining four for rollout; OPD uses two for rollout and two for the teacher. ThunderSyncRL replicates parameters, shards optimizer state, and accumulates gradients on the host. Appendix D gives the precision and execution settings. The dense-BF16 peak rates used in the MFU denominator are 2,250 TFLOP/s per B200 GPU and 989.5 TFLOP/s per H200 GPU. We report two kinds of memory. GPU memory is the HBM on each learner GPU; host memory is the CPU RAM of the node. Tables 1 and 2 report trainer peak GPU memory per GPU. The reported peak is the largest among the learner GPUs during an update, including gradient accumulation, distributed reduction, and optimizer execution. It covers resident model and optimizer state, activations, gradient buffers, and temporary storage on those GPUs. Rollout KV caches and teacher memory belong to their separate GPU pools. The serving memory fraction of 0.65 controls the rollout executors’ memory budget. 19 We reset each learner process’s CUDA peak-memory counters at the start of the profiled update, after the persistent model and optimizer state is resident, and read them after all backward, reduction, and optimizer work has completed. We report torch .cuda .max _memory _allocated () as the tensor allocation peak, taking the maximum across learner ranks and profiled updates within each seed, and convert bytes to decimal GB (10 9 bytes). We record reserved allocator memory and device-wide memory from NVML separately, since they include different allocations. 1 Deferred-state buffers that stay on the learner GPUs count toward ThunderSyncRL’s GPU peak. The FP32 batch accumulator and the GRPO group statistics sit in pinned host memory, so this counter does not include them; Appendix D bounds their host-memory size. A model-state size or a serving-memory limit is not a measured peak. We use the same collection procedure for the full fine-tuning and LoRA comparisons. 
+
+# C Training data and benchmark separation 
+
+C.1 Data sources and versions 
+
+The software-engineering workload uses SWE-smith, and the terminal workload uses SETA-Env. These are separate post-training workloads, evaluated on SWE-bench Verified and Terminal Bench 4.0, respectively. Table 3 fixes the latest public revisions inspected on September 6, 2026. Revisions stay fixed throughout a comparison, including benchmark task definitions and evaluation resources. 
+
+Table 3: Pinned data sources. Sizes describe the inspected source pools before the filtering and development split in Table 4.                  
+
+> Collection Role Tasks Revision or release SWE-smith Python Post-training 50,908 77cab9055d42
+> SETA-Env Post-training 4,567 3c3bc8975b05
+> SWE-bench Verified Evaluation 500 78f471bf655a
+> Terminal Bench 4.0 Evaluation 66 v4 .0.0/452bf305c6da
+
+SWE-smith. SWE-smith constructs executable repository-repair tasks by introducing bugs into working codebases and identifying tests that fail after the change [YLJ+25]. Its construction methods include language-model rewrites, procedural edits, combined bugs, and pull-request mirroring. The original paper reports 50,137 instances from 128 repositories. The selected, maintained Python release contains 50,908 instances from 131 repositories. 2 Each record supplies a problem statement, a repository environment, a bug-inducing patch, and test identifiers. The environment setup must apply this patch before agent interaction; its direction is the opposite of the solution patch in SWE-bench. Existing repository tests can be visible during SWE-smith training, so training reward and performance on held-out repair tasks measure different things. 
+
+SETA-Env. SETA builds terminal environments from community questions and answers, Kaggle notebooks, and natural-language shell-command examples. SETA-Synth creates tasks with executable environments and verifiers; SETA-Evol changes their difficulty or context [SHK+26]. The inspected release has 3,255 synthesized and 1,312 evolved task directories, matching the 4,567 tasks reported in its paper and dataset card. 3 Each task includes instructions, an environment definition, a reference solution, and executable tests. SETA’s construction procedure checks a no-op solution and an oracle solution, then audits systematic rollout failures for task-design flaws. These upstream checks describe dataset construction; they do not replace validation of the environments used in ThunderSyncRL runs.    
+
+> 1The CUDA memory APIs and the distinction between allocated and reserved memory are documented in the PyTorch memory-management notes.
+> 2The selected source is the maintained SWE-smith Python release. The older monolithic SWE -bench /SWE -smith release has different contents and directs users to the language-specific collections.
+> 3The source is camel -ai /SETA -Env .
+
+20 C.2 Filtering and development splits 
+
+The static SWE-smith filter requires a nonempty instance identifier, problem statement, repository identifier, and environment image, and retains one record per instance identifier. This removes 11,437 records, all with empty problem statements. The remaining 39,471 instances cover 131 repositories. Before comparing repository identities, the filter maps SWE-smith mirror names back to their original owner/repository names and normalizes case. None of these repositories matches the 12 repositories in the pinned SWE-bench Verified set. For SETA, the static filter requires task .toml , instructions, an environment Dockerfile, a test entrypoint, and a reference-solution entrypoint. All 4,567 task directories pass this check. A source-family identifier removes the evolution suffix from an evolved task’s identifier. Tasks in the same source family stay in one split, including evolved tasks whose original is absent from the release. The development split contains 5% of groups, rounded up: repositories for SWE-smith and source families for SETA. Groups are ordered by the SHA-256 digest of the normalized group identifier; the first groups form the development set. The remaining groups form the training set. This produces Table 4. Task lists and their digests define the split independently of model performance or trajectory completion time. This five-percent group split is a ThunderSyncRL protocol choice, not an official development split supplied by either dataset. 
+
+Table 4: Statically constructed cohorts for the declared protocol, before prompt-length checks, container validation, and semantic-overlap review.                 
+
+> Stage SWE-smith Python SETA-Env Source tasks 50,908 4,567 Removed by static field/file checks 11,437 0Eligible tasks 39,471 4,567 Split groups 131 repositories 3,474 source families Training tasks 37,084 4,333 Development tasks 2,387 234 Training/development groups 124 / 7 3,300 / 174
+
+Executable validation. For SWE-smith, we ran the validation harness on the original repository, then applied the bug-inducing patch and tested it again. Its collection rule requires at least one repair test and one retained passing test; evaluation with the gold repair provides a separate harness sanity check. 4 For SETA, we started a fresh environment for each of the no-op and reference solutions, recorded the verifier output, and required the reference solution to pass without the no-op already solving the task. These checks validate the environment and reward signal, not the trained policy. The run manifest records the task identifier, source revision, image digest, verifier revision, validation outcome, and any exclusion reason. Prompt-length filtering uses the pinned student tokenizer and the actual serialized system, tool, and task prompt before rollout. A failing task is removed from every schedule’s cohort before shuffling; its removal updates the task count and list digest. Table 4 reports the static cohort construction; the execution manifest records subsequent validation exclusions and the final task lists used by each comparison. A task’s difficulty, a zero-variance GRPO group, or a long trajectory does not trigger exclusion. Although campaign-specific SETA launchers can select benchmark tasks or discard uniform-reward groups, 5 our comparison retains those groups and excludes Terminal Bench tasks from training. Within a seed, schedules draw prompts from the same shuffled training list without replacement, reshuffling when it is exhausted. The two datasets are not mixed, and development tasks contribute no training gradients. 
+
+> 4See the SWE-smith validation and evaluation guide.
+> 5See the versioned SETA GLM training launcher.
+
+21 C.3 Scope of benchmark separation 
+
+Excluding benchmark task identifiers is only one check on data separation. The SWE-smith paper describes using a SWE-bench Verified problem statement as a style demonstration during issue generation (Appendix D of [YLJ+25]). Repository disjointness therefore does not establish that its construction was independent of benchmark text. For SETA, checks must cover instructions, reference solutions, tests, and source ancestry, including relationships to earlier Terminal Bench releases. The static checks above do not establish semantic decontamination. The overlap review first matches task IDs, canonical repository or source IDs, and hashes of whitespace-normalized instructions, solutions, and tests. Candidate paraphrases and evolved descendants then require source inspection. A confirmed benchmark derivative excludes its entire source family before splitting; ambiguous cases remain recorded rather than being certified clean. Counts of candidates, confirmed overlaps, and exclusions accompany the final cohort manifest. The protocol excludes benchmark tasks, solutions, verifier outputs, and identified derivatives from training, prompts, and development selection. Upstream data generation or model pretraining may still expose the student or teacher to benchmark content. Results therefore compare schedules with matched data and models, without establishing that every task was unseen throughout model development. 
+
+# D Optimization and generation settings 
+
+D.1 Logical batches and optimization 
+
+Table 5 gives shared optimization settings for Sync, Async, and ThunderSyncRL within each objective. The main configuration updates the student’s language-model parameters. The text-only agent interface does not use Qwen’s vision components. The LoRA configuration is separate from full fine-tuning. 
+
+Table 5: Declared optimization settings. Each column is a separate comparison among execution schedules. The learning rate for the separate LoRA configuration is 10 −5.               
+
+> Setting GRPO OPD Prompts per optimizer update 32 32 Trajectories per prompt 84 independent samples Trajectories per optimizer update 256 128 Optimizer AdamW AdamW Full fine-tuning learning rate 10 −610 −6
+> Learning-rate schedule / warmup Constant / none Constant / none Adam
+
+(β1, β2) / ϵ (0.9, 0.999 ) / 10 −8 (0.9, 0.999 ) / 10 −8                       
+
+> Weight decay 00Global gradient-norm clipping 1.0 1.0 Optimizer steps per logical batch 11Additional PPO epochs 00Reference-policy KL / entropy bonus 0 / 0 0 / 0 Loss-bearing tokens Generated assistant tokens Generated assistant tokens Reduction Mean over trajectories Global scored-token mean Advantage stabilization ϵ10 −6Not applicable Student forward precision BF16 BF16 Gradient accumulation / Adam state FP32 (host) / BF16 FP32 (host) / BF16 Training seeds 42, 43, 44 42, 43, 44
+
+The full fine-tuning learning rate, Adam moments, clipping threshold, and temperature-one sampling follow conventional GRPO settings, including the corresponding TRL defaults. They are fixed across sched-ules rather than selected separately for each method. 6 The constant learning rate, trajectory-mean GRPO reduction, and single logical update are explicit ThunderSyncRL choices; adopting an entire framework’s default configuration would not preserve the objective defined here. We save the resolved configuration 
+
+> 6See the TRL GRPO configuration. The table does not list all TRL, SWE-smith, or SETA defaults.
+
+22 with each run’s model and data revisions. For GRPO, let Li be trajectory i’s scored-token count. Setting 
+
+wi,t = 1/ (32 Li) in Section 3.4 makes the sum of group directions a mean over the 256 trajectory-normalized directions. Rewards are standardized within each eight-trajectory group using the population standard deviation. Uniform-reward groups contribute zero policy gradient and retain their place in the batch and timing record. The group-normalized advantages are held constant during differentiation, and each logical batch produces one optimizer step. OPD applies the sampled-token log-probability difference in Equation 8, with both distributions evaluated at temperature one. Four trajectories per prompt provide independent samples; OPD has no group-relative reward normalization. Accumulation uses the global scored-token denominator in Equation 9. Both objectives normalize and reduce gradients across ranks before global clipping and the single optimizer step. Prompt and observation tokens supply causal context without direct loss. For the Qwen LoRA configuration, the specified rank is 32, scaling parameter α = 64, dropout is zero, and the base weights remain frozen. The targets are q_proj , k_proj , v_proj , o_proj , gate _proj , up _proj ,
+
+down _proj , in _proj _qkv , in _proj _z, in _proj _b, in _proj _a, and out _proj . Batch sizes, generation limits, and evaluation settings remain those of the corresponding objective. 
+
+D.2 Agent interaction and generation 
+
+Rollout pipelines. We use verl’s official Agent Loop for GRPO and SkyRL’s official multi-turn generation pipeline, through SkyRLGymGenerator and SkyRL-Gym, for OPD. Both use vLLM as the rollout engine. The agent loop alternates model generation with shell-tool execution in the task environment and retains the resulting history for the next turn. Independent trajectories run concurrently, so a tool call waiting for its result does not block generation for other trajectories. 7 The same agent interface and vLLM serving settings apply to Sync, Async, and ThunderSyncRL within each objective. 
+
+Table 6: Generation settings shared across schedules. Training and evaluation use the same per-attempt token and turn limits.                    
+
+> Setting Value Maximum agentic turns per trajectory 300 Maximum generated tokens per turn 1,024 Maximum total generated tokens per trajectory 16,384 Maximum initial prompt tokens 16,384 Maximum total context tokens 131,072 Maximum retained observation per tool call 4,096 tokens (head and tail equally) Sampling temperature / top-p/ top-k1.0 / 1.0 / disabled Repetition / presence / frequency penalties 1.0 / 0 / 0 Thinking mode Enabled; reasoning tokens count toward the limits Tool calls per agent turn At most one Ordinary tool-command timeout 120 seconds Student rollout weights / KV cache BF16 / BF16 Student serving memory fraction 0.65 Maximum active sequences per rollout replica 16 Chunked prefill / prefix caching Enabled / enabled Speculative decoding Disabled Evaluation attempts per task and checkpoint 3 (5 in Appendix H.1)
+
+Shared serving optimizations. All schedules enable vLLM’s chunked prefill and automatic prefix caching, and disable speculative decoding. Chunked prefill batches prompt chunks with decode requests. Prefix caching reuses matching cached prefixes, including retained conversation history across turns when the cache is available on the serving replica. Policy publication invalidates policy-dependent caches before 
+
+> 7See the verl Agent Loop and SkyRL multi-turn rollout documentation.
+
+23 requests use the new weights. These serving optimizations are common to the comparison; ThunderSyncRL changes when ready learner work is admitted. 8
+
+The limits in Table 6 are independent ceilings. In particular, 300 turns do not imply an allowance of 300 × 1,024 generated tokens once the trajectory-level limit is reached. Initial prompts exceeding their limit are recorded before training and excluded consistently across schedules. During a trajectory, reaching the generation or context limit ends the attempt; previous turns are not removed to create additional context capacity. The agent retains the first and last 2,048 tokens of longer tool outputs, with the same truncation rule in every arm. An unparsable action consumes its turn and returns a fixed parser-error observation. Each independent attempt starts from a fresh task environment. The agent interface supplies the task instruction and a common shell tool, with fixed system and tool descriptions within a model configuration. There is no retrieval from benchmark solutions or evaluator-controlled files. The teacher scores the student’s serialized causal history, including its retained observations, rather than a separately rewritten conversation. Qwen reasoning history is preserved in that history. Sampling seeds are assigned by run seed, optimizer update, task identifier, trajectory index, and turn index, independently of arrival order. Matching these seeds does not imply identical trajectories once the policies differ, particularly for Async. 
+
+D.3 Teacher and hardware allocation 
+
+The teacher for Qwen-3.8-27B is Qwen/Qwen3.8-Flash-Next-FP8, revision 236dfdf28582 ; the student is Qwen/Qwen3.8-27B, revision 1d4bf0f2ff60 . The identical tokenizer gives token-level correspondence for OPD. The teacher remains frozen, uses its released FP8 quantization configuration on both GPU types, and supplies log probabilities only for the sampled assistant tokens. Log-probability normalization and score transport use FP32; this does not undo approximation introduced by FP8 teacher weights. Teacher scoring uses the same causal prefix and scoring implementation across schedules, with work becoming eligible after each completed turn. The hardware configurations are one node with eight B200 GPUs and one with eight H200 GPUs. The declared allocation reserves four GPUs for the student learner. GRPO uses the remaining four for rollout replicas; OPD uses two for rollout replicas and two for the teacher, with teacher tensor parallelism of two. Student replicas each use one GPU. ThunderSyncRL replicates the BF16 student on each of the four learner GPUs, shards the AdamW state across them, and accumulates gradients in FP32 in host memory, with activation checkpointing; this lets each rank release sources independently. Under GRPO, each open group also keeps its two FP32 statistics G(1) 
+
+> G
+
+and G(2) 
+
+> G
+
+in pinned host memory; they are allocated with the group’s first source and freed when the group closes. An optional admission cap k defers the backward of a trajectory from a new group while k groups on its rank hold statistics, so only its tokens wait. The statistics and the batch accumulator then occupy at most 4 (2k + 1)P bytes of host memory per rank for P
+
+parameters, regardless of the number of prompts per batch. We set k = 1, which bounds the statistics and batch accumulator at 1.30 TB for Qwen and 1.49 TB for GLM across the four learner ranks. The Sync and Async baselines use the same GPU allocation and the optimization and precision settings of Table 5. With 16 active sequences per replica, the reference allocation permits up to 64 concurrently scheduled generation sequences for GRPO and 32 for OPD. These limits govern vLLM generation, separately from the number of trajectories in a logical update or waiting on tools. Environment and verifier resource limits and concurrency settings are fixed across schedules. The resolved launch configurations will accompany the code release. The workload-scaling experiments use a separate allocation and trajectory-capacity setup (Appendix F.5). The Qwen teacher’s released tensors occupy approximately 185.5 GB before quantization scales, caches, and runtime buffers. Its two-GPU allocation and scoring procedure remain fixed across schedules. 
+
+GLM configuration. The GLM student is zai -org /GLM -4.7-Flash , revision 7dd20894a642 , with about 31.22 billion stored parameters and approximately three billion active parameters per token. Its released configuration has 47 decoder layers, 64 routed experts per MoE layer, and four selected experts per token. 9
+
+The GLM LoRA configuration uses r = 32, α = 64, zero dropout, and the same 10 −5 learning rate. It targets the attention projections q_a_proj , q_b_proj , kv _a_proj _with _mqa , kv _b_proj , and o_proj . Routed 
+
+> 8See vLLM’s chunked prefill and automatic prefix caching documentation.
+> 9See the pinned GLM student release.
+
+24 experts, embeddings, and the output head remain frozen. These targets give 42,063,872 adapter parameters over the 47 decoder layers. The adaptation rank is separate from the architecture’s query/KV compression ranks. 10 Comparisons remain within each model’s adapter configuration. For GLM OPD, we use the frozen teacher zai -org /GLM -5.3-Flash , FP8 revision 690b705278a3 . Its tokenizer file is byte-identical to the student’s. We score the student’s unchanged token IDs and causal prefix, retain its reasoning and tool history, and return sampled-token log probabilities in FP32. 11 The teacher’s tensors require about 328.25 GB before caches and runtime buffers. GLM OPD uses tensor parallelism over two B200 GPUs; the H200 comparison uses Qwen. Before timing, we checked capacity with the 131,072-token context, scoring buffers, and resident quantization state. Our shared temperature of one differs from the GLM model card’s SWE-bench/Terminal Bench setting of 0.7 at top-p = 1. Table 6 fixes the other generation limits; the comparison does not reproduce the model card’s evaluation budget. 
+
+D.4 Comparison controls 
+
+Comparisons fix the objective, model, adaptation, initial checkpoint, training list, rewards, optimizer, precision, serving settings, environment resources, and hardware across schedules. GRPO and OPD differ in trajectory counts and supervision costs, so equal updates do not imply equal compute. Sync and ThunderSyncRL use one policy snapshot for rollout and learning. Async follows a one-step-off schedule: after startup, each training batch is sampled from a policy one optimizer update behind the current learner. Specifically, trajectories are sampled from πθk−1 , while the learner evaluates the same surrogate at θk, without an additional behavior-policy importance correction. Holding the surrogate fixed makes this a controlled comparison of execution schedules rather than of staleness corrections such as the decoupled objective of AReaL [FGS+25]. Fully Async follows the fully asynchronous trainers of verl [SZY+25] for GRPO and SkyRL [CHL+25] for OPD, in the style of AReaL [FGS+25]. Rollout and learner GPUs run independently: the learner starts an update once the completed groups for one logical batch are available, while rollout continues. After each update, the new weights reach the rollout engines in flight: generation pauses, the weights are swapped, and unfinished trajectories resume under the new policy. A trajectory can therefore span several policy versions, and one batch can mix trajectories of different ages. A staleness bound limits how far rollout runs ahead of the learner, so the policy lag varies but stays bounded. For Sync, Async, and ThunderSyncRL, completion order affects admission, not batch membership: every scheduled trajectory and scored turn completes before the update. The shared-prefix learner optimization in Appendix I also applies to all schedules. Equal mathematical updates need not be bitwise identical across kernels. 
+
+# E Evaluation setup 
+
+E.1 Benchmarks and success criteria 
+
+SWE-bench Verified. We use the official SWE-bench evaluation harness ( swebench .harness .run _evaluation )for all 500 tasks in the pinned Verified test set. This human-validated subset of SWE-bench contains real GitHub issues paired with repository states and executable tests [JYW+24]. Each attempt receives the issue statement and the repository at its base commit. The evaluator applies the agent’s proposed changes and the benchmark’s test patch in an isolated environment. Resolution requires all designated FAIL _TO _PASS and 
+
+PASS _TO _PASS tests to pass. Missing test results, invalid patches, and agent timeouts count as failures. Gold patches and evaluation-only tests are evaluator inputs excluded from the agent prompt. 12 
+
+Terminal Bench 4.0. We use Harbor, the benchmark’s official harness, to evaluate all 66 tasks in release 
+
+v4 .0.0, including their pinned instructions, environments, resource allocations, and verifiers. The benchmark tests completion of terminal tasks through changes to the environment [MSC+26]. Each attempt starts from 
+
+> 10 Projection names and shapes follow the Transformers GLM implementation. MoE expert tensors require separate targeting when adapted; see the PEFT LoRA reference.
+> 11 See the pinned GLM teacher release. GLM-4.7 and GLM-4.5-Air lack 3,491 student vocabulary entries.
+> 12 See the pinned Verified release and the official evaluation guide.
+
+25 the task’s initial state, and success follows its official verifier. Reference solutions and verifier files remain outside the agent’s accessible task files. Tasks requiring GPUs or multiple containers retain those resources in the evaluation configuration; they are not silently excluded. Version 4.0 changes task definitions and resources relative to 3.0 and sets an eight-hour agent timeout. 13 
+
+The protocol retains those task resources and the eight-hour outer timeout, while imposing the shared token, turn, and ordinary tool-command limits in Appendix D.2. Its scores therefore describe ThunderSyncRL’s specified agent interface and inference budget. They are not directly interchangeable with leaderboard results from other interfaces or budgets. SETA’s original experiments used Terminal Bench 2.0; their scores are not baselines for the version-4.0 comparison here. 
+
+Training rewards and evaluation success. For the declared SWE-smith workload, the training reward is one only when all designated repair and regression tests pass, and zero otherwise. For SETA, the selected training reward follows its partial-progress definition: r = p + 0.5 1[p = 1], where p is the fraction of passed verifier tests [SHK+26]. The same task-specific reward is used across schedules; OPD records it for monitoring while its gradient uses teacher scores. Terminal Bench evaluation uses official task success rather than SETA’s partial reward. Consequently, reward scales should be compared within a workload. 
+
+E.2 Attempts, aggregation, and uncertainty 
+
+The protocol specifies three independent attempts per task at each evaluated checkpoint, with settings from Table 6. If yij ∈ { 0, 1 } indicates success on attempt j for task i, the percentage is pass@3 = 100 
+
+M
+
+> M
+
+# ∑
+
+> i=1
+
+1
+
+" 3
+
+# ∑
+
+> j=1
+
+yij > 0
+
+#
+
+, (13) where M = 500 for SWE-bench Verified and M = 66 for Terminal Bench 4.0. Each task has equal weight. Attempts restart the environment and agent history; a later attempt receives no solution or verifier feedback from an earlier one. Pass@3 is the fraction solved at least once in three attempts. Averaging attempt success estimates pass@1. No fourth attempt is selected using verifier feedback. We evaluated training seeds 42, 43, and 44 separately, then averaged their scores. Three evaluation attempts from one checkpoint do not constitute three independent training runs. An infrastructure failure is recorded separately from an agent failure. A retry is allowed only to replace an attempt invalidated by an infrastructure fault, using the same task, checkpoint, and assigned seed; all retries remain in the execution record. A persistently unavailable task leaves the benchmark evaluation incomplete. It is not dropped from the denominator to improve the reported score. Agent mistakes, refusals, and exhausted inference budgets remain failed attempts. 
+
+E.3 Checkpoints and GPU-hours comparisons 
+
+Matched evaluation and training budgets. Within each objective and model configuration, ThunderSyn-cRL, Sync, Async, and Fully Async use the same evaluation tasks and settings. Terminal Bench tasks are excluded from post-training. We report held-out pass@3 and compare schedules by the time needed to reach the same benchmark-specific pass@3 target and by pass@3 after the same 128-GPU-hour training budget. Time to matched performance includes the learning progress across updates; it is distinct from the per-step speedup defined in Appendix B. We requested checkpoint snapshots at one-hour training-time intervals and saved them at the next completed optimizer boundary, recording their publication times. The fixed-budget comparison uses the latest completed checkpoint published no later than 128 GPU-hours. Time to a target is the first evaluated checkpoint attaining that target, with an unreached target reported as unreached within the budget. We fixed the targets before inspecting the comparative runs. For comparisons across seeds, we formed a common time axis from the union of checkpoint publication times. At each time, each run contributes its latest published, evaluated checkpoint score; no future 
+
+> 13 See the official release description, versioned source, the 66-task inventory, and the official Harbor invocation.
+
+26 checkpoint is used. The mean of the three runs defines the displayed step curve. Its first target crossing and its value at 128 GPU-hours use this same rule. The training clock starts with the first training rollout request, after model and environment initialization, whose time is reported separately. GPU-hours multiply this clock by the eight GPUs of the node. Training cost in US dollars multiplies GPU-hours by Lambda’s on-demand price for an eight-GPU B200 instance, $6.69 per GPU-hour ($53.52 per node-hour, excluding tax). It covers rollout, environment interaction, verification, teacher scoring, learner computation, and policy publication, counting overlap once. Teacher scoring contributes to elapsed time but its FLOPs are excluded from the student MFU numerator. Offline benchmark evaluation is timed separately from training. Checkpointing pauses remain in the training clock. Warmup time excluded from steady-state step profiling remains in end-to-end learning curves. Hyperparameter or prompt changes are selected using development tasks, then frozen for all schedules. Benchmark checkpoints are evaluated on the declared cadence rather than selected retrospectively for a favorable score. Alongside GPU-hours curves, run records must retain optimizer updates, sampled trajectories, and generated tokens, so that a fixed-time comparison can be distinguished from a fixed-work comparison. 
+
+Checkpoint records. Each checkpoint record binds the training seed, update number, policy hash, publica-tion time, processed trajectories/tokens, and one success/failure record for each task and attempt. It also stores benchmark, prompt, tokenizer, harness, and container revisions, plus infrastructure retry records. We used these records to compute pass@3 and select checkpoints. 
+
+# F Scalability theory 
+
+F.1 Step time and the learner tail 
+
+We compare schedules for one logical batch generated and differentiated at the fixed policy snapshot θk. Let 
+
+R be the time until the last rollout event required by the objective is available. Learner job j becomes ready at time τj and takes pj units of service on the learner. The total learner service is L = ∑nj=1 pj. After rollout and learning finish, a common serial suffix P covers final reduction, the optimizer step, policy publication, reload, and rollout-replica acknowledgement. The comparison fixes the physical jobs and their service times, rollout time, hardware allocation, and suffix across schedules. It assumes enough device memory to admit each source when it becomes ready. In particular, service times do not change with concurrent rollout activity or with the schedule’s choice of release times. The release laws below assume 0 ≤ τj ≤ R; work reserved for the final optimizer barrier belongs to P. These assumptions isolate savings from earlier release. Index jobs in nondecreasing readiness order. On one learner lane, the completion time cj follows 
+
+c0 = 0, cj = max (τj, cj−1) + pj, TThunderSyncRL = max (R, cn) + P. (14) Repeated substitution gives 
+
+cn = max  
+
+> 1≤j≤n
+
+τj +
+
+> n
+
+# ∑
+
+> i=j
+
+pi
+
+!
+
+. (15) For the induction step, substitute the expression for cj−1 into max (τj, cj−1) + pj: the new job either starts at its own readiness time or extends one of the earlier uninterrupted service intervals. Releasing a job earlier keeps or reduces the endpoint when service times and job order stay fixed. Readiness order also attains the minimum endpoint on one lane: all jobs released at or after τj must be processed after that time, giving the lower bound attained in Equation 15. Define the learner tail in units of rollout time as λK = [ cn − R]+/R, where [x]+ = max (x, 0 ). Thus RλK
+
+is the learner time remaining after rollout closes. The two other normalized quantities are ρ = L/R, the learner service relative to rollout time, and κ = P/R, the final suffix relative to rollout time. Sync starts all 27 learner jobs after R, so 
+
+TSync = R + L + P, TThunderSyncRL = R(1 + λK ) + P,
+
+SSync = TSync 
+
+TThunderSyncRL 
+
+= 1 + ρ + κ
+
+1 + λK + κ . (16) Both stages must finish, so every overlap schedule takes at least max (R, L) + P. Thus, 
+
+SSync ≤ R + L + P
+
+max (R, L) + P ≤ 2. (17) Reaching 2 × requires equal stage times, a negligible suffix, and no learner tail. Equal stage times maximize the ideal overlap opportunity; the actual peak can shift when a nonzero tail remains. 
+
+F.2 How work release determines the tail 
+
+Write u = t/R for time as a fraction of the rollout window. Let F−(u) be the fraction of learner service released strictly before uR :
+
+F−(u) = 1
+
+L ∑ 
+
+> τj<uR
+
+pj. (18) This fraction weights each job by its service time. Counting ready jobs alone is insufficient when late trajectories also require more learning. At a release time, L[1 − F−(u)] includes the newly released jobs and all later jobs. Equation 15 therefore gives 1 + λK = max 
+
+(
+
+1, sup 
+
+> 0≤u≤1
+
+u + ρ 1 − F−(u) )
+
+. (19) The strict-before convention includes the service of jobs released at the same instant. Replacing it with an inclusive fraction would omit those jobs at their release time. The maximum lag behind uniform service release is D = sup 0≤u≤1[u − F−(u)] ; any trace satisfies 
+
+[ρ − 1]+ ≤ λK ≤ [ρ − 1]+ + ρD, λK = D when ρ = 1. (20) To obtain the upper bound, write the expression inside the supremum in Equation 19, minus one, as 
+
+(ρ − 1)( 1 − u) + ρ[u − F−(u)] . Its first term is at most [ρ − 1]+ and its second at most ρD. The lower bound follows from the need to process all L service. At balance, the first term vanishes, so the tail equals the release lag. 
+
+GRPO. The plotted model assumes independent trajectory completion times U ∼ Uniform (0, 1 ) and conditional mean learner service proportional to Uγ, with γ ≥ 0. The fraction of service associated with trajectories completed by u is then 
+
+H(u) = 
+
+R u 
+
+> 0
+
+tγ dt 
+
+R 10 tγ dt = uγ+1. (21) A fraction 1 − β of service is ready at each trajectory’s reward; the rest, β, waits for all m trajectories in the group. By independence, all other members finish with probability um−1, giving 
+
+FGRPO (u) = ( 1 − β)uγ+1 + βuγ+m. (22) Substituting this continuous release model into Equation 19 gives the plotted tail. If ρ[γ + 1 + β(m − 1)] ≤ 1, it is zero. Otherwise an interior maximum, when present, satisfies 
+
+(1 − β)( γ + 1)uγ + β(γ + m)uγ+m−1 = 1/ ρ. (23) The endpoint values cover the boundary cases. Turn count does not appear after ρ, m, β, and the normalized completion and service distribution are fixed. This explains the flat GRPO surface under these conditions; changing trajectory length in a real workload can change those inputs. 28 OPD. For a trajectory completed at U, model a equal-service turns with teacher-scored releases at jU /a,
+
+j = 1, . . . , a. Let δ be the fraction of learner service deferred to trajectory completion. Block j is ready by u
+
+when U ≤ au /j. Weighting by the same service model Uγ gives 
+
+FOPD (u) = 1 − δ
+
+a
+
+> a
+
+# ∑
+
+> j=1
+
+min 
+
+
+
+1, au j
+
+γ+1
+
++ δuγ+1. (24) Each turn can release work before its trajectory closes, including for late trajectories with large learner service. When δ = 1, all work waits for trajectory completion. For δ = 0 and a → ∞, the release fraction tends to 
+
+u(1 + 1/ γ) − uγ+1/γ for γ > 0, and to u(1 − log u) for γ = 0, with value zero at u = 0. These functions are at least u on [0, 1 ], so D = 0 and the tail reaches its minimum [ρ − 1]+. For finite horizons, deferred work and the actual spacing of teacher scores determine how much of this benefit is realized. 
+
+F.3 Batch size and successive rollout waves 
+
+Let one full rollout wave take time W, with learner service ρwW and normalized tail λw. Consider w identical full waves launched successively at intervals of W, followed by one final suffix P; write κw = P/W. A job released at normalized time u within wave i has all later waves’ service behind it. Its candidate completion time, divided by W, is 
+
+(i − 1) + u + ρw[1 − F−(u)] + ρw(w − i). (25) Maximizing over i selects the last wave when ρw ≤ 1 and the first when ρw > 1. After also including rollout completion, the resulting speedup is 
+
+SSync (w) = w(1 + ρw) + κw
+
+w max (1, ρw) + κw − [ρw − 1]+ + λw
+
+. (26) At balance this becomes (2w + κw)/(w + κw + λw). The final tail and suffix remain fixed while the over-lapped work grows, so the ratio approaches two. Away from balance, the limit is (1 + ρw)/ max (1, ρw).These statements assume repeated full waves. Continuous refill and partially occupied waves require either their actual release trace in Equation 19 or an explicit approximation. 
+
+F.4 Finite batches and model limitations 
+
+Equation 19 is exact for a finite trace under the lane assumptions. The plotted surfaces replace that trace by a continuous release distribution. If two release distributions differ by at most ϵ at every time, their normalized endpoints differ by at most ρϵ : their expressions inside the supremum differ pointwise by at most that amount, and taking a supremum and a maximum preserves this bound: 
+
+|λ(F, ρ) − λ(G, ρ)| ≤ ρ sup 
+
+> u
+
+|F(u) − G(u)|. (27) For example, n equal-service atoms placed at the midpoint quantiles of a continuous distribution have discrepancy at most 1/ (2n) and tail error at most ρ/(2n). Random finite batches need a bound for their sampling process. At fixed R and L, replacing a random release distribution by its mean is optimistic for completion time: the endpoint is a maximum of affine functions of the release distribution and hence convex, so its expected value is at least the endpoint of the mean distribution. For statically assigned learner queues, apply the recurrence separately to each rank and take the latest completion. A pooled service rate can miss a slow rank. Memory pressure that delays admission, packing that waits for additional sources, unequal turn costs, teacher delays, or readiness-dependent learner service must also be reflected in the trace. If concurrent rollout changes kernel service or methods execute different physical work, the prediction uses service times measured under those conditions. 29 F.5 Figure parameters and comparison with measurements 
+
+The workload-scaling experiments were run separately to analyze overlap, with a trajectory-capacity setting of Q = 128. Their batch sizes, horizons, and GPU allocations are independent of the reference learning-curve configuration in Appendix D; Q is not the reference vLLM replica’s active-sequence limit. Figures 7b, 9, and 10 evaluate Equations 22, 24, and 26. For these analytical sweeps, we fix rollout capacity 
+
+Q = 128 trajectories, GRPO group size m = 8, closure fraction β = 0.02, OPD deferred fraction δ = 0.45, service exponent γ = 0.49, and suffix κw = 0.05. Let B denote trajectories per optimizer step and r the rollout time divided by learner time at full capacity. The plotting approximation uses 
+
+w = max (1, B/Q), ρw = min (1, B/Q)
+
+r . (28) Figure 7b fixes r = 1. For B < Q, the model keeps one rollout window and reduces learner service in proportion to occupancy. For noninteger B/Q > 1, it extends the full-wave formula continuously. These approximations extend the full-wave model to partial occupancy. The ratio sweeps vary r; their actual speedup peak need not be exactly at one. Figure 8 compares the analytical surfaces with measured release traces and wall-clock speedups. We evaluated 588 paired configurations, 294 per objective. At 40 turns, the batch grid is B ∈ { 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048 }; at B = 512, the horizon grid is a ∈ { 10, 15, 20, 30, 40, 60, 100, 150, 200, 300 }.Each grid point uses seven nominal rollout-to-learner ratios {0.35, 0.5, 0.7, 1, 1.4, 2, 2.8 } and two repetitions, giving 11 × 7 × 2 = 154 and 10 × 7 × 2 = 140 configurations. The plotted ratio uses the measured stage times for the selected GPU allocation, rather than the ratio of GPU counts. The horizon sweep varies the turn limit up to 300; its turn limit and resulting context lengths are recorded separately from the learning-curve runs. Each configuration has an analytical prediction si, a trace prediction oi (open marker), and a measured wall-clock speedup fi (filled marker). We computed oi by replaying the observed source readiness and service times through Equation 14. The ratio fi compares Sync and ThunderSyncRL with the same model, logical workload, GPU roles, precision, and generation settings within the cell. These controls hold within a configuration even when the allocation changes between cells. The reported differences are computed for each paired configuration as 
+
+ei = 100 |oi − si|
+
+si
+
+, di = 100 oi − fi
+
+oi
+
+. (29) Across both objectives and both rows, the mean of ei is 1.5911% and its maximum is 10.5541%; the mean of di
+
+is 6.5148%. The main text rounds these to 1.6%, 10.6%, and 6.5%. The first difference measures the release model’s agreement with the trace prediction; the second measures the remaining gap to runtime execution. The common optimizer and publication suffix is already present through κw, so the second difference does not represent the entire publication cost. 
+
+Trace collection and calibration. We recorded a manifest for each objective, model, batch, horizon, and integer GPU allocation, including tensor/data parallelism, teacher allocation, environment concurrency, and memory limits. Sync and ThunderSyncRL executed the same logical workload within each cell. The measured R, L, and P then determine the cell’s time ratio, so each ratio reflects measured service rates. Each trace records a source’s task, trajectory, group, policy version, learner rank, readiness time, service start/end, scored-token count, and deferred-work completion. GRPO readiness is receipt of the required reward; OPD readiness is receipt of valid teacher scores. Device events measure service, while a shared host clock records arrival and publication acknowledgements. Replay uses both τj and pj in Equation 14, with separate queues for statically assigned ranks. Teacher waiting and deferred backward stay in the trace. We calibrated release-law parameters on separate traces and held them fixed for evaluation. Profiling windows follow Appendix B; missing or infeasible cells are reported explicitly. 30 F.6 Balance sweeps 
+
+Figures 9 and 10 sweep the rollout-to-learner ratio r from 0.3 to 4 with the parameters of Appendix F.5. Both figures are analytical evaluations of Equation 26; they contain no measured points. Figure 9 fixes the batch size and varies the horizon, and Figure 10 fixes the horizon and varies the batch size. For batches that fill at least one rollout wave ( B ≥ Q), every panel peaks near balance, r ≈ 1. There, the predicted speedup is 1.84 × for GRPO at 256 trajectories per step and 1.98 × at 2,048; OPD reaches 1.97 to 1.98 × at 256 and 2.00 × at 2,048. Away from balance, the larger stage bounds the step, and the speedup falls toward the full-overlap limit (1 + ρw)/ max (1, ρw) of Appendix F.3, which is symmetric in log r. For 
+
+B ≥ Q, halving or doubling the ratio caps the speedup near 1.5 × (1.46 to 1.50 ×), r = 0.35 or 2.8 gives 1.34 to 1.36 ×, and r = 4 gives 1.24 to 1.25 ×, for both objectives. Below one full wave, the plotting rule scales learner service by B/Q, so balance moves to r ≈ B/Q: at B = 64 the peak sits near r = 0.5, with 1.71 × for GRPO and 1.95 × for OPD. This bends the bright band toward smaller ratios at the bottom of Figure 10. The horizon matters only near balance. GRPO’s surface does not change with turn count, as Appendix F.2 explains. For OPD, more turns spread releases and shorten the tail, but at 256 trajectories per step the speedup at r = 1 moves only from 1.967 × at 10 turns to 1.975 × at 300 turns. Batch size has the larger effect: more waves amortize the final tail and suffix, which is why the bright band at r ≈ 1 widens as trajectories per step grow in Figure 10. 
+
+Figure 9: Speedup over Sync as a function of the rollout-to-training time ratio and agentic turns per trajectory, at fixed trajectories per optimizer step (256 to 2048), for GRPO (top) and OPD (bottom). 
+
+# G Empirical update equivalence 
+
+We verify the equivalence of Section 3.4 on the B200 and H200 nodes of Appendix D, comparing the updates of Sync and ThunderSyncRL on identical logical batches. 
+
+Protocol. For each objective, we record ten consecutive logical batches of a Qwen-3.8-27B Sync run, including tokens, scored-token masks, rewards, and teacher scores, and replay them under Sync and ThunderSyncRL from the same initial parameters θ0. ThunderSyncRL ingests trajectories and scored turns in their recorded completion order. Replaying fixed batches isolates the learner computation. Both schedules use the optimizer settings of Table 5 and run twice: with the BF16 student forward used in training and with an FP32 forward as the reference. We compare the first batch direction g0 before clipping, coordinate by 31 Figure 10: Speedup over Sync as a function of the rollout-to-training time ratio and trajectories per optimizer step, at fixed agentic turns per trajectory (10 to 300), for GRPO (top) and OPD (bottom). coordinate, and after each update k report the parameter gap 
+
+∆k = ∥θours  
+
+> k
+
+− θsync  
+
+> k
+
+∥∥θsync  
+
+> k
+
+− θ0∥ , (30) the distance between the two schedules relative to the distance that training has moved the parameters. 
+
+Results. Figures 11 and 12 show the same result on both GPU types. In FP32, the ThunderSyncRL and Sync gradients coincide coordinate by coordinate (panels a and d), with relative errors of 5.1 × 10 −7 for GRPO and 1.1 × 10 −6 for OPD on B200. In BF16, both schedules stay within a few percent of the FP32 gradient (panels b and e): relative errors are 0.77% for Sync and 0.96% for ThunderSyncRL under GRPO, and 4.2% and 1.2% under OPD, where Sync’s BF16 error is larger. Across ten updates, the FP32 parameter gap stays below 6 × 10 −5, nearly three orders of magnitude below the gap between BF16 and FP32 Sync, and the BF16 gap between the schedules follows that same BF16 curve (panels c and f). ThunderSyncRL reproduces the batch-synchronous update at every step within the numerical precision of training. 32 −10 −5 0 5 10 
+
+Sync gradient 
+
+−10 −5 0510 
+
+> ThunderSyncRL gradient
+
+cosine = 1 − 1.3e-13 rel. error = 5.14e-07 
+
+(a) FP32: identical gradients 
+
+GRPO 
+
+−10 −5 0 5 10 
+
+FP32 Sync gradient 
+
+−10 −5 0510 
+
+> BF16 gradient
+
+(b) BF16 vs FP32 gradient 
+
+Sync (BF16), rel. error 0.00768 ThunderSyncRL (BF16), rel. error 0.00961 
+
+GRPO 
+
+1 2 3 4 5 6 7 8 9 10 
+
+Update k (replayed rollouts) 
+
+10 −6 
+
+10 −5 
+
+10 −4 
+
+10 −3 
+
+10 −2 
+
+10 −1 
+
+10 0
+
+10 1
+
+> ‖θours
+> k − θsync
+> k ‖ / ‖ θsync
+> k − θ0‖
+
+(c) Parameter gap per update 
+
+Sync: BF16 vs FP32 BF16: ThunderSyncRL vs Sync FP32: ThunderSyncRL vs Sync 
+
+GRPO 
+
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.5 
+
+Sync gradient ( ×10 −2 )
+
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.5 
+
+> ThunderSyncRL gradient ( ×10 −2 )
+
+cosine = 1 − 6.3e-13 rel. error = 1.13e-06 
+
+(d) FP32: identical gradients 
+
+OPD 
+
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.5 
+
+FP32 Sync gradient ( ×10 −2 )
+
+−1.5 −1.0 −0.5 0.0 0.5 1.0 1.5 
+
+> BF16 gradient ( ×10 −2 )
+
+(e) BF16 vs FP32 gradient 
+
+Sync (BF16), rel. error 0.0421 ThunderSyncRL (BF16), rel. error 0.0118 
+
+OPD 
+
+1 2 3 4 5 6 7 8 9 10 
+
+Update k (replayed rollouts) 
+
+10 −6 
+
+10 −5 
+
+10 −4 
+
+10 −3 
+
+10 −2 
+
+10 −1 
+
+10 0
+
+10 1
+
+> ‖θours
+> k − θsync
+> k ‖ / ‖ θsync
+> k − θ0‖
+
+(f) Parameter gap per update 
+
+Sync: BF16 vs FP32 BF16: ThunderSyncRL vs Sync FP32: ThunderSyncRL vs Sync 
+
+OPD Figure 11: Update equivalence on B200 for GRPO (top row) and OPD (bottom row). (a, d) Each point is one randomly sampled coordinate of the first batch direction g0 with FP32 arithmetic, ThunderSyncRL against Sync. (b, e) Both schedules with BF16 arithmetic against the FP32 Sync direction. (c, f) Parameter gap ∆k
+
+(Equation 30) after each of ten replayed updates, with the gap between BF16 and FP32 Sync as reference. Dashed diagonals mark equality. 33 −10 −5 0 5 10 
+
+Sync gradient 
+
+−10 −5 0510 
+
+> ThunderSyncRL gradient
+
+cosine = 1 − 1.2e-13 rel. error = 4.96e-07 
+
+(a) FP32: identical gradients 
+
+GRPO 
+
+−10 −5 0 5 10 
+
+FP32 Sync gradient 
+
+−10 −5 0510 
+
+> BF16 gradient
+
+(b) BF16 vs FP32 gradient 
+
+Sync (BF16), rel. error 0.00777 ThunderSyncRL (BF16), rel. error 0.00958 
+
+GRPO 
+
+1 2 3 4 5 6 7 8 9 10 
+
+Update k (replayed rollouts) 
+
+10 −6 
+
+10 −5 
+
+10 −4 
+
+10 −3 
+
+10 −2 
+
+10 −1 
+
+10 0
+
+10 1
+
+> ‖θours
+> k − θsync
+> k ‖ / ‖ θsync
+> k − θ0‖
+
+(c) Parameter gap per update 
+
+Sync: BF16 vs FP32 BF16: ThunderSyncRL vs Sync FP32: ThunderSyncRL vs Sync 
+
+GRPO 
+
+−10 −5 0 5 10 
+
+Sync gradient ( ×10 −3 )
+
+−10 −5 0510 
+
+> ThunderSyncRL gradient ( ×10 −3 )
+
+cosine = 1 − 8.0e-13 rel. error = 1.26e-06 
+
+(d) FP32: identical gradients 
+
+OPD 
+
+−10 −5 0 5 10 
+
+FP32 Sync gradient ( ×10 −3 )
+
+−10 −5 0510 
+
+> BF16 gradient ( ×10 −3 )
+
+(e) BF16 vs FP32 gradient 
+
+Sync (BF16), rel. error 0.0416 ThunderSyncRL (BF16), rel. error 0.0117 
+
+OPD 
+
+1 2 3 4 5 6 7 8 9 10 
+
+Update k (replayed rollouts) 
+
+10 −6 
+
+10 −5 
+
+10 −4 
+
+10 −3 
+
+10 −2 
+
+10 −1 
+
+10 0
+
+10 1
+
+> ‖θours
+> k − θsync
+> k ‖ / ‖ θsync
+> k − θ0‖
+
+(f) Parameter gap per update 
+
+Sync: BF16 vs FP32 BF16: ThunderSyncRL vs Sync FP32: ThunderSyncRL vs Sync 
+
+OPD Figure 12: Update equivalence on H200, with panels as in Figure 11. 34 H Further Experimental Results 
+
+H.1 Pass@1 and Pass@5 
+
+Pass@ k is the fraction of tasks solved at least once in k independent attempts. Following Chen et al. [CTJ+21], we estimate it from n ≥ k attempts per task: if ci of the n attempts on task i succeed, pass@ k = 100 
+
+M
+
+M
+
+# ∑
+
+i=1
+
+
+
+1 −
+
+n − ci
+
+k
+
+.nk
+
+ 
+
+, (31) which is unbiased for the probability that at least one of k attempts succeeds. Pass@1 is the mean attempt success rate. With n = k the estimator reduces to the empirical rate of tasks solved at least once, the form of pass@3 in Equation 13. For this appendix, each evaluated checkpoint runs five independent attempts per task ( n = 5), from which both pass@1 and pass@5 are computed; the other settings follow Table 6, and attempts restart the environment and agent history as in Appendix E. Figures 13 and 14 report pass@1 and pass@5 against training cost for Qwen-3.8-27B and GLM-4.7-Flash-31B under GRPO and OPD, in the form of Figure 1. Pass@1 scores a single attempt; pass@5 credits a task solved in any of the five. $0.5k $1.0k $1.5k               
+
+> Training cost (USD, 8×B200)
+> 58 60 62 64
+> Pass@1 (%)  Sync Async Fully Async ThunderSync (Ours)
+> Qwen-3.8-27B
+> GRPO
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 52 54 56 58
+> GLM-4.7-Flash-31B
+> GRPO
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 76 78 80
+> Pass@5 (%)
+> Qwen-3.8-27B
+> GRPO
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 67.5 70.0 72.5 75.0
+> GLM-4.7-Flash-31B
+> GRPO
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 62 64 66
+> Pass@1 (%)
+> Qwen-3.8-27B
+> OPD
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 55.0 57.5 60.0 62.5
+> GLM-4.7-Flash-31B
+> OPD
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 76 78 80
+> Pass@5 (%)
+> Qwen-3.8-27B
+> OPD
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 70 72 74
+> GLM-4.7-Flash-31B
+> OPD
+
+SWE-bench Verified / pass@1 and pass@5 
+
+Figure 13: Pass@1 (left two panels) and pass@5 (right two panels) on SWE-bench Verified against training cost for Qwen-3.8-27B and GLM-4.7-Flash-31B under GRPO (top row) and OPD (bottom row). Arrows mark where ThunderSyncRL reaches the score of a Sync checkpoint; labels give the cost ratio. 
+
+H.2 Efficiency with LoRA 
+
+We profiled the Qwen and GLM LoRA configurations on eight B200 GPUs (Table 7). Each configuration uses four learner GPUs, replicated BF16 frozen weights, FP32 adapter state, and the objective-specific rollout and teacher allocation in Appendix D. For Sync, Async, and ThunderSyncRL, LoRA retains the efficiency ordering of full fine-tuning. Thun-derSyncRL reaches 16.7% to 33.0% trainer active MFU, slightly above Async’s 16.5% to 32.6% and above 35 $0.5k $1.0k $1.5k               
+
+> Training cost (USD, 8×B200)
+> 26 28 30
+> Pass@1 (%)  Sync Async Fully Async ThunderSync (Ours)
+> Qwen-3.8-27B
+> GRPO
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 22 24
+> GLM-4.7-Flash-31B
+> GRPO
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 40 42 44
+> Pass@5 (%)
+> Qwen-3.8-27B
+> GRPO
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 38 40 42
+> GLM-4.7-Flash-31B
+> GRPO
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 28 30 32
+> Pass@1 (%)
+> Qwen-3.8-27B
+> OPD
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 22 24 26
+> GLM-4.7-Flash-31B
+> OPD
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 40 42 44 46
+> Pass@5 (%)
+> Qwen-3.8-27B
+> OPD
+> $0.5k $1.0k $1.5k
+> Training cost (USD, 8×B200)
+> 38 40 42
+> GLM-4.7-Flash-31B
+> OPD
+
+Terminal Bench 4.0 / pass@1 and pass@5 Figure 14: Pass@1 (left two panels) and pass@5 (right two panels) on Terminal Bench 4.0 against training cost for Qwen-3.8-27B and GLM-4.7-Flash-31B under GRPO (top row) and OPD (bottom row). Arrows mark where ThunderSyncRL reaches the score of a Sync checkpoint; labels give the cost ratio. 
+
+Table 7: LoRA efficiency on NVIDIA B200 GPUs. Each speedup uses the same model and objective’s Sync reference. OPD model names refer to the student. 
+
+Method Policy lag (staleness) ↓
+
+GRPO OPD 
+
+Trainer active MFU (%) ↑
+
+Speedup (×) ↑
+
+Peak GPU memory (GB) ↓
+
+Trainer active MFU (%) ↑
+
+Speedup (×) ↑
+
+Peak GPU memory (GB) ↓
+
+Qwen-3.8-27B LoRA 
+
+tSync 0 19.5 1.00 75.4 19.0 1.00 73.4 
+
+tAsync 1 32.6 1.67 76.0 32.1 1.69 74.0 
+
+tFully Async Variable 32.8 1.68 77.1 32.3 1.70 74.8 
+
+tThunderSyncRL 0 33.0 1.69 79.2 32.5 1.71 76.0 
+
+GLM-4.7-Flash-31B LoRA 
+
+tSync 0 10.9 1.00 75.1 10.3 1.00 73.1 
+
+tAsync 1 17.7 1.62 75.6 16.5 1.60 73.6 
+
+tFully Async Variable 17.8 1.63 76.3 16.6 1.61 74.2 
+
+tThunderSyncRL 0 17.9 1.64 77.3 16.7 1.62 75.0 
+
+Sync’s 10.3% to 19.5%. Its step wall time speedups are 1.69/1.71 × for Qwen and 1.64/1.62 × for GLM under GRPO/OPD, compared with Async’s 1.67/1.69 × and 1.62/1.60 ×, respectively. ThunderSyncRL retains zero policy lag in every configuration. For Qwen, the speedups are smaller than under full fine-tuning; for GLM, whose step is already bound by rollout, they barely change. Freezing base weights removes their parameter-gradient and optimizer work, reducing the learner work available to overlap with rollout and teacher scoring. Forward and input-gradient computation through those weights remains necessary. Trainer active MFU counts learner FLOPs over the 36 complete update wall time, including rollout waiting. It therefore reflects both the reduced learner work under LoRA and the idle time remaining after overlap. For these three schedules, trainer GPU memory is lower with LoRA than with full fine-tuning. Thunder-SyncRL’s GPU peaks range from 75.0 to 79.2 GB per learner GPU, with an additional 1.9 to 3.8 GB relative to Sync for live gradient statistics and deferred state. The measurements include frozen weights, adapter and optimizer state, activations, and temporary buffers; the separate rollout and teacher pools are excluded. The GLM teacher and adapter targets are specified in Appendix D.3. 
+
+# I ThunderSyncRL algorithm and implementation 
+
+Algorithm 1 summarizes one ThunderSyncRL update. The rollout and learner threads run concurrently at the fixed policy snapshot θk. For GRPO, a ready source contains a trajectory’s scored action tokens and reward. For OPD, it contains a turn’s scored action tokens and frozen-teacher scores. Completion events release deferred context backward and group reduction once their dependencies are satisfied. The implementations below give the objective-specific normalization and optimizer conventions. 
+
+Algorithm 1 ThunderSyncRL: gradient streaming with a synchronous update  
+
+> 1:
+
+Input: Policy πθk , batch Bk, objective o, frozen teacher πT for OPD  
+
+> 2:
+
+Output: Updated θk+1, acknowledged by every rollout replica  
+
+> 3:
+
+Q ← Queue () ; register all trajectories and groups in Bk 
+
+> 4:
+
+Initialize objective accumulators A; keep θk fixed  
+
+> 5: 6:
+
+Thread 1: Rollout and supervision (producer)  
+
+> 7:
+
+for all trajectories i ∈ B k in parallel do  
+
+> 8:
+
+Generate with πθk ; enqueue ready sources and completion events as they occur  
+
+> 9:
+
+end for  
+
+> 10: 11:
+
+Thread 2: Learner (consumer)  
+
+> 12:
+
+while a registered trajectory or group remains unfinished do  
+
+> 13:
+
+e ← Q . pop () (Wait for the next available event)  
+
+> 14:
+
+if e is a GRPO trajectory source i in group G then  
+
+> 15:
+
+Hi ← ∇ θSi (θ)|θ=θk 
+
+> 16:
+
+G(1) 
+
+> G
+
+← G(1) 
+
+> G
+
++ ri Hi; G(2) 
+
+> G
+
+← G(2) 
+
+> G
+
++ Hi 
+
+> 17:
+
+else if e is an OPD turn source j then  
+
+> 18:
+
+Accumulate gj and |M j| in A (Equation 8)  
+
+> 19:
+
+end if  
+
+> 20:
+
+Update completion state; finish eligible group reductions and deferred backward  
+
+> 21:
+
+end while  
+
+> 22: 23:
+
+Synchronous batch barrier  
+
+> 24:
+
+Wait for all rollouts, source gradients, and deferred work in Bk to finish  
+
+> 25:
+
+bgk ← DistributedReduceAndNormalize (A, o) 
+
+> 26:
+
+θk+1 ← Opt (θk, clip (bgk )) (Exactly one optimizer step)  
+
+> 27:
+
+Publish θk+1; wait for every replica to reload, clear caches, and acknowledge  
+
+> 28:
+
+return θk+1
+
+Shared-prefix backward in all schedules. Sync, Async, and ThunderSyncRL all reuse shared-prefix compu-tation on the learner. Training-time prefix reuse has earlier applications in preference optimization [WH24] and in branching agent trajectories [WWC+26]. At a fixed learner snapshot, we compute the shared prefix once, process each continuation with its causal context, and accumulate its gradient with respect to the prefix boundary states. After all branch contributions are available, one backward pass through the shared prefix propagates their sum, with the objective’s weights and normalization preserved. For GRPO, the reward-weighted and unweighted boundary contributions are combined when the group rewards are fixed. For OPD, teacher-scored turns contribute boundary gradients before the final token normalization. This 37 is a common learner optimization in the comparison, distinct from vLLM’s inference-time prefix cache. ThunderSyncRL admits eligible branch work earlier; shared-prefix backward remains part of each schedule’s measured learner work and update time. The following Python-style pseudocode describes one logical update of ThunderSyncRL. Rollout workers and the learner use the same fixed policy version throughout the update. Each learner rank processes its assigned groups. Helpers represent model execution, gradient storage, and distributed collectives. 
+
+publish _and _wait publishes the updated parameters and waits for every rollout replica to load them, clear policy-dependent caches, and acknowledge the new version. 
+
+I.1 GRPO 
+
+Implementation 1 shows reward-ready admission and the decomposition in Equation 7. The source gradient can also be prepared when content is complete and bound to its reward later. Gradient arithmetic includes any captured boundary adjoints; finish _group _backward propagates their combined contribution through deferred context. The code applies the sum of group directions, gk = ∑G gG , as in Section 3.4; the token weights in Appendix D make this sum the mean over the trajectory-normalized directions.  
+
+> 1
+
+def thundersync_grpo_step(model, rollout, batch, optimizer, eps, max_norm):  
+
+> 2
+
+"""One reward-linear GRPO epoch; optimizer has maximize=True."""  
+
+> 3
+
+params = trainable_parameters(model)  
+
+> 4
+
+version = rollout.policy_version  
+
+> 5
+
+groups = register_groups(batch) # Sizes, rewards, zero G1/G2 buffers  
+
+> 6
+
+batch_grad = zeros_like(params)  
+
+> 7
+
+optimizer.zero_grad(set_to_none=True)  
+
+> 89
+
+# 1. Start learner work while other trajectories are still running.  
+
+> 10
+
+for src in rollout.reward_ready_sources(batch, version):  
+
+> 11
+
+assert src.policy_version == version  
+
+> 12
+
+group = groups[src.group_id]  
+
+> 13
+
+logp = rebuild_scored_logprobs(model, src) # Fixed action mask  
+
+> 14
+
+score = (src.token_weights * logp). sum ()  
+
+> 15
+
+H = backward_with_boundary_capture(score, params)  
+
+> 16 17
+
+# 2. Fold each completed source once into its group statistics.  
+
+> 18
+
+group.G1 += src.reward * H  
+
+> 19
+
+group.G2 += H  
+
+> 20
+
+group.rewards.append(src.reward)  
+
+> 21
+
+group.num_reduced += 1  
+
+> 22 23
+
+# 3. Combine only after every reward and source gradient arrives.  
+
+> 24
+
+if group.num_reduced == group.size:  
+
+> 25
+
+r = torch.tensor(group.rewards, dtype=torch.float64)  
+
+> 26
+
+mu, sigma = r.mean(), r.std(unbiased=False)  
+
+> 27
+
+update = (group.G1 - mu * group.G2) / (group.size * (sigma + eps))  
+
+> 28
+
+batch_grad += finish_group_backward(group, update)  
+
+> 29
+
+group.close()  
+
+> 30 31
+
+# 4. Complete the logical batch before any parameter mutation.  
+
+> 32
+
+rollout.wait_batch_closed(batch)  
+
+> 33
+
+assert all (group.closed for group in groups.values())  
+
+> 34
+
+wait_for_all_backward_and_reduction_work()  
+
+> 35
+
+global_grad = all_reduce_sum(batch_grad) # Sum of group directions  
+
+> 36
+
+write_parameter_grads(params, global_grad)  
+
+> 37
+
+torch.nn.utils.clip_grad_norm_(params, max_norm)  
+
+> 38
+
+optimizer.step() # Exactly one ascent step at the batch barrier  
+
+> 39
+
+optimizer.zero_grad(set_to_none=True)  
+
+> 40 41
+
+# 5. The next rollout batch starts only after every replica ACKs.  
+
+> 42
+
+rollout.publish_and_wait(model, version + 1)  
+
+> 43
+
+return version + 1 
+
+Implementation 1. ThunderSyncRL GRPO update. Each trajectory releases its score gradient independently; group closure fixes the reward coefficients. The optimizer uses gradient ascent. 
+
+38 I.2 On-policy distillation 
+
+Implementation 2 follows the turn-level OPD path. Each teacher score uses the sampled action’s realized causal context; scoring may run upstream of the learner, but is shown inline here. The detached student log probabilities come from the same policy snapshot, so the importance ratio equals one while retaining its derivative. The loss gradient is the negative of Equation 8. Turn backward captures adjoints at cut state boundaries; trajectory and group closure propagate the remaining adjoints before the batch update. The final sum divided by the global scored-token count is equivalent to the runner’s rescaling followed by a data-parallel average.  
+
+> 1
+
+def thundersync_opd_step(student, teacher, rollout, batch, optimizer, max_norm):  
+
+> 2
+
+"""One token-mean OPD update; teacher is frozen, optimizer descends."""  
+
+> 3
+
+params = trainable_parameters(student)  
+
+> 4
+
+version = rollout.policy_version  
+
+> 5
+
+groups = register_groups(batch)  
+
+> 6
+
+token_count = 0  
+
+> 7
+
+optimizer.zero_grad(set_to_none=True)  
+
+> 89
+
+# 1. Ingest turns as rollout workers generate actions and call tools.  
+
+> 10
+
+for event in rollout.turn_and_completion_events(batch, version):  
+
+> 11
+
+assert event.policy_version == version  
+
+> 12
+
+group = groups[event.group_id]  
+
+> 13
+
+if event.kind == "turn":  
+
+> 14
+
+with torch.no_grad():  
+
+> 15
+
+teacher_lp = teacher.score_action_tokens(event)  
+
+> 16
+
+logp = append_turn_and_get_scored_logprobs(student, event)  
+
+> 17
+
+if logp.numel() == 0: # Unscored context still updates state  
+
+> 18
+
+continue  
+
+> 19
+
+old_logp = logp.detach() # Same fixed student snapshot  
+
+> 20
+
+advantage = (teacher_lp - old_logp).detach()  
+
+> 21
+
+ratio = torch.exp(logp - old_logp)  
+
+> 22
+
+loss = -(ratio * advantage). sum ()  
+
+> 23 24
+
+# 2. Backward now; retain adjoints needed by earlier context.  
+
+> 25
+
+backward_with_boundary_capture(loss, params)  
+
+> 26
+
+token_count += logp.numel()  
+
+> 27 28
+
+elif event.kind == "trajectory_complete":  
+
+> 29
+
+# 3. Replay deferred state adjoints through completed turns.  
+
+> 30
+
+replay_deferred_state_adjoints(event.trajectory_id)  
+
+> 31
+
+group.close_trajectory(event.trajectory_id)  
+
+> 32
+
+if group.all_trajectories_closed():  
+
+> 33
+
+finish_shared_prefix_backward(group)  
+
+> 34
+
+group.close()  
+
+> 35 36
+
+# 4. All turns, replay work, and registered groups must be complete.  
+
+> 37
+
+rollout.wait_batch_closed(batch)  
+
+> 38
+
+assert all (group.closed for group in groups.values())  
+
+> 39
+
+wait_for_all_backward_and_reduction_work()  
+
+> 40
+
+local_grad = materialize_parameter_grads(params)  
+
+> 41
+
+global_grad = all_reduce_sum(local_grad)  
+
+> 42
+
+global_tokens = all_reduce_sum(token_count)  
+
+> 43
+
+assert global_tokens > 0  
+
+> 44
+
+write_parameter_grads(params, global_grad / global_tokens)  
+
+> 45
+
+torch.nn.utils.clip_grad_norm_(params, max_norm)  
+
+> 46
+
+optimizer.step() # Exactly one descent step at the batch barrier  
+
+> 47
+
+optimizer.zero_grad(set_to_none=True)  
+
+> 48 49
+
+# 5. Publish the new policy before admitting the next logical batch.  
+
+> 50
+
+rollout.publish_and_wait(student, version + 1)  
+
+> 51
+
+return version + 1 
+
+Implementation 2. ThunderSyncRL on-policy distillation update. Teacher-scored turns release backward immediately. Deferred context gradients and global token normalization finish before one optimizer step. 
+
+39

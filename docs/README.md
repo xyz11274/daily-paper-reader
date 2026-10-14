@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-13 ~ 2026-10-12</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-05 ~ 2026-10-14</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 19 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 32 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>20</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-12 03:45:54 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-14 02:42:45 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>近一月精读7篇、速读12篇共19篇多智能体论文，重点聚焦通信与路由效率。最值得看的是两篇9分精读：多智能体学习的鲁棒高效通信，以及多智能体距离和以下的路由方法。普通读者可优先从这两篇入手，再结合速读中的通信生成策略与总线通信底物理解落地思路。</p>
+<p>10月5日至14日共处理32篇论文，精读20篇、速读12篇，重点聚焦多智能体自进化与强化学习。最值得看的是两篇满分工作：SynCo用多智能体强化学习做数据合成协同训练，AgentEvolver实现系统级任务执行自进化。普通读者可优先从这两篇入手，再结合速读中的多智能体协作与推理效率研究拓展视野。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">20 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Robust and Efficient Communication for Multi-Agent Learning">Robust and Efficient Communication for Multi-Agent Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Routing Multiple Agents Below the Sum of Distances">Routing Multiple Agents Below the Sum of Distances</span></li><li><span class="dpr-home-dashboard-paper-title" title="Proxifield: Decentralized Multi-Agent Communication through Semantic Proximity">Proxifield: Decentralized Multi-Agent Communication through Semantic Proximity</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SynCo: Data Synthesis Co-Training for Self-Evolving LLMs via Multi-Agent Reinforcement Learning">SynCo: Data Synthesis Co-Training for Self-Evolving LLMs via Multi-Agent Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgentEvolver: System-Wide Self-Evolution Through Task Execution">AgentEvolver: System-Wide Self-Evolution Through Task Execution</span></li><li><span class="dpr-home-dashboard-paper-title" title="Serve Now or Improve Later? Scheduling Self-Evolution in Online Agent Systems">Serve Now or Improve Later? Scheduling Self-Evolution in Online Agent Systems</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>4</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-evolve <strong>20</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,9 +94,9 @@
     <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Learning Communication-Conditioned Generative Policies for Decentralized Multi-Agent Collision Avoidance">Learning Communication-Conditioned Generative Policies for Decentralized Multi-Agent Collision Avoidance</span></li><li><span class="dpr-home-dashboard-paper-title" title="BusMA: A Bus Communication Substrate for Multi-Agent Systems">BusMA: A Bus Communication Substrate for Multi-Agent Systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="Mo&#x27; Models, Mo&#x27; Problems: How to best select model pools when designing Multi-Agent Systems">Mo&#x27; Models, Mo&#x27; Problems: How to best select model pools when designing Multi-Agent Systems</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Collective Regimes in Multi-Agent LLMs under Reasoning Effort and Communication Topology">Collective Regimes in Multi-Agent LLMs under Reasoning Effort and Communication Topology</span></li><li><span class="dpr-home-dashboard-paper-title" title="JevSpawn: Adaptive Agentic Inference through Compositional Action Spaces">JevSpawn: Adaptive Agentic Inference through Compositional Action Spaces</span></li><li><span class="dpr-home-dashboard-paper-title" title="Worse Together: How Performance Breaks Down in Multi-User Multi-Agent Teams">Worse Together: How Performance Breaks Down in Multi-User Multi-Agent Teams</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>11</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">multi-agent <strong>7</strong></span><span class="dpr-home-dashboard-tag">agent-evolve <strong>5</strong></span></div>
 </section>
 </div>
 

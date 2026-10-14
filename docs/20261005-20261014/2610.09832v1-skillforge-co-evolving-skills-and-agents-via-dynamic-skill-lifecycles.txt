@@ -1,0 +1,957 @@
+Title: SkillForge: Co-Evolving Skills and Agents via Dynamic Skill Lifecycles
+
+URL Source: https://arxiv.org/pdf/2610.09832v1
+
+Published Time: Thu, 08 Oct 2026 01:08:53 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+# SKILL FORGE : Co-Evolving Skills and Agents via Dynamic Skill Lifecycles 
+
+Yuyao Ge ♣ Yiwei Wang ♢ Yuchen He ♣ Baolong Bi ♣
+
+Lingrui Mei ♣ Jiayu Yao ♣ Lizhe Chen ¶ Shenghua Liu ♣∗ ♣Institute of Computing Technology, Chinese Academy of Sciences 
+
+> ♢
+
+University of California, Merced ¶Tsinghua University 
+
+{geyuyao24z, liushenghua}@ict.ac.cn 
+
+Abstract 
+
+Memory-augmented reinforcement learning strengthens LLM agents’ ability to solve complex long-horizon tasks. Skills are one such form of memory, pairing instructions with an applicability condition over task types. However, retaining every skill indiscriminately as the policy improves lets obsolete or harmful entries accumulate and mislead the agent. We propose SKILL FORGE , an agentic RL method that compiles and evolves the skill library through a fitness-driven skill lifecycle of trial , active , stable , and retired states, so that the skills and the model co-evolve throughout training. A pre-RL evaluation phase first uses the base model’s own rollouts to pre-retire low-fitness skills, yielding a filtered library that then seeds supervised fine-tuning. Reinforcement learning takes over from this checkpoint, and at each iteration selective retirement, stabilization, and LLM-guided mutation continue to forge the skill library alongside policy optimiza-tion. Across multiple interactive agent benchmarks, S KILL FORGE achieves the highest aggregate success rate, delivering up to 7.8% relative improvement over the strongest baseline while keeping the skill library compact throughout train-ing. We introduce SKILL FURNACE , a dataset of 5k+ annotated records bundling retirement-filtered SFT trajectories, evolved skill libraries with fitness annotations, and retirement events with human-annotated failure categories to support research on skill quality and lifecycle management. 
+
+1 Introduction 
+
+Generalist agents such as Claude Code [Anthropic, 2025] and OpenClaw [OpenClaw, 2026] derive much of their capability from modular, reusable abstractions provided at inference time. Even frontier large language models (LLMs) sit behind a fixed knowledge cutoff, so they cannot absorb personalized workflows [Chhikara et al., 2025] or adapt to post-deployment tooling conventions [Liu et al., 2025]. To close this gap at inference time, recent work centers on the skill : a bundle of instructions, examples, and applicability conditions retrieved into the agent’s context on demand. Skill libraries are assembled from procedural memory combining step-level and script-level abstractions [Fang et al., 2025], or through autonomous skill-discovery loops [Yang et al., 2025]. As libraries grow, however, retrieval-based augmentation degrades: top-k retrieval returns noisier context, outdated skills crowd out high-quality ones, and many entries no longer match the agent’s current capability. Li et al. [2026a] confirm these risks empirically: curated libraries contain skills that hurt performance, and larger libraries yield diminishing returns.    
+
+> ∗Corresponding author. 40th Conference on Neural Information Processing Systems (NeurIPS 2026). arXiv:2610.09832v1 [cs.AI] 7 Oct 2026 Seed Skills
+> Success
+> Pre-retirement
+> Base Model Rollout
+> 𝑅 𝜏 = 1
+> 𝑅 𝜏 = 0
+> Pre-retired
+> Skills
+> Surviving Sk ill Library
+> SkillForge
+> Retired
+> Active
+> Forged Agent
+> Skill-Policy Co-Evolving RL
+
+ℳ𝑇          
+
+> Fine-tuning on successful
+> trajectories with surviving skills
+> Retirement
+> Mutation
+> Teacher
+> Model
+> Stabilization / Demotion
+> F
+> i
+> t
+> n
+> e
+> s
+> s
+> belo
+> w
+> dem
+> otio
+> n
+> th
+> r
+> e
+> s
+> h
+> o
+> l
+> d
+> H
+> i
+> g
+> h
+> f
+> i
+> t
+> n
+> e
+> s
+> s
+> ,
+> s
+> u
+> f
+> f
+> i
+> c
+> i
+> e
+> n
+> t
+> u
+> s
+> a
+> g
+> e
+> Trial
+> Retirement-aware Cold-start
+> Stable
+> Mutated child skills per forging cycle
+> Skill #1
+> Skill #5
+> Skill #2
+> Skill #8
+> Skill #1
+> Skill #2
+> Skill #6
+> Skill #3
+> Skill #8
+> Skill #10
+> Skill #15
+> Skill #2
+> The skill library and
+> model policy co-evolve
+> Forged Skills
+
+Figure 1: Overview of S KILL FORGE . Top : seed skills are pre-retired under the base model’s own rollouts; surviving fitness-verified skills seed retirement-aware cold-start and skill-policy co-evolving RL, yielding a trained agent with an adapted skill library. Bottom-left : cold-start fine-tunes on successful trajectories with surviving skills. Bottom-right : skills and model co-evolve through the fitness-driven lifecycle across trial , active , stable , and retired via selective retirement, stabilization, demotion, and LLM-guided mutation. A complementary line of work trains the policy via agentic reinforcement learning (Agentic RL) against environment reward. Pairing skills or other accumulated memory with RL is a natural combi-nation: skills focus exploration with behavioral priors, while RL shapes the policy through interaction. Recent skill-augmented RL injects retrieved skills into the agent’s context each rollout [Xia et al., 2026]; related threads close an offline-to-online distillation loop [Wu et al., 2025] or run policy updates directly over episodic memory [Zhang et al., 2026]. Yet these methods all treat the library as append-only, leaving the agent’s context polluted by low-quality skills, bloated by unbounded accumulation, and misled by once-useful skills that turn counterproductive as the policy improves, a failure mode we call delayed obsolescence : a skill whose fitness once reached the stable state but later drops below the retirement threshold as the policy matures. We propose S KILL FORGE , which treats skill library management as an active forging process rather than passive accumulation. Starting from a seed skill library distilled from trajectories, as illustrated in Figure 1, S KILL FORGE runs in three stages: (i) pre-retire seed skills that fail under the base model’s own rollouts, (ii) cold-start fine-tuning on the surviving fitness-verified skills, and (iii) switch to RL training where skills and model co-evolve each iteration. Each cycle reads runtime fitness and moves every skill along the skill lifecycle trial , active , stable , retired , with borderline-fitness skills rewritten by an LLM-guided mutation operator. Skills and model co-evolve, keeping the active set compact and aligned with the agent’s capability. We contribute the following: • SKILL FORGE and the skill lifecycle : We propose S KILL FORGE , a fitness-driven skill lifecycle augmented with LLM-guided mutation that moves each skill through trial ,
+
+active , stable , and retired states so that skills and model co-evolve, replacing the append-only accumulation of prior skill-augmented RL. • SKILL FURNACE dataset : We release S KILL FURNACE , a three-part bundle of 5k+ anno-tated records spanning retirement-filtered SFT trajectories, evolved skill libraries with fitness annotations, and retirement events with human-annotated failure categories. • Empirical validation : Across three interactive agent benchmarks spanning embodied control, web navigation, and Search-Augmented QA, S KILL FORGE surpasses the strongest baseline on every environment while keeping the library compact, delivering up to 7.8% relative improvement in aggregate success rate. 22 Related Work 
+
+Experience accumulation for LLM agents. Early work took the form of in-context reflection: self-critiquing the current output [Shinn et al., 2023, Madaan et al., 2023], and subsequently mining cross-trajectory insights [Majumder et al., 2023, Zhao et al., 2024]. In parallel, skill-library methods emerged: Wang et al. [2023] introduced an executable-code library for open-ended exploration, followed by reusable task workflows [Wang et al., 2024], and more recently procedural memory mixing step-level instructions with script-level abstractions [Fang et al., 2025]. A related thread autonomously discovers new skills for the agent to practice [Zhou et al., 2024, Yang et al., 2025]. On the RL side, memory-augmented methods couple such repositories to the training loop: earlier work used external memory to support tool-assisted planning [Putta et al., 2024, Bai et al., 2024], and later closed an offline-to-online loop between distillation and retrieval [Wu et al., 2025]. Most recently, Xia et al. [2026] combined skill libraries with RL training, injecting retrieved skills into the context during each rollout. In all of them the repository is monotone: entries persist once added and cannot be corrected as the policy evolves. S KILL FORGE instead treats the library as a dynamic population under fitness-driven selection, retiring low-fitness skills and reshaping borderline ones via LLM-guided mutation in step with the online RL optimizer. 
+
+LLM-guided evolutionary optimization. Jaderberg et al. [2017] introduced population-based training, applying fitness-based selection and mutation over the hyperparameter schedules of con-current workers. The same evaluate-select-mutate template has since been instantiated with LLMs: LLM-as-optimizer rewrites evolve a population of natural-language instructions against a fixed held-out metric [Yang et al., 2023, Guo et al., 2025], self-referential variants let instructions evolve each other [Fernando et al., 2023], and quality-diversity searches pair a pretrained LLM with an evaluator to discover diverse high-performing programs [Bradley et al., 2023, Romera-Paredes et al., 2023]. These methods all optimize static text artifacts against a stationary held-out metric in an offline loop. SKILL FORGE brings fitness-driven selection and mutation into LLM agentic reinforcement learning, where the evolving entities are skills that augment the agent’s context during interactive rollouts. Joint online training makes skill fitness inherently non-stationary, requiring a lifecycle that retires and reshapes skills as the policy evolves. 
+
+3 Preliminaries 
+
+3.1 Group Relative Policy Optimization 
+
+GRPO [Shao et al., 2024] estimates advantages from grouped samples without a separate value func-tion. Given task description d drawn from a training task distribution Dtask , a uniform distribution over the training tasks of each environment, the old policy πθold samples G episodes {τn}Gn=1 with binary rewards rn = R(τn) ∈ { 0, 1}, and computes group-normalized advantages ˆAn = ( rn − μG)/σ G.Let yn = ( yn, 1, . . . , y n, |yn|) denote the concatenation of action tokens produced autoregressively by the policy during episode τn; agent contexts and observations serve as conditioning inputs rather than generation targets, and yn aligns with the step-level actions {at} of Section 3.2. Token-level importance ratios are ρn,l = πθ (yn,l | cn,l )/π θold (yn,l | cn,l ), where cn,l denotes the left context of token yn,l , comprising all prior agent contexts, observations, and earlier action tokens of the episode. The index n indexes episodes within a GRPO group and is distinct from the skill index i used in Section 4. The policy is updated by maximizing: 
+
+JGRPO (θ) = Ed∼D task , {τn}
+
+ 1
+
+G
+
+> G
+
+X
+
+> n=1
+
+1
+
+|yn|
+
+> |yn|
+
+X
+
+> l=1
+
+min  ρn,l ˆAn, clip( ρn,l , 1−ϵ, 1+ ϵ) ˆAn
+
+
+
+− β D KL (πθ ∥πref ),
+
+(1) with token-level clipping and a trajectory-level KL penalty against the reference policy. 
+
+3.2 Skill-Augmented RL 
+
+SkillRL [Xia et al., 2026] augments GRPO with a textual skill library S, where each skill s = ( v, b, ω )
+
+comprises a name v, a behavioral principle b, and an applicability condition ω. Given task description 3d from Eq. (1), a retrieval function ϕ(d, S) selects the top-K skills whose condition ω matches the task-type label of d and concatenates them into the agent’s context: 
+
+pt = d ⊕ ϕ(d, S) ⊕ ht ⊕ ot, (2) where ht is a sliding window of the last W observation–action pairs, ot is the current observation, and ⊕ denotes string concatenation. At each step t, an action at ∼ πθ (· | pt) is sampled, and the trajectory τ = ( p1, a 1, o 2, . . . , p T , a T ) decomposes into context–action pairs {(pt, a t)}Tt=1 used as SFT supervision units. Each episode receives a binary reward R(τ ) ∈ { 0, 1}. Initially, skills are distilled from trajectories via OpenAI o3 [OpenAI, 2025], and a cold-start fine-tuning checkpoint 
+
+πθsft serves as both RL initialization and reference policy πref .
+
+4 SKILL FORGE 
+
+As illustrated in Figure 1, S KILL FORGE runs in three stages: (i) pre-retirement evaluation filters low-fitness seed skills, (ii) retirement-aware cold-start fine-tuning on the surviving library, and (iii) agentic RL with a fitness-driven skill lifecycle where skills and policy co-evolve each iteration. This design addresses the non-stationarity of skill fitness under online RL: as the policy matures, once-useful skills may slip below the retirement threshold, delayed obsolescence formalized in Eq. (11). 
+
+4.1 SKILL FURNACE Initialization 
+
+We evaluate the initial skill library S0 released by SkillRL [Xia et al., 2026] with base model πθ0 ,which performs M rollout episodes with skills injected. For each si ∈ S 0 we accumulate usage U (0) 
+
+> i
+
+and success C(0)  
+
+> i
+
+. Skills whose proto-fitness falls below a conservative threshold δpre and that have been used at least Nmin times are pre-retired: 
+
+ˆfi = C(0) 
+
+> i
+
+U (0) 
+
+> i
+
+, S(0)  
+
+> retire
+
+= {si ∈ S 0 | ˆfi < δ pre ∧ U (0)  
+
+> i
+
+≥ Nmin }. (3) The surviving library S(0) = S0 \ S (0)  
+
+> retire
+
+seeds both the cold-start fine-tuning data and the RL phase described in Section 4.4. Let Teval denote the trajectories from this evaluation, and ϕeval (d, S0) the retrieval ϕ from Eq. (2) on the full library S0 before pre-retirement. We construct the SFT dataset from successful trajectories: 
+
+DSFT = {(pt, a t) | τ ∈ T eval , (pt, a t) ∈ τ, R (τ ) = 1 , ϕ eval (dτ , S0) ∩ S (0)  
+
+> retire
+
+= ∅} , (4) where dτ is the task description of τ ; the filter excludes trajectories that relied on subsequently retired skills. Fine-tuning the base model on DSFT via standard cross-entropy 
+
+LSFT (θ) = −E(pt,a t)∼D SFT [log πθ (at | pt)] , (5) produces πθsft , which serves as both the RL initialization and the reference policy πref .The filtered DSFT , the surviving library S(0) , and human-annotated retirement events from previously recorded training runs together form S KILL FURNACE , our released dataset. As summarized in Table 1, retired skills peak at an average fitness of 0.67, close to the stabilization threshold δstable of 0.7, before dropping by 0.28 at retirement, and 57.2% first reach the stable state before this decay: a direct empirical signature of delayed obsolescence . Appendix C gives per-component details. 
+
+4.2 Skill Fitness Tracking 
+
+For each skill si, we maintain a usage count Ui (episodes in which si was retrieved) and a success count Ci (episodes that succeeded). At the start of RL, the counters are initialized from the preliminary evaluation phase: Ci ← C(0)  
+
+> i
+
+and Ui ← U (0)  
+
+> i
+
+for each surviving skill si ∈ S (0) , so proto-fitness information from Section 4.1 is preserved rather than discarded. The fitness is: 
+
+fi =
+
+Ci/U i if Ui ≥ Nwarm 
+
+fdefault otherwise (6) 4Table 1: S KILL FURNACE dataset statistics. The top block reports per-component record counts across SFT trajectories, library snapshots, and retirement events; the bottom block reports detailed retirement-event metrics. Total records (#) is summed across components within each environment.                                     
+
+> Statistic ALFWorld WebShop Search-Aug. QA Total
+> Dataset scale
+> SFT trajectories (#) 412 348 253 1,013 Library snapshot records (#) 1,512 1,683 1,326 4,521 Retirement events (#) 138 121 59 318
+> Total records (#) 2,062 2,152 1,638 5,852
+> Retirement event statistics
+> Avg. peak fitness 0.696 0.709 0.515 0.667 Avg. fitness drop from peak 0.294 0.279 0.239 0.278 Avg. lifespan (steps) 38.8 31.7 49.4 38.0 Stable before retirement (%) 60.1 58.7 47.5 57.2
+
+where Nwarm is a minimum usage count before trusting the empirical success rate and fdefault is a neutral prior for new skills. We use f (k) 
+
+> i
+
+for the running estimate at training step k when dependence on k matters, as formalized in Section 4.4; for any skill with U (0)  
+
+> i
+
+≥ Nwarm we have f (0)  
+
+> i
+
+= ˆfi, so the proto-fitness from Eq. (3) is the runtime fitness at step 0, reused rather than recomputed. Credit is assigned at the episode level: for each episode with trajectory τ and retrieved skill set 
+
+Sτ = ϕ(d, S), all K retrieved skills receive the binary reward signal: 
+
+Ui ← Ui + ⊮[si ∈ S τ ], Ci ← Ci + ⊮[si ∈ S τ ] · R(τ ), (7) where ⊮[·] denotes the indicator function. 
+
+4.3 Skill Lifecycle Management 
+
+Based on accumulated fitness, we define a lifecycle update rule ℓ that assigns each skill one of four states {trial , active , stable , retired }; the active library S retains only non-retired skills. Transitions depend on fitness thresholds δretire < δ demote < δ stable , where δdemote lies strictly between the retirement and stabilization thresholds to provide hysteresis so that a stable skill whose fitness slips must first be demoted to active before becoming eligible for retirement. Transitions also depend on a mutation range [δlow , δ high ], minimum usage counts Npromote and Nstable , and a generation-aware retirement threshold: 
+
+N (gi) 
+
+> retire
+
+=
+
+Nprotect if gi = 0 
+
+Nretire otherwise (8) where gi is the mutation generation; distilled ( gi = 0 ) skills require a higher usage bar Nprotect >Nretire before they can be retired. The lifecycle update rule is then: 
+
+ℓ(si) ←
+
+
+
+active if ℓ(si) = trial ∧ Ui ≥ Npromote 
+
+stable if ℓ(si) = active ∧ fi ≥ δstable ∧ Ui ≥ Nstable 
+
+active if ℓ(si) = stable ∧ fi < δ demote 
+
+retired if ℓ(si) = active ∧ fi < δ retire ∧ Ui ≥ N (gi)
+
+> retire
+
+(9) If none applies, for example an active skill with δretire ≤ fi < δ stable , ℓ(si) is left unchanged; Appendix B states the well-definedness and per-cycle ordering used by Algorithm 1. Only active 
+
+skills are eligible for retirement; trial skills must first accumulate Npromote usages and promote to active , and stable skills must first be demoted. This two-gate design prevents premature retirement of newly created skills and shields proven skills from transient fitness dips. The mutation generation gi is 0 for skills distilled into S0 and is incremented by 1 at each mutation. Initial skills surviving pre-retirement enter as stable if ˆfi ≥ δstable , or as active otherwise; newly generated skills enter as trial . The lifecycle operates through promotion, demotion, retirement, stabilization, and mutation, per Algorithm 1. Because demotion precedes retirement, a skill can be demoted and retired in one cycle, so once-stable skills can be retired as the policy evolves. 
+
+Mutation reshapes active skills whose fitness lies in a moderate range [δlow , δ high ] and which have been used at least Nmutate times, so that the fitness estimate used to select mutation parents is 5Algorithm 1 SKILL FORGE Forging Cycle 
+
+Require: Skill library S, fitness scores {fi}, usage counts {Ui}, failed trajectories Tfail 
+
+Ensure: Updated skill library S 
+
+> 1:
+
+for si ∈ S where ℓ(si) = trial ∧ Ui ≥ Npromote do  
+
+> 2:
+
+ℓ(si) ← active ▷ Promote: trial → active  
+
+> 3:
+
+end for  
+
+> 4:
+
+for si ∈ S where ℓ(si) = stable ∧ fi < δ demote do  
+
+> 5:
+
+ℓ(si) ← active ▷ Demote: stable → active  
+
+> 6:
+
+end for  
+
+> 7:
+
+R ← { si ∈ S | ℓ(si) = active ∧ fi < δ retire ∧ Ui ≥ N (gi)
+
+> retire
+
+} ▷ Retirement candidates  
+
+> 8:
+
+S ← S \ bottom-m(R), m = min( Kretire , |R| ) ▷ bottom-m(R): m skills in R with lowest fi 
+
+> 9:
+
+for si ∈ S where ℓ(si) = active ∧ fi ≥ δstable ∧ Ui ≥ Nstable do  
+
+> 10:
+
+ℓ(si) ← stable ▷ Stabilize: active → stable  
+
+> 11:
+
+end for  
+
+> 12:
+
+Mcand ← { si ∈ S | ℓ(si) = active ∧ δlow ≤ fi ≤ δhigh ∧ Ui ≥ Nmutate } ▷ Mutation pool  
+
+> 13:
+
+Select Kmutate parents from Mcand ; P (si) ∝ 1 − fi ▷ Lower fitness → higher chance  
+
+> 14:
+
+for each selected sparent do  
+
+> 15:
+
+schild ← M T (Pμ(sparent , f parent , Tfail )) ▷ LLM-guided mutation  
+
+> 16:
+
+S ← S ∪ { schild }; ℓ(schild ) ← trial ; gchild ← gparent + 1 ▷ Child enters as trial  
+
+> 17:
+
+end for  
+
+> 18:
+
+while |S| > S max and ∃si ∈ S with ℓ(si) = active do  
+
+> 19:
+
+S ← S \ { arg min si: ℓ(si)= active fi} ▷ Enforce size bound  
+
+> 20:
+
+end while  
+
+> 21:
+
+return S
+
+informative. From the resulting candidate pool Mcand , we select up to Kmutate parents via inverse-fitness-weighted sampling ( P (si) ∝ 1 − fi), collect their recent failure trajectories Tfail , and query our teacher model ( MT ) to generate improved variants: 
+
+Mcand = {si ∈ S | ℓ(si) = active ∧ δlow ≤ fi ≤ δhigh ∧ Ui ≥ Nmutate },schild = MT
+
+ Pμ(sparent , f parent , Tfail ), (10) where Pμ assembles the parent skill’s content, fitness statistics, and failure examples into a structured template. Each child enters with ℓ(schild ) = trial and generation gchild = gparent + 1 . The inverse-fitness weighting P (si) ∝ 1 − fi biases selection toward skills with more room to improve without concentrating mutation on a single outlier. We instantiate MT from a different model family than the trained policy, since Li et al. [2026a] report that self-generated skills provide negligible or negative benefit compared with externally authored ones. 
+
+4.4 Training Integration 
+
+As given in Algorithm 1, a forging cycle runs every E validation epochs, with per-cycle budgets 
+
+Kretire and Kmutate and a total skill cap Smax bounding computational cost. Making the non-stationarity introduced at the start of Section 4 explicit, the fitness estimate at training step k depends on the policy trajectory: 
+
+f (k) 
+
+> i
+
+=
+
+P 
+
+> j≤k
+
+⊮[si ∈ S τ (j) ] · R(τ (j))
+
+P 
+
+> j≤k
+
+⊮[si ∈ S τ (j) ] , τ (j) ∼ πθj (· | p(j)), (11) where p(j) denotes the agent’s context at step j, constructed via Eq. (2) with the library S(j). The 
+
+j = 0 term covers the pre-retirement rollouts under πθ0 , consistent with the counter initialization in Section 4.2 and yielding f (0)  
+
+> i
+
+= ˆfi. As Li et al. [2026b] report, on-policy formulations avoid the exposure bias of off-policy alternatives, justifying the non-stationarity above. At each step k, the policy is updated via Eq. (1) conditioned on the current library, and the forging cycle updates the library based on accumulated fitness: 
+
+θk+1 = arg max  
+
+> θ
+
+JGRPO (θ; S(k)), S(k+1) = Forge  S(k), {f (k) 
+
+> i
+
+}, (12) 6Table 2: Performance on ALFWorld and WebShop (%). WebShop Score is the partial-credit reward; 
+
+Succ. is binary task success. Bold : best; underline: second best. 
+
+Method ALFWorld WebShop Pick Look Clean Heat Cool Pick2 All Score Succ. Closed-source LLMs 
+
+GPT-4o 75.3 60.8 31.2 56.7 21.6 49.8 48.0 31.8 23.7 Gemini-2.5-Pro 92.8 63.3 62.1 69.0 26.6 58.7 60.3 42.5 35.9 
+
+Base Model 
+
+Vanilla 33.4 21.6 19.3 6.9 2.8 3.2 14.8 26.4 7.8 
+
+Context / Memory Methods 
+
+ReAct 48.5 ▲15 .1 35.4 ▲13 .8 34.3 ▲15 .0 13.2 ▲6.3 18.2 ▲15 .4 17.6 ▲14 .4 31.2 ▲16 .4 46.2 ▲19 .8 19.5 ▲11 .7
+
+Reflexion 62.0 ▲28 .6 41.6 ▲20 .0 44.9 ▲25 .6 30.9 ▲24 .0 36.3 ▲33 .5 23.8 ▲20 .6 42.7 ▲27 .9 58.1 ▲31 .7 28.8 ▲21 .0
+
+Mem0 54.0 ▲20 .6 55.0 ▲33 .4 26.9 ▲7.6 36.4 ▲29 .5 20.8 ▲18 .0 7.7 ▲4.5 33.6 ▲18 .8 23.9 ▼2.5 2.0 ▼5.8
+
+ExpeL 21.0 ▼12 .4 67.0 ▲45 .4 55.0 ▲35 .7 52.0 ▲45 .1 71.0 ▲68 .2 6.0 ▲2.8 46.3 ▲31 .5 30.9 ▲4.5 11.2 ▲3.4
+
+MemP 54.3 ▲20 .9 38.5 ▲16 .9 48.1 ▲28 .8 56.2 ▲49 .3 32.0 ▲29 .2 16.7 ▲13 .5 41.4 ▲26 .6 25.3 ▼1.1 6.4 ▼1.4
+
+SimpleMem 64.5 ▲31 .1 33.3 ▲11 .7 20.0 ▲0.7 12.5 ▲5.6 33.3 ▲30 .5 3.8 ▲0.6 29.7 ▲14 .9 33.2 ▲6.8 8.6 ▲0.8
+
+RL-based Methods 
+
+RLOO 87.6 ▲54 .2 78.2 ▲56 .6 87.3 ▲68 .0 81.3 ▲74 .4 71.9 ▲69 .1 48.9 ▲45 .7 75.5 ▲60 .7 80.3 ▲53 .9 65.7 ▲57 .9
+
+GRPO 90.8 ▲57 .4 66.1 ▲44 .5 89.3 ▲70 .0 74.7 ▲67 .8 72.5 ▲69 .7 64.7 ▲61 .5 77.6 ▲62 .8 79.3 ▲52 .9 66.1 ▲58 .3
+
+Memory-Augmented RL 
+
+MemRL 62.8 ▲29 .4 38.5 ▲16 .9 22.2 ▲2.9 12.5 ▲5.6 8.0 ▲5.2 0.0 ▼3.2 21.4 ▲6.6 29.5 ▲3.1 9.2 ▲1.4
+
+EvolveR 64.9 ▲31 .5 33.3 ▲11 .7 46.4 ▲27 .1 13.3 ▲6.4 33.3 ▲30 .5 33.3 ▲30 .1 43.8 ▲29 .0 42.5 ▲16 .1 17.6 ▲9.8
+
+Mem0+GRPO 78.1 ▲44 .7 54.8 ▲33 .2 56.1 ▲36 .8 31.0 ▲24 .1 65.0 ▲62 .2 26.9 ▲23 .7 54.7 ▲39 .9 58.1 ▲31 .7 37.5 ▲29 .7
+
+SimpleMem+GRPO 89.5 ▲56 .1 36.3 ▲14 .7 60.0 ▲40 .7 50.0 ▲43 .1 64.9 ▲62 .1 26.3 ▲23 .1 62.5 ▲47 .7 67.8 ▲41 .4 46.9 ▲39 .1
+
+SkillRL 97.9 ▲64 .5 71.4 ▲49 .8 90.0 ▲70 .7 90.0 ▲83 .1 95.5 ▲92 .7 87.5 ▲84 .3 89.9 ▲75 .1 85.2 ▲58 .8 72.7 ▲64 .9
+
+SKILL FORGE 98.2 ▲64 .8 86.6 ▲65 .0 89.8 ▲70 .5 93.7 ▲86 .8 95.6 ▲92 .8 88.4 ▲85 .2 92.4 ▲77 .6 87.8 ▲61 .4 78.4 ▲70 .6
+
+where Forge denotes a full forging cycle. Skills and policy thus co-evolve: as θ improves, fitness estimates shift, and the forging cycle retires skills whose utility has diminished. Delayed obsolescence 
+
+is then the formal event ∃k1 < k 2 : f (k1)
+
+i ≥ δstable ∧ f (k2)
+
+i < δ retire .
+
+5 Experiments 
+
+5.1 Experimental Setup Environments. Three interactive agent benchmarks are used: ALFWorld [Shridhar et al., 2020], WebShop [Yao et al., 2022a], and Search-Augmented QA [Jin et al., 2025], with the Search-Augmented QA setting spanning NQ [Kwiatkowski et al., 2019], TriviaQA [Joshi et al., 2017], PopQA [Mallen et al., 2023], HotpotQA [Yang et al., 2018], 2WikiMultiHopQA [Ho et al., 2020], MuSiQue [Trivedi et al., 2022], and Bamboogle [Press et al., 2023]. 
+
+Baselines. Baselines fall into three categories. Context and memory methods rely on in-context reasoning or external experience without updating the policy: ReAct [Yao et al., 2022b], Reflex-ion [Shinn et al., 2023], Mem0 [Chhikara et al., 2025], ExpeL [Zhao et al., 2024], MemP [Fang et al., 2025], and SimpleMem [Liu et al., 2025]. RL-based methods optimize the policy via group-relative advantage estimation: RLOO [Ahmadian et al., 2024] and GRPO [Shao et al., 2024]. Memory-augmented RL methods couple persistent memory with policy optimization and form the most direct comparison: MemRL [Zhang et al., 2026], EvolveR [Wu et al., 2025], SkillRL [Xia et al., 2026], and two additional combinations, Mem0+GRPO and SimpleMem+GRPO, implemented by adding GRPO optimization to the respective memory mechanisms. For Search-Augmented QA the comparison additionally includes Search-o1 [Li et al., 2025], R1-Instruct [Team, 2025a], Search-R1 [Jin et al., 2025], ZeroSearch [Sun et al., 2025], and StepSearch [Zheng et al., 2025]. GPT-4o [OpenAI, 2024] and Gemini-2.5-Pro [Team, 2025b] are reported as frontier reference points. 
+
+Implementation. All experiments are built on the verl [Sheng et al., 2025] framework with GRPO as the policy optimizer. The base model is Qwen2.5-7B-Instruct [Team, 2023], first fine-tuned via 7NQ 
+
+> TriviaQA
+> PopQA
+> HotpotQA 2Wiki
+> MuSiQue
+> Bamboogle
+> 48.2 65.0 50.1 43.9 40.4 20.3 77.2
+
+(a) Search-Augmented QA comparison (%). 0 50 100 150 200 Training Steps 20 40 60 80 100 Success Rate (%) 
+
+GRPO+Memory Vanilla GRPO SkillRL SkillForge (Ours) (b) ALFWorld validation success rate across training. 
+
+Figure 2: Main-results diagnostics. (a) Per-dataset accuracy on Search-Augmented QA; per-axis numbers in bold red report S KILL FORGE accuracy on each dataset. —: S KILL FORGE (Ours); —:SkillRL; - -: EvolveR; - -: ZeroSearch; - -: Search-R1; - -: Search-o1; - -: R1-Instruct. †In-domain; 
+
+> ⋆
+
+out-of-domain. (b) S KILL FORGE achieves faster convergence and higher success rates than vanilla GRPO and memory-augmented RL. Table 3: Ablation study of S KILL FORGE across three environments. “Library” reports the final non-retired skill count (coinciding with |S 0| for −forging/ −mutation). Each row disables one forging stage: w/o forging removes the entire S KILL FORGE lifecycle, w/o pre-retirement keeps runtime stages but skips the pre-RL fitness filter, w/o retirement disables skill removal and size capping, and w/o mutation disables LLM-guided refinement. Bold : best.                                       
+
+> Configuration ALFWorld WebShop Search-Aug. QA Library Succ. (%) Library Succ. (%) Library Succ. (%)
+> SKILL FORGE 100 92.4 95 78.4 85 48.7
+> w/o forging 44 89.8 ▼2.666 72.6 ▼5.841 46.3 ▼2.4
+> w/o pre-retirement 100 90.7 ▼1.795 74.9 ▼3.585 47.5 ▼1.2
+> w/o retirement 132 91.4 ▼1.0121 75.9 ▼2.5111 47.9 ▼0.8
+> w/o mutation 44 91.8 ▼0.666 76.8 ▼1.641 48.2 ▼0.5
+
+the retirement-aware SFT described in Section 4.1 to produce environment-specific initializations. Training runs for 200 steps with a learning rate of 1 × 10 −6, clipping range ϵ = 0 .2, and a KL penalty coefficient β = 0 .001 . Rollout generation uses temperature 1.0 with a group size of G = 8 . The forging cycle executes every 10 training steps, with up to Kmutate = 5 mutations and Kretire = 3 
+
+retirements per cycle; the teacher model for mutation is Kimi-K2.5 [Team et al., 2026]. Full hyperparameters, hardware details, and forging thresholds are listed in Appendix B. 
+
+5.2 Main Results 
+
+As shown in Table 2, S KILL FORGE achieves 92.4% on ALFWorld and 78.4% on WebShop, outper-forming the closed-source GPT-4o and Gemini-2.5-Pro baselines by a wide margin and improving over SkillRL by 2.8% relative on ALFWorld and 7.8% relative on WebShop. The largest per-subtask relative improvement over SkillRL is on ALFWorld’s Look at 21.3%; the Clean subtask remains within 0.2% of SkillRL, within sampling noise. On Search-Augmented QA, as illustrated in Figure 2a, SKILL FORGE reaches 48 .7 ± 0.3% micro-averaged accuracy on the full test set, the highest overall among all methods; per-dataset results are in Appendix D. As illustrated in Figure 2b, S KILL FORGE and SkillRL both climb from ∼60% to ∼70% between steps 50 and 65, but S KILL FORGE separates beyond step 75 as the forging lifecycle takes effect, reaching ∼90% while SkillRL oscillates in the ∼80–88% range over the rest of the training budget. 
+
+5.3 Ablation Study 
+
+As shown in Table 3, removing the entire S KILL FORGE lifecycle produces the largest relative drops on every environment, peaking at 7.4% on WebShop. Pre-retirement is the single most impactful component, with per-stage relative drops of 1.8%, 4.5%, and 2.5% on ALFWorld, WebShop, and 80 50 100 150 200 Training Step 050 100 Number of Skills (a) ALFWorld 0 50 100 150 200 Training Step 050 100 Number of Skills (b) WebShop 0 50 100 150 200 Training Step 050 Number of Skills (c) Search-Augmented QA 
+
+Figure 3: Skill library dynamics across three environments. Stable , Active , Trial : lifecycle states (stacked areas). Retired : cumulative retired (below zero). —: total non-retired; - -: mutated (gen ≥1). 0.0 0.2 0.4 0.6 0.8 1.0 Fitness 0246Density 
+
+(a) ALFWorld 0.0 0.2 0.4 0.6 0.8 1.0 Fitness 0.0 2.5 5.0 7.5 Density (b) WebShop 0.0 0.2 0.4 0.6 0.8 1.0 Fitness 0246Density (c) Search-Augmented QA 
+
+Figure 4: Fitness distribution at three training stages. Step 40 , Step 120 , Step 195 : KDE at each stage. - -: δretire = 0 .4; - -: δstable = 0 .7. Retirement depletes the left tail, mutation populates the middle band via newly born skills, and stabilization maintains the high-fitness regime. Search-Augmented QA respectively. The single-component drops consistently sum to more than the joint w/o forging drop, consistent with sub-additive interactions among the three components. Larger libraries do not imply better performance. Without retirement the library grows to over 130 skills on ALFWorld, yet S KILL FORGE outperforms it with a compact set of 100. On WebShop, enabling pre-retirement and mutation lifts the static 72 .6% baseline to 75 .9% ; adding retirement trims the library from 121 skills to 95 and closes the remaining 3.2% relative gap to the full 78 .4% ,confirming that quality control, not scale, drives the gain. 
+
+5.4 Forging Dynamics 
+
+As shown in Figure 3, the skill library evolves similarly across the three environments. On ALFWorld, 200 training steps grow the library to 100 non-retired skills, with 132 created and 32 retired; the cap binds near step 170, after which mutations and retirements balance into dynamic equilibrium. At the final checkpoint 76 skills are stable and 24 active or trial .As illustrated in Figure 4, the distribution evolves through two opposing flows rather than a monotone rightward shift. Retirement depletes the left tail: on ALFWorld the sub-δretire fraction shrinks from 7.5% to 2.0% across training, while mutation expands the middle band [δretire , δ stable ) from 18.9% to 22.0% as children enter with a neutral prior at 0.5. The stable regime retains most of the library throughout and mean fitness stays near 0.73, an equilibrium in which pruning and churn rebalance. Appendix E provides concrete mutation examples and the deepest forging lineages. 
+
+6 Conclusion 
+
+SKILL FORGE treats skill-library management as a fitness-driven forging process in which skills and the model co-evolve under online RL through retirement, stabilization, and LLM-guided mutation, delivering up to 7.8% relative improvement over the strongest memory-augmented RL baseline across ALFWorld, WebShop, and Search-Augmented QA while keeping the active library compact. We release S KILL FURNACE , a 5k+ annotated record bundle of retirement-filtered SFT trajectories, evolved skill libraries with fitness annotations, and retirement events with human-annotated failure categories, in which procedural rigidity emerges as the dominant mode by which once-useful skills turn into active interference, the empirical signature of delayed obsolescence .9References 
+
+Anthropic. Claude Code. https://claude.ai/ , 2025. OpenClaw. OpenClaw. https://github.com/openclaw/openclaw , 2026. Prateek Chhikara, Dev Khant, Saket Aryan, Taranjeet Singh, and Deshraj Yadav. Mem0: Building production-ready ai agents with scalable long-term memory. arXiv preprint arXiv:2504.19413 ,2025. Jiaqi Liu, Yaofeng Su, Peng Xia, Yiyang Zhou, Siwei Han, Zeyu Zheng, Cihang Xie, Mingyu Ding, and Huaxiu Yao. Simplemem: Efficient lifelong memory for llm agents. arXiv preprint arXiv:2601.02553 , 2025. URL https://github.com/aiming-lab/SimpleMem .Runnan Fang, Yuan Liang, Xiaobin Wang, Jialong Wu, Shuofei Qiao, Pengjun Xie, Fei Huang, Huajun Chen, and Ningyu Zhang. Memp: Exploring agent procedural memory. ArXiv , abs/2508.06433, 2025. Yongjin Yang, Sinjae Kang, Juyong Lee, Dongjun Lee, Se young Yun, and Kimin Lee. Auto-mated skill discovery for language agents through exploration and iterative feedback. ArXiv ,abs/2506.04287, 2025. Xiangyi Li, Wenbo Chen, Yimin Liu, Shenghan Zheng, Xiaokun Chen, Yifeng He, Yubo Li, Bingran You, Haotian Shen, Jiankai Sun, et al. Skillsbench: Benchmarking how well agent skills work across diverse tasks, 2026a. URL https://arxiv.org/abs/2602.12670 .Peng Xia, Jianwen Chen, Hanyang Wang, Jiaqi Liu, Kaide Zeng, Yu Wang, Siwei Han, Yiyang Zhou, Xujiang Zhao, Haifeng Chen, et al. Skillrl: Evolving agents via recursive skill-augmented reinforcement learning. arXiv preprint arXiv:2602.08234 , 2026. Rong Wu, Xiaoman Wang, Jianbiao Mei, Pinlong Cai, Daocheng Fu, Cheng Yang, Licheng Wen, Xuemeng Yang, Yufan Shen, Yuxin Wang, et al. Evolver: Self-evolving llm agents through an experience-driven lifecycle. arXiv preprint arXiv:2510.16079 , 2025. Shengtao Zhang, Jiaqian Wang, Ruiwen Zhou, Junwei Liao, Yuchen Feng, Weinan Zhang, Ying Wen, Zhiyu Li, Feiyu Xiong, Yutao Qi, et al. Memrl: Self-evolving agents via runtime reinforcement learning on episodic memory. ArXiv , abs/2601.03192, 2026. Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. Reflexion: Language agents with verbal reinforcement learning. Advances in neural information processing systems , 36:8634–8652, 2023. Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, et al. Self-refine: Iterative refinement with self-feedback. ArXiv , abs/2303.17651, 2023. Bodhisattwa Prasad Majumder, Bhavana Dalvi Mishra, Peter Jansen, Oyvind Tafjord, Niket Tandon, Li Zhang, Chris Callison-Burch, and Peter Clark. Clin: A continually learning language agent for rapid task adaptation and generalization. arXiv preprint arXiv:2310.10134 , 2023. Andrew Zhao, Daniel Huang, Quentin Xu, Matthieu Lin, Yong-Jin Liu, and Gao Huang. Expel: Llm agents are experiential learners. In Proceedings of the AAAI Conference on Artificial Intelligence ,volume 38, pages 19632–19642, 2024. Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and Anima Anandkumar. Voyager: An open-ended embodied agent with large language models. arXiv preprint arXiv:2305.16291 , 2023. Zhiruo Wang, Jiayuan Mao, Daniel Fried, and Graham Neubig. Agent workflow memory. 2024. Yifei Zhou, Qianlan Yang, Kaixiang Lin, Min Bai, Xiong Zhou, Yu-Xiong Wang, Sergey Levine, and Erran L. Li. Proposer-agent-evaluator(pae): Autonomous skill discovery for foundation model internet agents. ArXiv , abs/2412.13194, 2024. 10 Pranav Putta, Edmund Mills, Naman Garg, Sumeet Motwani, Chelsea Finn, Divyansh Garg, and Rafael Rafailov. Agent q: Advanced reasoning and learning for autonomous ai agents. arXiv preprint arXiv:2408.07199 , 2024. Hao Bai, Yifei Zhou, Mert Cemri, Jiayi Pan, Alane Suhr, Sergey Levine, and Aviral Kumar. Digirl: Training in-the-wild device-control agents with autonomous reinforcement learning. Advances in Neural Information Processing Systems , 37:12461–12495, 2024. Max Jaderberg, Valentin Dalibard, Simon Osindero, Wojciech M Czarnecki, Jeff Donahue, Ali Razavi, Oriol Vinyals, Tim Green, Iain Dunning, Karen Simonyan, et al. Population based training of neural networks. arXiv preprint arXiv:1711.09846 , 2017. Chengrun Yang, Xuezhi Wang, Yifeng Lu, Hanxiao Liu, Quoc V Le, Denny Zhou, and Xinyun Chen. Large language models as optimizers. In The Twelfth International Conference on Learning Representations , 2023. Qingyan Guo, Rui Wang, Junliang Guo, Bei Li, Kaitao Song, Xu Tan, Guoqing Liu, Jiang Bian, and Yujiu Yang. Evoprompt: Connecting llms with evolutionary algorithms yields powerful prompt optimizers, 2025. URL https://arxiv.org/abs/2309.08532 .Chrisantha Fernando, Dylan Banarse, Henryk Michalewski, Simon Osindero, and Tim Rock-täschel. Promptbreeder: Self-referential self-improvement via prompt evolution. arXiv preprint arXiv:2309.16797 , 2023. Herbie Bradley, Andrew Dai, Hannah Teufel, Jenny Zhang, Koen Oostermeijer, Marco Bellagente, Jeff Clune, Kenneth Stanley, Grégory Schott, and Joel Lehman. Quality-diversity through ai feedback. arXiv preprint arXiv:2310.13032 , 2023. Bernardino Romera-Paredes, Mohammadamin Barekatain, Alexander Novikov, Matej Balog, M. Pawan Kumar, Emilien Dupont, Francisco J. R. Ruiz, Jordan S. Ellenberg, Pengming Wang, Omar Fawzi, et al. Mathematical discoveries from program search with large language models. 
+
+Nature , 625:468 – 475, 2023. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of mathemat-ical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. OpenAI. Introducing o3 and o4-mini. https://openai.com/index/ introducing-o3-and-o4-mini/ , 2025. Yaxuan Li, Yuxin Zuo, Bingxiang He, Jinqian Zhang, Chaojun Xiao, Cheng Qian, Tianyu Yu, Huan-ang Gao, Wenkai Yang, Zhiyuan Liu, et al. Rethinking on-policy distillation of large language models: Phenomenology, mechanism, and recipe. arXiv preprint arXiv:2604.13016 , 2026b. Mohit Shridhar, Xingdi Yuan, Marc-Alexandre Côté, Yonatan Bisk, Adam Trischler, and Matthew Hausknecht. Alfworld: Aligning text and embodied environments for interactive learning. arXiv preprint arXiv:2010.03768 , 2020. Shunyu Yao, Howard Chen, John Yang, and Karthik Narasimhan. Webshop: Towards scalable real-world web interaction with grounded language agents. Advances in Neural Information Processing Systems , 35:20744–20757, 2022a. Bowen Jin, Hansi Zeng, Zhenrui Yue, Jinsung Yoon, Sercan Arik, Dong Wang, Hamed Zamani, and Jiawei Han. Search-r1: Training llms to reason and leverage search engines with reinforcement learning. arXiv preprint arXiv:2503.09516 , 2025. Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, et al. Natural questions: a benchmark for question answering research. Transactions of the Association for Computational Linguistics , 7:453–466, 2019. Mandar Joshi, Eunsol Choi, Daniel S Weld, and Luke Zettlemoyer. Triviaqa: A large scale distantly supervised challenge dataset for reading comprehension. In Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 1601– 1611, 2017. 11 Alex Mallen, Akari Asai, Victor Zhong, Rajarshi Das, Daniel Khashabi, and Hannaneh Hajishirzi. When not to trust language models: Investigating effectiveness of parametric and non-parametric memories. In Proceedings of the 61st annual meeting of the association for computational linguistics (volume 1: Long papers) , pages 9802–9822, 2023. Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William Cohen, Ruslan Salakhutdinov, and Christopher D Manning. Hotpotqa: A dataset for diverse, explainable multi-hop question answering. In Proceedings of the 2018 conference on empirical methods in natural language processing , pages 2369–2380, 2018. Xanh Ho, Anh-Khoa Duong Nguyen, Saku Sugawara, and Akiko Aizawa. Constructing a multi-hop QA dataset for comprehensive evaluation of reasoning steps. In Donia Scott, Nuria Bel, and Chengqing Zong, editors, Proceedings of the 28th International Conference on Compu-tational Linguistics , pages 6609–6625, Barcelona, Spain (Online), December 2020. Interna-tional Committee on Computational Linguistics. doi: 10.18653/v1/2020.coling-main.580. URL 
+
+https://aclanthology.org/2020.coling-main.580/ .Harsh Trivedi, Niranjan Balasubramanian, Tushar Khot, and Ashish Sabharwal. Musique: Multihop questions via single-hop question composition. Transactions of the Association for Computational Linguistics , 10:539–554, 2022. Ofir Press, Muru Zhang, Sewon Min, Ludwig Schmidt, Noah Smith, and Mike Lewis. Measuring and narrowing the compositionality gap in language models. In Houda Bouamor, Juan Pino, and Kalika Bali, editors, Findings of the Association for Computational Linguistics: EMNLP 2023 , pages 5687– 5711, Singapore, December 2023. Association for Computational Linguistics. doi: 10.18653/v1/ 2023.findings-emnlp.378. URL https://aclanthology.org/2023.findings-emnlp.378/ .Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik R Narasimhan, and Yuan Cao. React: Synergizing reasoning and acting in language models. In The eleventh international conference on learning representations , 2022b. Arash Ahmadian, Chris Cremer, Matthias Gallé, Marzieh Fadaee, Julia Kreutzer, Olivier Pietquin, Ahmet Üstün, and Sara Hooker. Back to basics: Revisiting REINFORCE-style optimization for learning from human feedback in LLMs. In Lun-Wei Ku, Andre Martins, and Vivek Srikumar, editors, Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 12248–12267, Bangkok, Thailand, August 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.acl-long.662. URL https://aclanthology. org/2024.acl-long.662/ .Xiaoxi Li, Guanting Dong, Jiajie Jin, Yuyao Zhang, Yujia Zhou, Yutao Zhu, Peitian Zhang, and Zhicheng Dou. Search-o1: Agentic search-enhanced large reasoning models. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 5420–5438, 2025. DeepSeek Team. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. 
+
+ArXiv , abs/2501.12948, 2025a. Hao Sun, Zile Qiao, Jiayan Guo, Xuanbo Fan, Yingyan Hou, Yong Jiang, Pengjun Xie, Yan Zhang, Fei Huang, and Jingren Zhou. Zerosearch: Incentivize the search capability of llms without searching. arXiv preprint arXiv:2505.04588 , 2025. Xuhui Zheng, Kang An, Ziliang Wang, Yuhang Wang, and Yichao Wu. StepSearch: Igniting LLMs search ability via step-wise proximal policy optimization. In Christos Christodoulopoulos, Tanmoy Chakraborty, Carolyn Rose, and Violet Peng, editors, Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 21805–21830, Suzhou, China, November 2025. Association for Computational Linguistics. ISBN 979-8-89176-332-6. doi: 10.18653/v1/2025.emnlp-main.1106. URL https://aclanthology.org/2025.emnlp-main. 1106/ .OpenAI. Gpt-4o system card, 2024. https://openai.com/index/gpt-4o-system-card/ .Gemini Team. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. ArXiv , abs/2507.06261, 2025b. 12 Guangming Sheng, Chi Zhang, Zilingfeng Ye, Xibin Wu, Wang Zhang, Ru Zhang, Yanghua Peng, Haibin Lin, and Chuan Wu. Hybridflow: A flexible and efficient rlhf framework. In Proceedings of the Twentieth European Conference on Computer Systems , EuroSys ’25, page 1279–1297. ACM, March 2025. doi: 10.1145/3689031.3696075. URL http://dx.doi.org/10.1145/3689031. 3696075 .Qwen Team. Qwen technical report. ArXiv , abs/2309.16609, 2023. Kimi Team, Tongtong Bai, Yifan Bai, Yiping Bao, S. H. Cai, Yuan Cao, Y. Charles, H. S. Che, Cheng Chen, Guanduo Chen, et al. Kimi k2.5: Visual agentic intelligence, 2026. URL https: //arxiv.org/abs/2602.02276 .13 A Notation 
+
+Table 4 summarizes the symbols used throughout the paper, grouped by domain. Table 4: Notation used throughout the paper. 
+
+Symbol Definition Description 
+
+Environment and Agent 
+
+d Task description Query input to the agent; dτ denotes the instance tied to trajectory τ
+
+Dtask Training task distribution Uniform over per-environment training tasks 
+
+R Reward function R(τ ) ∈ { 0, 1}, binary task success 
+
+πθ Agent policy Parameterized by θπθ0 Base model policy Before any fine-tuning 
+
+πθold Old policy (GRPO) Generates rollouts; updated each training step 
+
+πθsft SFT checkpoint policy RL initialization and reference policy πref 
+
+τ = ( p1, a 1, o 2, . . . ) Episode trajectory Contexts, actions, observations over one episode 
+
+at Agent action at step t Sampled as at ∼ πθ (· | pt)
+
+ot Observation at step t Current environment observation 
+
+pt Agent context at step t Built via Eq. (2); p(j) uses library S(j) at training step jht Interaction history Sliding window of the last W =5 ( o, a ) pairs 
+
+Skill Library 
+
+si = ( v, b, ω ) Skill Name, behavioral principle, applicability condition 
+
+S Skill library Set of all non-retired skills 
+
+S0 Initial skill library Input to Eq. (3); S(0)  
+
+> retire
+
+is the pre-retired subset 
+
+S(k) Library at step k After k forging updates; S(0) = S0 \ S (0) 
+
+> retire
+
+K Retrieval count Number of skills retrieved per episode 
+
+ϕ(d, S) Retrieval function Selects top-K skills for task d; ϕeval is the pre-retirement variant 
+
+Sτ Retrieved skill set ϕ(d, S) for trajectory τUi Usage count Cumulative retrievals of si; superscript (0) marks pre-retirement value 
+
+Ci Success count Cumulative episodes in which si was retrieved and succeeded 
+
+fi Skill fitness Ci/U i when Ui ≥ Nwarm , else fdefault 
+
+fdefault Default fitness Neutral prior for skills with Ui < N warm 
+
+ˆfi Proto-fitness C(0)  
+
+> i
+
+/U (0)  
+
+> i
+
+from pre-retirement rollouts; equals f (0) 
+
+> i
+
+f (k) 
+
+> i
+
+Fitness at step k Non-stationary estimate (Eq. (11)) 
+
+ℓ(si) Lifecycle state ∈ { trial , active , stable , retired }
+
+gi Generation Mutation depth; gi = 0 for distilled skills 
+
+Mcand Mutation candidate pool Active skills with moderate fitness (Eq. (10)) 
+
+MT Teacher model Generates mutations via Pμ
+
+Pμ Mutation template Assembles parent skill, fitness, and failures 
+
+Tfail Failure trajectories Recent failed episodes used as mutation context 
+
+DSFT SFT dataset Successful trajectories filtered by retirement (Eq. (4)) 
+
+Forge( ·) Forging operator Full forging cycle (Algorithm 1) 
+
+Hyperparameters 
+
+M Preliminary eval episodes Rollout count for pre-retirement 
+
+δpre Pre-retirement threshold Proto-fitness below which initial skills are discarded 
+
+δretire Retirement threshold Fitness boundary below which active skills are retired 
+
+δstable Stabilization threshold Fitness boundary for active → stable 
+
+δdemote Demotion threshold Fitness boundary for stable → active 
+
+[δlow , δ high ] Mutation fitness range Bounds for mutation eligibility 
+
+Nmin Proto-fitness min usage Min usage before proto-fitness is evaluated 
+
+Nwarm Fitness warm-up Min usage before fitness replaces fdefault 
+
+Npromote Promotion min usage Min usage for trial → active 
+
+Nstable Stabilization min usage Min usage for active → stable 
+
+Nmutate Mutation min usage Min usage for mutation eligibility 
+
+Nretire Retirement min usage Min usage before an active skill can be retired 
+
+N (gi) 
+
+> retire
+
+Generation-aware retirement Nprotect if gi = 0 , else Nretire 
+
+Nprotect Protection threshold Higher usage bar for generation-0 skills 
+
+Kretire Retirement budget Max retirements per forging cycle 
+
+Kmutate Mutation budget Max mutations per forging cycle 
+
+Smax Skill cap Maximum library size 
+
+E Forging period Validation epochs between forging cycles 
+
+W History window size Recent (o, a ) pairs kept in ht; W =5 
+
+GRPO Training 
+
+LSFT SFT loss Cross-entropy on retirement-filtered trajectories (Eq. (5)) 
+
+G Group size Trajectories sampled per task 
+
+ˆAn Group-normalized advantage (rn − μG)/σ G
+
+ϵ Clipping range PPO-style surrogate clipping 
+
+β KL coefficient Regularization against reference policy 
+
+τn Episode n in a GRPO group Used for ˆAn and reward rn = R(τn)
+
+yn Token sequence of τn Action tokens produced autoregressively by πθ
+
+τ (j) Trajectory at step j Rollout from πθj for the non-stationary fitness (Eq. (11)) 
+
+yn,l Token at position l l-th action token in yn
+
+cn,l Left context of yn,l Environment-step context plus earlier tokens 
+
+ρn,l Importance ratio πθ (yn,l | cn,l )/π θold (yn,l | cn,l )
+
+14 B Implementation Details 
+
+Training configuration. Table 5 lists the training hyperparameters and hardware setup. The base model is Qwen2.5-7B-Instruct [Team, 2023], fine-tuned with GRPO on 64 × NVIDIA H200 GPUs using the verl framework. The initial skill library is environment-specific: ALFWorld uses 44 skills (12 general, 21 task-specific, 11 common-mistake), WebShop uses 66 skills (15 general, 39 task-specific, 12 common-mistake), and Search-Augmented QA uses 41 skills (10 general, 20 query-type, 11 common-mistake), all inherited from the SkillRL release [Xia et al., 2026]. General skills encode cross-task heuristics (e.g., “always verify inventory after pickup”), task-specific skills target individual task types, and common-mistake skills capture frequently observed failure patterns from initial rollouts (e.g., “do not leave an object behind after finding it”). 
+
+Evaluation sample sizes. ALFWorld reports per-sub-task accuracy on the 130-task unseen-test set, partitioned as Pick (24), Look (15), Clean (27), Heat (26), Cool (21), and Pick2 (17); the All 
+
+column in Table 2 is the sample-weighted micro-average across these. WebShop uses the standard 500-task held-out test set for both Score and Succ. Search-Augmented QA per-sub-dataset sample sizes appear in Table 10. Table 5: Training configuration for S KILL FORGE . All three environments share the GRPO optimizer, group size, and training budget; hardware is identical across runs.                     
+
+> Hyperparameter Value
+> Base model Qwen2.5-7B-Instruct GRPO learning rate 1×10 −6
+> Batch size 16 Group size G8Clipping range ϵ0.2 KL coefficient β0.001 Training steps 200 History window size W5Sampling temperature (train & eval) 1.0 Validation epoch 5 steps Hardware 64 ×NVIDIA H200 Framework verl
+
+Forging hyperparameters. Table 6 lists all forging-specific hyperparameters. The pre-retirement threshold δpre = 0 .3 is looser than the runtime δretire = 0 .4 because the pre-retirement phase uses the unadapted base policy πθ0 , whose success rates are systematically lower than those observed during RL; a lower bar avoids discarding borderline-but-potentially-useful skills before RL has had a chance to re-evaluate them. Two usage-count thresholds also deserve clarification. The proto-fitness minimum Nmin = 3 (Eq. (3)) is smaller than the runtime warm-up Nwarm = 5 (Eq. (6)) because proto-fitness is estimated under the fixed base policy over M dedicated rollouts, so three observations already yield a low-variance estimate for the binary filter ˆfi < δ pre . Runtime fitness, in contrast, is estimated under a moving policy and feeds into continuous lifecycle transitions (promotion, stabilization, demotion, retirement), which justifies a slightly more conservative warm-up. Correspondingly, Eq. (3) is a hard filter : skills without U (0)  
+
+> i
+
+≥ Nmin are simply not candidates for removal and remain in S(0) . In contrast, Eq. (6) must emit a numeric score for retrieval and ranking, so it falls back to the neutral prior fdefault = 0 .5 when the usage count is too low to trust the empirical rate. A second boundary case arises because δlow = δretire = 0 .4: a skill with fi exactly equal to this value satisfies both the retirement condition (strict inequality fi < δ retire is false, so retirement does not fire) and the mutation range (closed interval [δlow , δ high ] includes the endpoint), so such a skill is eligible for mutation but not retirement and behaves identically to skills with fi slightly above 0.4.
+
+Lifecycle well-definedness. The four branches of Eq. (9) have pairwise disjoint guards: they require 
+
+ℓ(si) ∈ { trial , active , stable , active } respectively, and the two active branches trigger on disjoint fitness ranges, one requiring fi ≥ δstable and the other fi < δ retire , so at most one branch fires per skill per cycle. Eq. (9) is declarative; Algorithm 1 specifies the per-cycle ordering, with promotion and demotion preceding retirement and stabilization preceding mutation. 15 Table 6: Forging hyperparameters for S KILL FORGE . Slash-separated values apply to ALFWorld, WebShop, and Search-Augmented QA respectively; Smax and M scale with the initial library size of each environment. 
+
+Hyperparameter Symbol Value 
+
+Proto-fitness min usage Nmin 3Pre-retirement threshold δpre 0.3 Preliminary eval episodes M 500 / 450 / 400 Fitness warm-up threshold Nwarm 5Default fitness (new skills) fdefault 0.5 Promotion min usage Npromote 10 Retirement fitness threshold δretire 0.4 Retirement min usage Nretire 20 Stabilization fitness threshold δstable 0.7 Stabilization min usage Nstable 30 Demotion fitness threshold δdemote 0.5 Mutation fitness range [δlow , δ high ] [0 .4, 0.7] 
+
+Mutation min usage Nmutate 5Max mutations per cycle Kmutate 5Max retirements per cycle Kretire 3Total skill cap Smax 100 / 95 / 85 Original skill protection Nprotect 50 Forging frequency E 2 (every 10 training steps) Teacher model MT Kimi-K2.5 [Team et al., 2026] Skill retrieval top-K 6 (task-type matching) 
+
+Mutation weighting. We use the simplest monotone-decreasing weighting, P (si) ∝ 1 − fi, rather than sharper alternatives such as 1/f i or exp( −λf i). Because mutation candidates already satisfy 
+
+δlow ≤ fi ≤ δhigh (default [0 .4, 0.7] ), the weights 1−fi lie in [0 .3, 0.6] , giving at most a 2× preference for lower-fitness parents. This is enough to bias selection toward skills with more room to improve without concentrating mutation on a single outlier. 
+
+Threshold sensitivity. Table 7 sweeps the two most load-bearing thresholds, the retirement thresh-old δretire and the library cap Smax , around their default values on ALFWorld. The overall success rate varies within ±1.4% across the swept range, showing robustness to threshold choices. We observe a mild concavity: overly aggressive retirement ( δretire = 0 .5) removes borderline-but-useful skills before they stabilize, while overly permissive retirement ( δretire = 0 .3) retains low-fitness skills that dilute the retrieved context. The default δretire = 0 .4 sits near the peak of this trade-off. Table 7: Sensitivity of overall ALFWorld success (%) to the two most load-bearing thresholds, sweeping one parameter while fixing all others at their default values. Default values are boxed. 
+
+Retirement threshold δretire (default 0.4) 
+
+δretire 0.3 0.4 0.5 0.6 Success (%) 91.3 92.4 91.8 91.0 
+
+Library cap Smax (default 100) 
+
+Smax 70 85 100 130 Success (%) 91.0 91.9 92.4 91.6 
+
+Compute resources. All RL runs use 64 × NVIDIA H200 GPUs under the verl framework. Esti-mated wall-clock per 200-step training run is ≈24 hours for ALFWorld, ≈18 hours for WebShop, and 
+
+≈72 hours for Search-Augmented QA (retrieval-dominated), for a total of ≈114 wall-clock hours ×
+
+64 GPUs = 7 ,296 GPU-hours across the three environments per full training run. The pre-retirement evaluation phase (Section 4.1) adds ≈6 hours per environment on the same hardware. Evaluation is run five times per reported number (sampling seeds {30 , 40 , 42 , 50 , 62 }) and adds ≈1.5–4.5 hours per environment per seed. Teacher model overhead is negligible relative to RL: a forging cycle runs every 
+
+E = 2 validation epochs (every 10 training steps) and issues up to Kmutate = 5 mutation calls per 16 cycle, for at most ⌈200 /10 ⌉ × 5 = 100 mutation calls per training run, all dispatched asynchronously during validation so they do not block GPU training. The teacher MT is treated as a frozen black-box LLM: any sufficiently capable instruction-tuned model (proprietary or open-weight) can serve in this role, since the interface is only a structured template Pμ and a single-shot text response. We use Kimi-K2.5 here for mutation quality, but the framework imposes no dependence on a specific teacher. 
+
+Mutation template. The mutation operator (Section 4.3, Eq. (10)) assembles the parent skill’s metadata, fitness statistics, and recent failure examples into the following structured template Pμ,which is sent to the teacher model MT :           
+
+> Mutation Template Pμ
+> You are improving a skill for an embodied AI agent in {environment}. The following skill has moderate performance (fitness={ fi}, used { Ui} times, succeeded { Ci} times): Original skill: - ID: {skill_id} - Title: {title} - Principle: {principle} - When to apply: {when_to_apply}
+> [If recent failures exist:]
+> This skill was involved in the following failed episodes: - Task: {task description} Agent action: {failed action} - ... Please analyze these failure patterns and generate an improved skill that specifically addresses them. Generate ONE improved variant that addresses the weakness shown by its moderate success rate. The improved skill should be more specific, actionable, or correct than the original. Return ONLY a JSON object with these fields: {"skill_id": "{new_id}", "title": "...", "principle": "...", "when_to_apply": "..."}
+
+The template includes up to 8 recent failure examples (task description and agent action, each truncated to 200 characters) from episodes where the parent skill was retrieved but the episode failed. Failure examples are omitted when no failures are recorded. The teacher model returns a single JSON object, which is parsed and assigned a new skill identifier. 
+
+C SKILL FURNACE Dataset Details 
+
+SKILL FURNACE is a three-part dataset released alongside S KILL FORGE . Each part draws from a distinct data source within our experimental pipeline: (i) SFT trajectories come from rollouts of the Qwen2.5-7B-Instruct base model during the preliminary evaluation phase, before any RL training has begun; (ii) evolved skill libraries are initialized from the seed library released by SkillRL [Xia et al., 2026] and then logged at every forging cycle as one record per skill per snapshot; (iii) retirement events are lifecycle-gate decisions aggregated across the primary training run and additional previously recorded training runs (ablation variants and replicate seeds), so that the released event count is not limited to a single seed. Every mined event is labelled and quality-controlled under the same criteria as the primary run. In total, S KILL FURNACE contains 5,852 annotated records across the three environments: 1,013 SFT trajectories, 4,521 library snapshot records, and 318 retirement events, summarized in Table 1. Table 8 summarizes the library component across environments, Table 1 reports dataset scale and retirement-event statistics, and Table 9 breaks retirement events down by failure category per environment. 
+
+SFT trajectories. The preliminary evaluation phase executes M rollout episodes with the Qwen2.5-7B-Instruct base model πθ0 and retrieved skills injected via Eq. (2). Per-environment M values are 500 (ALFWorld), 450 (WebShop), and 400 (Search-Augmented QA); see Table 6 for all forging-17 Table 8: S KILL FURNACE evolved-library composition per environment. Initial |S 0| is the seed library released by SkillRL [Xia et al., 2026]; total ever created counts every skill ever introduced, including all mutation children; retired during training counts skills that reached retired ; final non-retired is the active library size at the last training step. The final row shows what fraction of the surviving library originated from LLM-guided mutation.                                 
+
+> Statistic ALFWorld WebShop Search-Aug. QA Total
+> Initial |S 0|44 66 41 151 Total ever created 132 121 111 364 Retired during training 32 26 26 84 Final non-retired 100 95 85 280 of which stable 76 80 64 220 of which mutated ( gi≥1)57 29 44 130
+
+related hyperparameters. We retain every successful trajectory whose retrieved-skill set is disjoint from the pre-retired set S(0) 
+
+> retire
+
+, yielding the SFT corpus DSFT defined in Eq. (4): 412 trajectories in ALFWorld, 348 in WebShop, and 253 in Search-Augmented QA, for a total of 1,013 released SFT trajectories. Each trajectory is stored as an ordered sequence of context–action pairs with the retrieved-skill ids attached to each context, so downstream practitioners can reconstruct the base corpus and re-filter it under alternative retention rules without rerunning rollouts. All trajectories in this component come exclusively from the base Qwen2.5 model, making them a clean cold-start fine-tuning resource decoupled from any specific RL setup. 
+
+Evolved skill libraries. Every forging cycle emits a library snapshot recording, for each skill, the id, name, behavioral principle b, applicability condition ω, cumulative usage count Ui, cumulative success count Ci, current fitness fi, lifecycle state ℓ(si) ∈ { trial , active , stable , retired },generation depth gi, and parent id for mutated skills. The initial library S0 logged at snapshot 0 is the seed library released by SkillRL [Xia et al., 2026]; subsequent snapshots track how this seed evolves under RL. Forging runs every 10 training steps over the 200-step budget, producing 21 snapshots per run. Each snapshot emits one record per skill tracked at that step, yielding 1,512 records in ALFWorld, 1,683 in WebShop, and 1,326 in Search-Augmented QA, for a total of 4,521 library snapshot records. Table 8 reports the composition at the last training step. Across the three environments, the library grows from 44, 66, and 41 seed skills to a final non-retired size of 100, 95, and 85 at the cap Smax ,with 132, 121, and 111 skills created cumulatively. Of the final non-retired skills, 76, 80, and 64 reach the stable state, and 57, 29, and 44 originate from LLM-guided mutation ( gi ≥ 1), making 46.4% of final skills across the three environments children rather than seed skills. Snapshots are released together with per-cycle forging logs, so any fitness trajectory or lifecycle transition can be reconstructed offline. 
+
+Retirement events. Each retirement event records the full autopsy of a retired skill: the skill content, the complete fitness history leading up to retirement, the lifecycle-transition log, parent and sibling skills from the mutation tree, a human-annotated failure category drawn from the 8-way taxonomy described in Appendix E.2, and a free-text key flaw field describing the retired skill’s failure mode. To make the released sample size independent of any single seed or ablation setup, events are aggregated from the primary training run and additional previously recorded training runs; the per-environment totals in Table 1 therefore exceed the primary-run retirement counts reported in Section 5.4 by design. Retirement events exhibit an average peak fitness of 0.67 and an average lifespan of 38.0 training steps, with fitness dropping by 0.28 on average at retirement; 57.2% first reached the stable state before this decay, the defining pattern of delayed obsolescence that motivates the forging lifecycle. Figure 5 shows the lifespan distribution: retirements spread across the full training horizon rather than clustering at any single stage, so the retirement gate fires throughout RL rather than only at initialization or endgame. Table 9 reports the per-environment breakdown across the eight categories. Overly rigid ordering is the dominant mode in every environment (74.6% / 77.7% / 67.8%), confirming that procedural rigidity rather than content omission is the principal failure mode of LLM-distilled skills. Environment-specific patterns also emerge: hallucinated action 
+
+accounts for 10.7% of WebShop events, corresponding to skills that reference UI elements absent from the WebShop environment, and contradicts environment is exclusive to Search-Augmented QA, corresponding to skills that invoke search operations the environment does not expose. 18 0 50 100 150 200 Lifespan (training steps) 010 20 Retired Skills  mean = 38.8 (a) ALFWorld 0 50 100 150 200 Lifespan (training steps) 010 20 Retired Skills  mean = 31.7 (b) WebShop 0 50 100 150 200 Lifespan (training steps) 010 20 Retired Skills  mean = 49.4 (c) Search-Augmented QA 
+
+Figure 5: Lifespan distribution of retirement events in S KILL FURNACE , measured as 
+
+retired_step − born_step . Retirements spread across the full training horizon rather than clustering at any single stage; the red dashed line marks the per-environment mean. Table 9: S KILL FURNACE retirement events by failure category (8-way human-annotated taxonomy). Percentages are within environment. Overly rigid ordering dominates in every environment, confirm-ing that procedural rigidity, not content omission, is the principal failure mode of LLM-distilled skills. Environment-specific patterns also emerge: hallucinated action appears mostly in WebShop (UI ele-ments absent from the environment) and contradicts environment appears only in Search-Augmented QA (search operations absent from the environment). 
+
+Failure category ALFWorld WebShop Search-Aug. QA Total 
+
+Overly rigid ordering 103 (74.6%) 94 (77.7%) 40 (67.8%) 237 (74.5%) Overly specific 26 (18.8%) 2 (1.7%) 2 (3.4%) 30 (9.4%) Premature specialization 6 (4.3%) 10 (8.3%) 0 (0.0%) 16 (5.0%) Hallucinated action 0 (0.0%) 13 (10.7%) 0 (0.0%) 13 (4.1%) Redundant with policy 2 (1.4%) 1 (0.8%) 7 (11.9%) 10 (3.1%) Contradicts environment 0 (0.0%) 0 (0.0%) 7 (11.9%) 7 (2.2%) Scope mismatch 0 (0.0%) 0 (0.0%) 3 (5.1%) 3 (0.9%) Vague or tautological 1 (0.7%) 1 (0.8%) 0 (0.0%) 2 (0.6%) 
+
+Total 138 121 59 318 
+
+Release format. SKILL FURNACE is released as three top-level JSON files (sft_trajectories.json , library_snapshots.json , retirement_events.json ) with a schema document. All records are keyed by a global skill_id so the three components can be joined: every skill id appearing in retirement_events.json is also present in the matching run’s 
+
+library_snapshots.json for every step between birth and retirement, and every skill retrieved in 
+
+sft_trajectories.json is resolvable in the step-0 library snapshot. The dataset is released under CC-BY-4.0. 
+
+D Search-Augmented QA Full Per-Dataset Results 
+
+Table 10 reports accuracy on each of the seven Search-Augmented QA sub-datasets that are sum-marised by the radar chart in Figure 2a. Both in-domain datasets ( †: NQ, HotpotQA) and out-of-domain datasets ( ⋆: TriviaQA, PopQA, 2WikiMultiHopQA, MuSiQue, Bamboogle) are included. The 48.7% aggregate number reported in the main text corresponds to micro-averaged accuracy over the 51,713-sample concatenation of these seven test sets. SKILL FORGE obtains the best or second-best accuracy on every sub-dataset, with the largest absolute improvements on the multi-hop benchmarks Bamboogle ( +3 .4 over the strongest baseline) and HotpotQA ( +0 .7). Gains are consistent on both in-domain and out-of-domain splits, indicating that the forging lifecycle does not overfit to the training distribution. 19 Table 10: Per-dataset accuracy on Search-Augmented QA (%). †: in-domain; ⋆: out-of-domain. Per-dataset cells for non-S KILL FORGE rows are taken from their respective source papers. The 
+
+Overall column is recomputed as the sample-weighted micro-average over the 51,713-sample union shown in Test samples , so that all methods are compared on an identical test set; these values may differ from source-paper totals that used different evaluation configurations. Bold : best; underline: second best. “–”: not reported. 
+
+Method NQ † TriviaQA ⋆ PopQA ⋆ HotpotQA † 2Wiki ⋆ MuSiQue ⋆ Bamboogle ⋆ Overall 
+
+Test samples 3,610 11,313 14,267 7,405 12,576 2,417 125 51,713 In-context / retrieval baselines 
+
+Vanilla [Team, 2023] 11.6 35.6 1.2 16.4 22.2 4.8 14.4 16.9 CoT 12.8 35.6 3.8 16.2 22.6 6.6 24.0 17.9 RAG 27.4 58.2 17.8 25.8 23.2 9.4 16.8 29.4 Search-o1 [Li et al., 2025] 19.4 40.6 11.4 17.0 27.0 8.6 30.4 22.9 R1-Instruct [Team, 2025a] 21.0 44.9 17.1 20.8 27.5 6.0 19.2 26.0 
+
+RL-based search methods 
+
+Search-R1 [Jin et al., 2025] 39.3 61.0 39.7 37.0 40.1 14.6 36.8 42.9 ZeroSearch [Sun et al., 2025] 43.6 61.8 51.5 34.6 35.2 18.4 27.8 45.2 StepSearch [Zheng et al., 2025] – – – 38.6 36.6 22.6 40.0 –EvolveR [Wu et al., 2025] 43.5 63.4 44.6 38.2 42.0 15.6 54.4 45.8 SkillRL [Xia et al., 2026] 45.9 63.3 45.9 43.2 40.3 20.2 73.8 46.8 
+
+SKILL FORGE (Ours) 48.2 65.0 50.1 43.9 40.4 20.3 77.2 48.7 
+
+E Case Studies 
+
+E.1 Deepest Forging Lineages 
+
+As shown in Figure 6, mutation lineages exhibit a heavy-tailed depth distribution: most refinements converge to a stable variant within one or two generations, while a tail extends up to nine generations when niches remain. Useful variants stabilize and stop mutating, so only lineages with room to specialize keep branching. g9 Evolved Evolved Evolve... g8 Evolved Evolved Evolve... g7 Evolved Evolved Evolve... g7 Evolved Evolved Evolve... g6 Evolved Evolved Track ... g6 Evolved Evolved Track ... g5 Evolved Track Exhauste... g4 Track Exhausted Contai... g3 Switch Lamp On With Ve...* g3 Interrupt Thought Loop... g2 Verify and Track Searc...* g1 Lamp-Lit Examine: Orde...* g0 Batch Object Searches 
+
+"Batch Object Searches" (depth=9, 13 nodes) 
+
+> g5 Systematic Multi-Locat... g5 Evolved Examine Object... g5 Evolved Examine Object... g6 Evolved Evolved Examin... g5 Evolved Examine Object... g5 Evolved Examine Object... g4 Examine Object Under L... g4 Elite Confirm State Ch... g3 Confirm State Change a... g2 Interrupt and Grab Imm... g2 Cap Per-Category Searc... g1 Retrieve Target Before...* g5 Evolved Verified Acqui... g5 Evolved Verified Acqui... g4 Verified Acquisition w... g3 Immediately Interact W... g3 Priority-Ordered Syste... g2 Verify Desklamp Locati...* g1 Acquire Target Object ...* g1 Verify, Grab, and Conf... g0 Pick Before You Wander
+
+"Pick Before You Wander" (depth=6, 21 nodes) 
+
+> g3 Post-Heat Verified Pla... g3 Concise Systematic Obj... g2 Systematically Search ...* g1 Examine Under Lamp: Ex...* g3 Mandatory Pre-Interact... g4 Master Activate Deskla... g3 Activate Desklamp Upon... g2 Examine Task: Strict P... g1 Examine Task: Object F... g0 Sink First for Cleanin...
+
+"Sink First for Cleaning" (depth=4, 10 nodes) 
+
+Figure 6: Deepest forging lineages on ALFWorld. Each subplot shows a root skill (gen=0, square) and its multi-generation descendants (circles). Red = retired, blue = stable. Early variants are often retired while later, more refined variants survive. 
+
+E.2 Failure Taxonomy Details 
+
+As shown in Figure 7, the 318 retirement events were labelled into one of eight failure categories. Two annotators labelled the events under this 8-way taxonomy; an initial pass reached Cohen’s 
+
+κ = 0 .5 inter-annotator agreement, and remaining disagreements were resolved by discussion. The dominant failure mode is overly rigid ordering at 74.5%, where the skill imposes a fixed procedural sequence that fails for edge cases; the second most common is overly specific at 9.4%, where skills work for narrow task subsets but fail broadly. Only 10 of the 318 retirement events (3.1%) are labeled redundant with policy ; the remaining 96.9% contain prescriptions inconsistent with successful rollouts—rigid ordering, hallucinated operations, overfit specializations, self-contradictions—so 
+
+delayed obsolescence reflects once-stable skills becoming concretely misleading, not the policy 20 outgrowing harmless crutches. Environment-specific patterns also emerge: contradicts environment 
+
+failures appear exclusively in Search-Augmented QA, where LLM-guided mutation hallucinates search operations absent from the environment. 0 50 100 150 200 Number of Retired Skills Overly Rigid Ordering Overly Specific Premature Specialization Hallucinated Action Redundant with Policy Contradicts Environment Scope Mismatch Vague / Tautological ALFWorld WebShop SearchQA 
+
+Figure 7: Failure taxonomy of 318 retirement events across three environments. Blue: ALFWorld; red: WebShop; orange: Search-Augmented QA. Overly rigid ordering dominates across all environments; environment-specific failure modes emerge in Search-Augmented QA. 
+
+E.3 WebShop: Hidden-Constraint Verification 
+
+Parent skill (“Confirm Hidden Specs”, fitness=0.84, gen=0): 
+
+Principle : Scroll to bullet points/description to verify non-title attributes (material, care, fit, design features); reject items that satisfy title keywords but fail hidden constraints. 
+
+When to apply : When evaluating candidate products against multi-attribute instructions. 
+
+Successful child (“Systematically Verify All Hidden Constraints”, fitness=0.70, gen=1, 
+
+stable ): 
+
+Principle : After selecting a candidate product, explicitly open the product descrip-tion/features section and verify every constraint from the instruction that is not visible in the title or options. 
+
+When to apply : When a candidate product matches title keywords but contains hidden attribute constraints. 
+
+Failed child (“Systematically Verify Every Non-Visible Constraint”, fitness=0.21, gen=1, 
+
+retired at step 78): 
+
+Principle : After selecting a product, scroll down and click on the ‘Description’ or ‘Features’ tab/section to read every specification. 
+
+When to apply : Whenever a product page is opened. 
+
+The successful child reaches stable status by maintaining high accuracy within its target niche; its aggregate fitness of 0.70 is below the parent’s 0.84 because the child targets a narrower set of tasks, but within-niche accuracy is what matters for the lifecycle, not aggregate fitness. The failed variant referenced interface elements such as “click on the Description tab,” which is absent from WebShop; its fitness decayed rapidly and the retirement gate filtered it out at step 78. The trial gate filters the hallucinated-interface variant before it affects the active library. 
+
+E.4 ALFWorld: Mutation Outcomes 
+
+The initial skill “Pick Before You Wander” produced two mutations with opposite outcomes: 
+
+Parent (“Pick Before You Wander”, gen=0, fitness=0.84): 
+
+If the target object is visible or discovered, take it immediately; never leave it behind to explore other places. 
+
+Successful child (“Verify, Grab, and Confirm Pickup”, gen=1, fitness=0.70, stable ): 
+
+When a needed object is visible, move directly to it, take it immediately, and then verify it is now in your inventory before proceeding. 
+
+→ Adds a verification step that catches pickup failures. 
+
+21 Failed child (“Retrieve Target Before Locating Desklamp”, gen=1, fitness=0.24, retired  
+
+> at step 65):
+> First locate and pick up the target object specified in the goal before navigating to any furniture.
+> →Introduces a rigid ordering that fails for tasks where the lamp must be found first.
+
+From the same parent, mutation produced both a beneficial specialization (adding a verification step) and a harmful over-specification (imposing a rigid task ordering). The retirement mechanism correctly identified and removed the harmful variant. 
+
+E.5 Search-Augmented QA: Query Reformulation Lineage 
+
+A multi-generation forging chain on Search-Augmented QA:        
+
+> Gen-0 : “Disambiguation Add-Ons” (fitness=0.88)
+> If the name is ambiguous, append clarifiers (birth year, nationality, known work) to the query.
+> ↓mutation
+> Gen-1 : “Structured Query Escalation with Fallback” (fitness=0.21, retired at step 83)
+> Systematically escalate through three reformulation strategies when initial results lack evidence.
+> →Too rigid; forced 3-step escalation even for simple queries.
+> ↓later mutation from same lineage
+> Gen-1 : “Verify Before Acting” (fitness=0.70, stable )
+> Before performing any action on an entity, first confirm its identity by searching with disambiguating context.
+> →Simpler, more general, and more effective.
+
+Forging explores multiple directions from the same parent: the overly complex variant is retired while the simpler, more robust variant survives. 
+
+F KL Regularization under a Library-Conditioned Context 
+
+This appendix elaborates on how the KL penalty in Eq. (1) composes with the evolving skill library, complementing the non-stationarity of the fitness estimator formalized in Eq. (11). Under our formulation (Eq. (2)), the library S(k) enters the policy through the context pt rather than through the policy parameters θ. The parameterization of πθ is therefore invariant across forging cycles; what varies over training is the prompt distribution fed to the fixed network. The KL term 
+
+DKL (πθ ∥πref ) is always evaluated at the same context cn,l seen by both πθ and πref , so the divergence is well-defined at every training step, regardless of how far S(k) has drifted from S(0) .Two structural properties align the fixed anchor πref with the library-conditioned inputs it encounters during RL. First, mutated skills are teacher-model rewrites of surviving parents that preserve the 
+
+(v, b, ω ) schema of Section 3.2, so new prompts differ from SFT-time prompts mainly in skill content rather than in structural form, on which πref remains a calibrated next-token predictor. Second, we use β = 10 −3 (Table 5), so the KL term acts as a soft regularizer against large single-step deviations rather than a tight anchor to the SFT policy’s full conditional distribution. An alternative design is to re-anchor πref at each forging cycle, trading the clean separation between SFT initialization and RL optimization for tighter alignment between the reference policy and the current library; this variant is compatible with the rest of our framework, and the fixed-anchor choice is the simpler default we adopt here. 
+
+G Limitations 
+
+Fitness is defined at the episode level: the K retrieved skills share a single binary reward (Eq. (6)). This is an approximation—in episodes where multiple skills are co-retrieved, the signal cannot distinguish individual skill contributions. We mitigate this via applicability-conditioned retrieval, 22 which spreads skills across task types; the top co-retrieval frequency across all skill pairs remains under 15% of episodes in each environment, so in practice each skill’s fitness estimate is dominated by episodes where it was retrieved alone. Nevertheless, the shared-credit assumption may slow convergence on tasks where skill co-retrieval is structurally unavoidable. All experiments use a 7B base model; lifecycle dynamics under larger models may differ, and we leave scalability to future work. LLM-guided mutation relies on an external teacher model MT :performance is contingent on the teacher’s instruction-following ability. Any sufficiently capable instruction-tuned model can serve this role (Appendix B uses Kimi-K2.5 but imposes no dependence on a specific provider), but a weak teacher will produce low-quality mutations that the trial gate must filter. 
+
+H Discussion 
+
+Design choices. Fitness is tracked as a cumulative running average (Eq. (6)), which integrates evidence over the full lifecycle of each skill. This is the natural estimator for our detection target, skills whose accumulated success record needs to be distinguished from skills that were never effective; it is what makes “once stable, now failing” a well-defined pattern to catch. A faster estimator such as an exponential moving average would respond more quickly to fitness changes, but this sensitivity cuts both ways: a skill that encounters a transiently hard batch of tasks would be flagged before the policy has stabilized, producing false retirements. The cumulative average’s inertia is intentional—the lifecycle’s usage-count gates ( Nretire , Nstable ) already guard against premature decisions; within that framework, the cumulative estimate reliably separates skills with a strong historical record from those that have consistently underperformed. Table 1 reports an average retirement-event lifespan of 38.0 training steps, showing that retirement occurs promptly relative to the 200-step training budget despite the conservative estimator. 
+
+Mutation survival. Across the three environments, 213 mutant skills were generated: 88 in ALFWorld, 55 in WebShop, and 70 in Search-Augmented QA. The majority survive the lifecycle: the mutant survival rate is 64.8%, 52.7%, and 62.9% respectively, so LLM-guided mutation produces viable skills more often than not. Each forging cycle requires up to Kmutate teacher model calls for mutation plus lightweight fitness bookkeeping. 
+
+Ablation library dynamics. In Table 3 the −mutation and −forging variants both retain the initial library size (44 on ALFWorld, 66 on WebShop, 41 on Search-Augmented QA). These numbers refer to |S 0|, the distilled library before pre-retirement, to make cross-variant comparison direct. For 
+
+−forging the entire forging method, including pre-retirement, runtime retirement, and mutation, is disabled, so the SFT data is unfiltered and no skills are added or removed after initialization. For 
+
+−mutation, pre-retirement and runtime retirement both run, but the two mechanisms remove very few skills on these environments in practice: pre-retirement at δpre = 0 .3 with Nmin = 3 discards only initial skills that demonstrably hurt the base-model policy, and on the three environments this is a small fraction of S0 (typically 0–3 skills); the remaining skills then accumulate enough usage during RL to stay above δretire , so runtime retirement triggers rarely when mutation is off and no low-fitness children are being introduced. Size changes driven by the lifecycle therefore manifest primarily once mutation is re-enabled, which is consistent with the joint role of mutation and retirement reported in Section 5.3. The −pre-retirement variant confirms this picture from the opposite direction: with runtime retirement and mutation intact, the final library still settles at the cap (100, 95, 85) because the cap is the binding constraint once mutation is active. The 1.2–3.5% success drop therefore arises not from library size but from SFT data quality: pre-retirement is an integral first stage of the lifecycle that shapes the initial policy πθsft on which the subsequent retirement and mutation operate. The −retirement column in Table 3 reaches 132, 121, and 111 skills on the three environments, matching the total-ever-created count of the full method. This follows from the forging schedule: the number of forging cycles and the per-cycle budget Kmutate are fixed, so the cumulative number of child skills generated is largely invariant to whether low-fitness parents are subsequently removed. Retirement determines which skills remain in the active library at any point, not how many are produced during training; correspondingly the full method’s active library settles at a much smaller size (100, 95, 85) while −retirement accumulates every generated skill. 23 Evaluation protocol. All reported numbers use stochastic decoding at temperature 1.0 for both training-time rollouts and test-time evaluation, so that evaluation noise reflects the policy’s deployed behavior rather than a degenerate argmax. Each reported score is averaged over five evaluation runs of the best validation checkpoint with sampling seeds {30 , 40 , 42 , 50 , 62 }. The mean ± standard deviation of the overall success rate is 92 .4 ± 0.5% on ALFWorld, 78 .4 ± 0.4% on WebShop, and 
+
+48 .7 ± 0.3% on Search-Augmented QA, with the low variance confirming that reported results are stable under resampling. 
+
+Statistical significance. We test whether S KILL FORGE ’s overall success rate exceeds the strongest memory-augmented RL baseline, SkillRL, using a one-sample t-test against the SkillRL point estimate under the null H0 : μSKILL FORGE = μSkillRL with our five-seed evaluation sample ( n = 5 ,
+
+df = 4 ). On ALFWorld ( t = 11 .18 , p = 1 .8 × 10 −4), WebShop ( t = 31 .86 , p = 2 .9 × 10 −6), and Search-Augmented QA ( t = 14 .16 , p = 7 .2×10 −5), the improvement is significant at p < 10 −3
+
+on all three environments. The corresponding two-sided 95% confidence intervals, [91 .78 , 93 .02] ,
+
+[77 .90 , 78 .90] , and [48 .33 , 49 .07] , do not overlap the SkillRL baseline values of 89 .9, 72 .7, and 
+
+46 .8, so the 1.9–5.7% absolute gains are unlikely to be explained by sampling noise. Under the conservative assumption that SkillRL’s per-seed variance matches our observed per-environment standard deviations of 0.5% , 0.4% , and 0.3% respectively, a pooled Welch’s t-test yields t = 7 .91 
+
+(ALFWorld), t = 22 .51 (WebShop), and t = 10 .03 (Search-Augmented QA), with p < 10 −4 on all three environments, preserving the conclusion. 
+
+Broader impact. Treating experience accumulation as a quality-control problem improves agent performance and yields interpretable artifacts: the S KILL FURNACE dataset enables follow-up research on skill quality prediction and failure-aware generation. The contributed collection contains only SFT trajectories, evolved skill libraries with fitness annotations, and retirement events with failure annotations, and introduces no risks beyond those inherent to LLM agents that act in interactive environments. 24
